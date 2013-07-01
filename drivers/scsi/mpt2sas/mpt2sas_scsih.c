@@ -2569,6 +2569,16 @@ _scsih_tm_display_info(struct MPT2SAS_ADAPTER *ioc, struct scsi_cmnd *scmd)
 }
 
 /**
+ * _scsih_timed_out - eh timeout handler
+ * @scmd: pointer to scsi command object
+ */
+static enum blk_eh_timer_return
+_scsih_timed_out(struct scsi_cmnd *scmd)
+{
+	return scsi_abort_command(scmd);
+}
+
+/**
  * _scsih_abort - eh threads main abort routine
  * @scmd: pointer to scsi command object
  *
@@ -7628,8 +7638,9 @@ static struct scsi_host_template scsih_driver_template = {
 	.slave_destroy			= _scsih_slave_destroy,
 	.scan_finished			= _scsih_scan_finished,
 	.scan_start			= _scsih_scan_start,
-	.change_queue_depth 		= _scsih_change_queue_depth,
+	.change_queue_depth		= _scsih_change_queue_depth,
 	.change_queue_type		= _scsih_change_queue_type,
+	.eh_timed_out			= _scsih_timed_out,
 	.eh_abort_handler		= _scsih_abort,
 	.eh_device_reset_handler	= _scsih_dev_reset,
 	.eh_target_reset_handler	= _scsih_target_reset,
