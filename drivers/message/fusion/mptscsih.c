@@ -1679,6 +1679,13 @@ mptscsih_get_tm_timeout(MPT_ADAPTER *ioc)
 	}
 }
 
+enum blk_eh_timer_return
+mptscsih_timed_out(struct scsi_cmnd *SCpnt)
+{
+	return scsi_abort_command(SCpnt);
+}
+EXPORT_SYMBOL(mptscsih_timed_out);
+
 /*=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=*/
 /**
  *	mptscsih_abort - Abort linux scsi_cmnd routine, new_eh variant
