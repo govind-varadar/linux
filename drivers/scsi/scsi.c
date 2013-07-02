@@ -548,14 +548,14 @@ void scsi_log_send(struct scsi_cmnd *cmd)
 		level = SCSI_LOG_LEVEL(SCSI_LOG_MLQUEUE_SHIFT,
 				       SCSI_LOG_MLQUEUE_BITS);
 		if (level > 1) {
-			scmd_printk(KERN_INFO, cmd, "Send: ");
 			if (level > 2)
-				printk("0x%p ", cmd);
-			printk("\n");
+				scmd_printk(KERN_INFO, cmd,
+					    "Send: 0x%p\n", cmd);
 			scsi_print_command(cmd);
 			if (level > 3) {
-				printk(KERN_INFO "buffer = 0x%p, bufflen = %d,"
-				       " queuecommand 0x%p\n",
+				scmd_printk(KERN_INFO, cmd,
+					"buffer = 0x%p, bufflen = %d,"
+					" queuecommand 0x%p\n",
 					scsi_sglist(cmd), scsi_bufflen(cmd),
 					cmd->device->host->hostt->queuecommand);
 
@@ -567,6 +567,7 @@ void scsi_log_send(struct scsi_cmnd *cmd)
 void scsi_log_completion(struct scsi_cmnd *cmd, int disposition)
 {
 	unsigned int level;
+	const char *dstr;
 
 	/*
 	 * If ML COMPLETE log level is greater than or equal to:
@@ -585,35 +586,37 @@ void scsi_log_completion(struct scsi_cmnd *cmd, int disposition)
 				       SCSI_LOG_MLCOMPLETE_BITS);
 		if (((level > 0) && (cmd->result || disposition != SUCCESS)) ||
 		    (level > 1)) {
-			scmd_printk(KERN_INFO, cmd, "Done: ");
-			if (level > 2)
-				printk("0x%p ", cmd);
 			/*
 			 * Dump truncated values, so we usually fit within
 			 * 80 chars.
 			 */
 			switch (disposition) {
 			case SUCCESS:
-				printk("SUCCESS\n");
+				dstr = "SUCCESS";
 				break;
 			case NEEDS_RETRY:
-				printk("RETRY\n");
+				dstr = "RETRY";
 				break;
 			case ADD_TO_MLQUEUE:
-				printk("MLQUEUE\n");
+				dstr = "MLQUEUE";
 				break;
 			case FAILED:
-				printk("FAILED\n");
+				dstr = "FAILED";
 				break;
 			case TIMEOUT_ERROR:
-				/* 
+				/*
 				 * If called via scsi_times_out.
 				 */
-				printk("TIMEOUT\n");
+				dstr = "TIMEOUT";
 				break;
 			default:
-				printk("UNKNOWN\n");
+				dstr = "UNKNOWN";
 			}
+			if (level > 2)
+				scmd_printk(KERN_INFO, cmd, "Done: 0x%p %s\n",
+					    cmd, dstr);
+			else
+				scmd_printk(KERN_INFO, cmd, "Done: %s\n", dstr);
 			scsi_print_result(cmd);
 			scsi_print_command(cmd);
 			if (status_byte(cmd->result) & CHECK_CONDITION)
