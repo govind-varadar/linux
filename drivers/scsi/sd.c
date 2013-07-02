@@ -3242,7 +3242,9 @@ static void sd_print_sense_hdr(struct scsi_disk *sdkp,
 
 static void sd_print_result(struct scsi_disk *sdkp, int result)
 {
-	sd_printk(KERN_INFO, sdkp, " ");
-	scsi_show_result(result);
+	char linebuf[40];
+
+	scsi_show_result(result, linebuf, sizeof(linebuf));
+	sd_printk(KERN_INFO, sdkp, "%s\n", linebuf);
 }
 

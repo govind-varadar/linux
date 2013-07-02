@@ -257,9 +257,10 @@ static const char * get_sa_name(const struct value_name_pair * arr,
 }
 
 /* attempt to guess cdb length if cdb_len==0 . No trailing linefeed. */
-static void print_opcode_name(unsigned char * cdbp, int cdb_len)
+static int print_opcode_name(unsigned char * cdbp, int cdb_len,
+			      char *buf, int buf_len)
 {
-	int sa, len, cdb0;
+	int sa, len, cdb0, off;
 	int fin_name = 0;
 	const char * name;
 
@@ -268,21 +269,28 @@ static void print_opcode_name(unsigned char * cdbp, int cdb_len)
 	case VARIABLE_LENGTH_CMD:
 		len = scsi_varlen_cdb_length(cdbp);
 		if (len < 10) {
-			printk("short variable length command, "
-			       "len=%d ext_len=%d", len, cdb_len);
+			off = scnprintf(buf, buf_len,
+					"short variable length command, "
+					"len=%d ext_len=%d", len, cdb_len);
 			break;
 		}
 		sa = (cdbp[8] << 8) + cdbp[9];
 		name = get_sa_name(variable_length_arr, VARIABLE_LENGTH_SZ,
 				   sa);
 		if (name)
-			printk("%s", name);
+			off = snprintf(buf, buf_len - 1, "%s", name);
 		else
-			printk("cdb[0]=0x%x, sa=0x%x", cdb0, sa);
+			off = snprintf(buf, buf_len - 1,
+				       "cdb[0]=0x%x, sa=0x%x", cdb0, sa);
 
 		if ((cdb_len > 0) && (len != cdb_len))
-			printk(", in_cdb_len=%d, ext_len=%d", len, cdb_len);
-
+			off = snprintf(buf + off, buf_len - off - 1,
+					", in_cdb_len=%d, ext_len=%d",
+					len, cdb_len);
+		if (off >= buf_len) {
+			off = buf_len;
+			buf[off - 1] = '\0';
+		}
 		break;
 	case MAINTENANCE_IN:
 		sa = cdbp[1] & 0x1f;
@@ -343,40 +351,50 @@ static void print_opcode_name(unsigned char * cdbp, int cdb_len)
 		if (cdb0 < 0xc0) {
 			name = cdb_byte0_names[cdb0];
 			if (name)
-				printk("%s", name);
+				off = scnprintf(buf, buf_len, "%s", name);
 			else
-				printk("cdb[0]=0x%x (reserved)", cdb0);
+				off = scnprintf(buf, buf_len,
+						"cdb[0]=0x%x (reserved)", cdb0);
 		} else
-			printk("cdb[0]=0x%x (vendor)", cdb0);
+			off = scnprintf(buf, buf_len,
+					"cdb[0]=0x%x (vendor)", cdb0);
 		break;
 	}
 	if (fin_name) {
 		if (name)
-			printk("%s", name);
+			off = scnprintf(buf, buf_len, "%s", name);
 		else
-			printk("cdb[0]=0x%x, sa=0x%x", cdb0, sa);
+			off = scnprintf(buf, buf_len, "cdb[0]=0x%x, sa=0x%x",
+					cdb0, sa);
 	}
+	return off;
 }
 
 #else /* ifndef CONFIG_SCSI_CONSTANTS */
 
-static void print_opcode_name(unsigned char * cdbp, int cdb_len)
+static int print_opcode_name(unsigned char * cdbp, int cdb_len,
+			     char *buf, int buf_len)
 {
-	int sa, len, cdb0;
+	int sa, len, cdb0, off;
 
 	cdb0 = cdbp[0];
 	switch(cdb0) {
 	case VARIABLE_LENGTH_CMD:
 		len = scsi_varlen_cdb_length(cdbp);
 		if (len < 10) {
-			printk("short opcode=0x%x command, len=%d "
-			       "ext_len=%d", cdb0, len, cdb_len);
+			off = scnprintf(buf, buf_len,
+					"short opcode=0x%x command, len=%d "
+					"ext_len=%d", cdb0, len, cdb_len);
 			break;
 		}
 		sa = (cdbp[8] << 8) + cdbp[9];
-		printk("cdb[0]=0x%x, sa=0x%x", cdb0, sa);
-		if (len != cdb_len)
-			printk(", in_cdb_len=%d, ext_len=%d", len, cdb_len);
+		if (len != cdb_len) {
+			off = scnprintf(buf,  buf_len, "cdb[0]=0x%x, sa=0x%x, "
+					"in_cdb_len=%d, ext_len=%d",
+					cdb0, sa, len, cdb_len);
+		} else
+			off = scnprintf(buf, buf_len, "cdb[0]=0x%x, sa=0x%x",
+					cdb0, sa);
 		break;
 	case MAINTENANCE_IN:
 	case MAINTENANCE_OUT:
@@ -390,46 +408,65 @@ static void print_opcode_name(unsigned char * cdbp, int cdb_len)
 	case THIRD_PARTY_COPY_IN:
 	case THIRD_PARTY_COPY_OUT:
 		sa = cdbp[1] & 0x1f;
-		printk("cdb[0]=0x%x, sa=0x%x", cdb0, sa);
+		off = scnprintf(buf, buf_len, "cdb[0]=0x%x, sa=0x%x",
+				cdb0, sa);
 		break;
 	default:
 		if (cdb0 < 0xc0)
-			printk("cdb[0]=0x%x", cdb0);
+			off = scnprintf(buf, buf_len, "cdb[0]=0x%x", cdb0);
 		else
-			printk("cdb[0]=0x%x (vendor)", cdb0);
+			off = scnprintf(buf, buf_len, "cdb[0]=0x%x (vendor)",
+					cdb0);
 		break;
 	}
+	return off;
 }
 #endif
 
 void __scsi_print_command(unsigned char *cdb)
 {
-	int k, len;
+	unsigned char linebuf[64];
 
-	print_opcode_name(cdb, 0);
-	len = scsi_command_size(cdb);
-	/* print out all bytes in cdb */
-	for (k = 0; k < len; ++k)
-		printk(" %02x", cdb[k]);
-	printk("\n");
+	print_opcode_name(cdb, 0, linebuf, 64);
+	printk(KERN_INFO "%s\n", linebuf);
+
+	print_hex_dump(KERN_INFO, NULL, DUMP_PREFIX_NONE,
+		       16, 1, cdb, scsi_command_size(cdb), false);
 }
 EXPORT_SYMBOL(__scsi_print_command);
 
 void scsi_print_command(struct scsi_cmnd *cmd)
 {
-	int k;
+	int i, len, linelen, remaining = cmd->cmd_len;
+	unsigned char linebuf[80];
 
 	if (cmd->cmnd == NULL)
 		return;
 
-	scmd_printk(KERN_INFO, cmd, "CDB: ");
-	print_opcode_name(cmd->cmnd, cmd->cmd_len);
+	strcpy(linebuf, "CDB: ");
+	len = strlen(linebuf);
+	len += print_opcode_name(cmd->cmnd, cmd->cmd_len,
+				 linebuf + len, sizeof(linebuf) - len);
+	if (cmd->cmd_len <= 16) {
+		strcat(linebuf, ": ");
+		len += 2;
 
-	/* print out all bytes in cdb */
-	printk(":");
-	for (k = 0; k < cmd->cmd_len; ++k)
-		printk(" %02x", cmd->cmnd[k]);
-	printk("\n");
+		hex_dump_to_buffer(cmd->cmnd, cmd->cmd_len, 16, 1,
+				   linebuf + len, sizeof(linebuf) - len, false);
+		scmd_printk(KERN_INFO, cmd, "%s\n", linebuf);
+	} else {
+		/* print out all bytes in cdb */
+		scmd_printk(KERN_INFO, cmd, "%s\n", linebuf);
+		for (i = 0; i < cmd->cmd_len; i += 16) {
+			linelen = min(remaining, 16);
+			remaining -= 16;
+
+			hex_dump_to_buffer(cmd->cmnd + i, linelen, 16, 1,
+					   linebuf, sizeof(linebuf), false);
+
+			scmd_printk(KERN_INFO, cmd, "CDB: %s\n", linebuf);
+		}
+	}
 }
 EXPORT_SYMBOL(scsi_print_command);
 
@@ -1572,22 +1609,24 @@ static const char * const driverbyte_table[]={
 "DRIVER_INVALID", "DRIVER_TIMEOUT", "DRIVER_HARD", "DRIVER_SENSE"};
 #define NUM_DRIVERBYTE_STRS ARRAY_SIZE(driverbyte_table)
 
-void scsi_show_result(int result)
+void scsi_show_result(int result, char *buf, int buf_len)
 {
 	int hb = host_byte(result);
 	int db = driver_byte(result);
 
-	printk("Result: hostbyte=%s driverbyte=%s\n",
-	       (hb < NUM_HOSTBYTE_STRS ? hostbyte_table[hb]     : "invalid"),
-	       (db < NUM_DRIVERBYTE_STRS ? driverbyte_table[db] : "invalid"));
+	scnprintf(buf, buf_len,
+		"Result: hostbyte=%s driverbyte=%s",
+		(hb < NUM_HOSTBYTE_STRS ? hostbyte_table[hb]     : "invalid"),
+		(db < NUM_DRIVERBYTE_STRS ? driverbyte_table[db] : "invalid"));
 }
 
 #else
 
-void scsi_show_result(int result)
+void scsi_show_result(int result, char *buf, int buf_len)
 {
-	printk("Result: hostbyte=0x%02x driverbyte=0x%02x\n",
-	       host_byte(result), driver_byte(result));
+	scnprintf(buf, buf_len,
+		  "Result: hostbyte=0x%02x driverbyte=0x%02x",
+		  host_byte(result), driver_byte(result));
 }
 
 #endif
@@ -1596,7 +1635,9 @@ EXPORT_SYMBOL(scsi_show_result);
 
 void scsi_print_result(struct scsi_cmnd *cmd)
 {
-	scmd_printk(KERN_INFO, cmd, " ");
-	scsi_show_result(cmd->result);
+	char buf[64];
+
+	scsi_show_result(cmd->result, buf, 64);
+	scmd_printk(KERN_INFO, cmd, "%s\n", buf);
 }
 EXPORT_SYMBOL(scsi_print_result);
