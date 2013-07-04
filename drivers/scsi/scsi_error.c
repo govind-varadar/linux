@@ -55,6 +55,33 @@ static void scsi_eh_done(struct scsi_cmnd *scmd);
 static int scsi_eh_try_stu(struct scsi_cmnd *scmd);
 static int scsi_try_to_abort_cmd(struct scsi_host_template *, struct scsi_cmnd *);
 
+int scsi_eh_vprintk_emit(const char *level, struct Scsi_Host *shost,
+			 const char *fmt, ...)
+{
+	char hdr[128];
+	size_t hdrlen = sizeof(hdr);
+	struct device *dev = &shost->shost_gendev;
+	size_t pos = 0;
+	va_list args;
+	int r;
+
+	pos += snprintf(hdr + pos, hdrlen - pos, "SUBSYSTEM=%s",
+			dev->class->name);
+
+	pos++;
+	pos += snprintf(hdr + pos, hdrlen - pos,
+			"DEVICE=+%s:%s", dev->class->name, dev_name(dev));
+
+	va_start(args, fmt);
+	r = vprintk_emit(0, level[1] - '0', hdr, pos, fmt, args);
+	va_end(args);
+	return r;
+}
+
+#define scsi_eh_printk(prefix, shost, fmt, a...) \
+	scsi_eh_vprintk_emit(prefix, shost, "scsi-eh%d: " fmt,	\
+			     (shost)->host_no, ##a)
+
 /* called with shost->host_lock held */
 void scsi_eh_wakeup(struct Scsi_Host *shost)
 {
@@ -1250,9 +1277,8 @@ static int scsi_eh_abort_cmds(struct list_head *work_q,
 			return list_empty(work_q);
 		}
 		spin_unlock_irqrestore(shost->host_lock, flags);
-		SCSI_LOG_ERROR_RECOVERY(3, printk("%s: aborting cmd:"
-						  "0x%p\n", current->comm,
-						  scmd));
+		SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO, shost,
+			"aborting cmd: ox%p\n", scmd));
 		rtn = scsi_try_to_abort_cmd(shost->hostt, scmd);
 		if (rtn == SUCCESS || rtn == FAST_IO_FAIL) {
 			scmd->eh_eflags &= ~SCSI_EH_CANCEL_CMD;
@@ -1261,11 +1287,8 @@ static int scsi_eh_abort_cmds(struct list_head *work_q,
 			else
 				list_move_tail(&scmd->eh_entry, &check_list);
 		} else
-			SCSI_LOG_ERROR_RECOVERY(3, printk("%s: aborting"
-							  " cmd failed:"
-							  "0x%p\n",
-							  current->comm,
-							  scmd));
+			SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO,
+				shost,"aborting cmd failed: 0x%p\n", scmd));
 	}
 
 	return scsi_eh_test_devices(&check_list, work_q, done_q, 0);
@@ -1335,8 +1358,8 @@ static int scsi_eh_stu(struct Scsi_Host *shost,
 		if (!stu_scmd)
 			continue;
 
-		SCSI_LOG_ERROR_RECOVERY(3, printk("%s: Sending START_UNIT to sdev:"
-						  " 0x%p\n", current->comm, sdev));
+		SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO, shost,
+			"Sending START_UNIT to sdev: 0x%p\n", sdev));
 
 		if (!scsi_eh_try_stu(stu_scmd)) {
 			if (!scsi_device_online(sdev) ||
@@ -1350,8 +1373,10 @@ static int scsi_eh_stu(struct Scsi_Host *shost,
 			}
 		} else {
 			SCSI_LOG_ERROR_RECOVERY(3,
-						printk("%s: START_UNIT failed to sdev:"
-						       " 0x%p\n", current->comm, sdev));
+				scsi_eh_printk(KERN_INFO, shost,
+					       "START_UNIT failed "
+					       "to sdev: 0x%p\n",
+					       sdev));
 		}
 	}
 
@@ -1401,9 +1426,8 @@ static int scsi_eh_bus_device_reset(struct Scsi_Host *shost,
 		if (!bdr_scmd)
 			continue;
 
-		SCSI_LOG_ERROR_RECOVERY(3, printk("%s: Sending BDR sdev:"
-						  " 0x%p\n", current->comm,
-						  sdev));
+		SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO, shost,
+			"Sending BDR sdev: 0x%p\n", sdev));
 		rtn = scsi_try_bus_device_reset(bdr_scmd);
 		if (rtn == SUCCESS || rtn == FAST_IO_FAIL) {
 			if (!scsi_device_online(sdev) ||
@@ -1418,11 +1442,8 @@ static int scsi_eh_bus_device_reset(struct Scsi_Host *shost,
 				}
 			}
 		} else {
-			SCSI_LOG_ERROR_RECOVERY(3, printk("%s: BDR"
-							  " failed sdev:"
-							  "0x%p\n",
-							  current->comm,
-							   sdev));
+			SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO,
+				shost, "BDR failed sdev: 0x%p\n", sdev));
 		}
 	}
 
@@ -1470,15 +1491,13 @@ static int scsi_eh_target_reset(struct Scsi_Host *shost,
 		scmd = list_entry(tmp_list.next, struct scsi_cmnd, eh_entry);
 		id = scmd_id(scmd);
 
-		SCSI_LOG_ERROR_RECOVERY(3, printk("%s: Sending target reset "
-						  "to target %d\n",
-						  current->comm, id));
+		SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO, shost,
+			"Sending target reset to target %d\n", id));
 		rtn = scsi_try_target_reset(scmd);
 		if (rtn != SUCCESS && rtn != FAST_IO_FAIL)
-			SCSI_LOG_ERROR_RECOVERY(3, printk("%s: Target reset"
-							  " failed target: "
-							  "%d\n",
-							  current->comm, id));
+			SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO,
+				shost, "Target reset failed target: %d\n",
+				id));
 		list_for_each_entry_safe(scmd, next, &tmp_list, eh_entry) {
 			if (scmd_id(scmd) != id)
 				continue;
@@ -1546,9 +1565,8 @@ static int scsi_eh_bus_reset(struct Scsi_Host *shost,
 
 		if (!chan_scmd)
 			continue;
-		SCSI_LOG_ERROR_RECOVERY(3, printk("%s: Sending BRST chan:"
-						  " %d\n", current->comm,
-						  channel));
+		SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO, shost,
+			"Sending BRST chan: %d\n", channel));
 		rtn = scsi_try_bus_reset(chan_scmd);
 		if (rtn == SUCCESS || rtn == FAST_IO_FAIL) {
 			list_for_each_entry_safe(scmd, next, work_q, eh_entry) {
@@ -1562,10 +1580,8 @@ static int scsi_eh_bus_reset(struct Scsi_Host *shost,
 				}
 			}
 		} else {
-			SCSI_LOG_ERROR_RECOVERY(3, printk("%s: BRST"
-							  " failed chan: %d\n",
-							  current->comm,
-							  channel));
+			SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO,
+				shost, "BRST failed chan: %d\n", channel));
 		}
 	}
 	return scsi_eh_test_devices(&check_list, work_q, done_q, 0);
@@ -1587,8 +1603,9 @@ static int scsi_eh_host_reset(struct list_head *work_q,
 		scmd = list_entry(work_q->next,
 				  struct scsi_cmnd, eh_entry);
 
-		SCSI_LOG_ERROR_RECOVERY(3, printk("%s: Sending HRST\n"
-						  , current->comm));
+		SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO,
+							  scmd->device->host,
+							  "Sending HRST\n"));
 
 		rtn = scsi_try_host_reset(scmd);
 		if (rtn == SUCCESS) {
@@ -1598,9 +1615,8 @@ static int scsi_eh_host_reset(struct list_head *work_q,
 					scsi_eh_finish_cmd(scmd, done_q);
 			}
 		} else {
-			SCSI_LOG_ERROR_RECOVERY(3, printk("%s: HRST"
-							  " failed\n",
-							  current->comm));
+			SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO,
+				scmd->device->host, "HRST failed\n"));
 		}
 	}
 	return scsi_eh_test_devices(&check_list, work_q, done_q, 1);
@@ -2002,11 +2018,10 @@ void scsi_eh_flush_done_q(struct list_head *done_q)
 		if (scsi_device_online(scmd->device) &&
 		    !scsi_noretry_cmd(scmd) &&
 		    (++scmd->retries <= scmd->allowed)) {
-			SCSI_LOG_ERROR_RECOVERY(3, printk("%s: flush"
-							  " retry cmd: %p\n",
-							  current->comm,
-							  scmd));
-				scsi_queue_insert(scmd, SCSI_MLQUEUE_EH_RETRY);
+			SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO,
+				scmd->device->host, "flush retry cmd: %p\n",
+				scmd));
+			scsi_queue_insert(scmd, SCSI_MLQUEUE_EH_RETRY);
 		} else {
 			/*
 			 * If just we got sense for the device (called
@@ -2015,9 +2030,9 @@ void scsi_eh_flush_done_q(struct list_head *done_q)
 			 */
 			if (!scmd->result)
 				scmd->result |= (DRIVER_TIMEOUT << 24);
-			SCSI_LOG_ERROR_RECOVERY(3, printk("%s: flush finish"
-							" cmd: %p\n",
-							current->comm, scmd));
+			SCSI_LOG_ERROR_RECOVERY(3, scsi_eh_printk(KERN_INFO,
+				scmd->device->host, "flush finish cmd: %p\n",
+				scmd));
 			scsi_finish_command(scmd);
 		}
 	}
@@ -2093,17 +2108,18 @@ int scsi_error_handler(void *data)
 		if ((shost->host_failed == 0 && shost->host_eh_scheduled == 0) ||
 		    shost->host_failed != shost->host_busy) {
 			SCSI_LOG_ERROR_RECOVERY(1,
-				printk("scsi_eh_%d: sleeping\n",
-					shost->host_no));
+				scsi_eh_printk(KERN_INFO, shost,
+					       "sleeping\n"));
 			schedule();
 			continue;
 		}
 
 		__set_current_state(TASK_RUNNING);
 		SCSI_LOG_ERROR_RECOVERY(1,
-			printk("scsi_eh_%d: waking up %d/%d/%d\n",
-			       shost->host_no, shost->host_eh_scheduled,
-			       shost->host_failed, shost->host_busy));
+			scsi_eh_printk(KERN_INFO, shost,
+				       "waking up %d/%d/%d\n",
+				       shost->host_eh_scheduled,
+				       shost->host_failed, shost->host_busy));
 
 		/*
 		 * We have a host that is failing for some reason.  Figure out
@@ -2112,9 +2128,8 @@ int scsi_error_handler(void *data)
 		 */
 		if (!shost->eh_noresume && scsi_autopm_get_host(shost) != 0) {
 			SCSI_LOG_ERROR_RECOVERY(1,
-				printk(KERN_ERR "Error handler scsi_eh_%d "
-						"unable to autoresume\n",
-						shost->host_no));
+				scsi_eh_printk(KERN_ERR, shost,
+					       "unable to autoresume\n"));
 			continue;
 		}
 
@@ -2137,7 +2152,7 @@ int scsi_error_handler(void *data)
 	__set_current_state(TASK_RUNNING);
 
 	SCSI_LOG_ERROR_RECOVERY(1,
-		printk("Error handler scsi_eh_%d exiting\n", shost->host_no));
+		scsi_eh_printk(KERN_INFO, shost, "exiting\n"));
 	shost->ehandler = NULL;
 	return 0;
 }
@@ -2287,8 +2302,9 @@ scsi_reset_provider(struct scsi_device *dev, int flag)
 	 * suspended while we performed the TMF.
 	 */
 	SCSI_LOG_ERROR_RECOVERY(3,
-		printk("%s: waking up host to restart after TMF\n",
-		__func__));
+		shost_printk(KERN_INFO, shost,
+			     "%s: waking up host to restart after TMF\n",
+			     __func__));
 
 	wake_up(&shost->host_wait);
 
