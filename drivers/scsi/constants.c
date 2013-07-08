@@ -1466,14 +1466,21 @@ EXPORT_SYMBOL(scsi_show_sense_hdr);
  * Print normalized SCSI sense header with a prefix.
  */
 void
-scsi_print_sense_hdr(const char *name, struct scsi_sense_hdr *sshdr)
+scsi_print_sense_hdr(struct scsi_device *sdev, const char *name,
+		     struct scsi_sense_hdr *sshdr)
 {
 	char linebuf[128];
 
 	scsi_show_sense_hdr(sshdr, linebuf, 128);
-	printk(KERN_INFO "%s: %s\n", name, linebuf);
+	if (name)
+		sdev_printk(KERN_INFO, sdev, "[%s] %s\n", name, linebuf);
+	else
+		sdev_printk(KERN_INFO, sdev, " %s\n", linebuf);
 	scsi_show_extd_sense(sshdr->asc, sshdr->ascq, linebuf, 128);
-	printk(KERN_INFO "%s: %s\n", name, linebuf);
+	if (name)
+		sdev_printk(KERN_INFO, sdev, "[%s] %s\n", name, linebuf);
+	else
+		sdev_printk(KERN_INFO, sdev, " %s\n", linebuf);
 }
 EXPORT_SYMBOL(scsi_print_sense_hdr);
 

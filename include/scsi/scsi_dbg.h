@@ -2,13 +2,15 @@
 #define _SCSI_SCSI_DBG_H
 
 struct scsi_cmnd;
+struct scsi_device;
 struct scsi_sense_hdr;
 
 extern void scsi_print_command(struct scsi_cmnd *);
 extern void __scsi_print_command(unsigned char *);
 extern void scsi_show_extd_sense(unsigned char, unsigned char, char *, int);
 extern int scsi_show_sense_hdr(struct scsi_sense_hdr *, char *, int);
-extern void scsi_print_sense_hdr(const char *, struct scsi_sense_hdr *);
+extern void scsi_print_sense_hdr(struct scsi_device *, const char *,
+				 struct scsi_sense_hdr *);
 extern void scsi_cmd_print_sense_hdr(struct scsi_cmnd *, const char *,
 				     struct scsi_sense_hdr *);
 extern void scsi_print_sense(char *, struct scsi_cmnd *);
