@@ -435,6 +435,41 @@ void __scsi_print_command(unsigned char *cdb)
 }
 EXPORT_SYMBOL(__scsi_print_command);
 
+void sdev_print_command(struct scsi_device *sdev, const char *prefix,
+			unsigned char *cdb)
+{
+	int cmd_len, i, len, linelen, remaining;
+	unsigned char linebuf[128];
+
+	cmd_len = scsi_command_size(cdb);
+	sprintf(linebuf, "[%s] ", prefix);
+	len = strlen(linebuf);
+	len += print_opcode_name(cdb, cmd_len,
+				 linebuf + len, sizeof(linebuf) - len);
+	if (cmd_len <= 16) {
+		strcat(linebuf, ": ");
+		len += 2;
+
+		hex_dump_to_buffer(cdb, cmd_len, 16, 1,
+				   linebuf + len, sizeof(linebuf) - len, false);
+		sdev_printk(KERN_INFO, sdev, "%s\n", linebuf);
+	} else {
+		/* print out all bytes in cdb */
+		sdev_printk(KERN_INFO, sdev, "%s\n", linebuf);
+		remaining = cmd_len;
+		for (i = 0; i < cmd_len; i += 16) {
+			linelen = min(remaining, 16);
+			remaining -= 16;
+
+			hex_dump_to_buffer(cdb + i, linelen, 16, 1,
+					   linebuf, sizeof(linebuf), false);
+
+			sdev_printk(KERN_INFO, sdev, "CDB: %s\n", linebuf);
+		}
+	}
+}
+EXPORT_SYMBOL(sdev_print_command);
+
 void scsi_print_command(struct scsi_cmnd *cmd)
 {
 	int i, len, linelen, remaining = cmd->cmd_len;

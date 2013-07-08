@@ -195,10 +195,8 @@ ch_do_scsi(scsi_changer *ch, unsigned char *cmd,
 
  retry:
 	errno = 0;
-	if (debug) {
-		DPRINTK("command: ");
-		__scsi_print_command(cmd);
-	}
+	if (debug)
+		sdev_print_command(ch->device, ch->name, cmd);
 
 	result = scsi_execute_req(ch->device, cmd, direction, buffer,
 				  buflength, &sshdr, timeout * HZ,
