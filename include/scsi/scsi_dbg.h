@@ -14,9 +14,8 @@ extern void scsi_print_sense_hdr(struct scsi_device *, const char *,
 extern void scsi_cmd_print_sense_hdr(struct scsi_cmnd *, const char *,
 				     struct scsi_sense_hdr *);
 extern void scsi_print_sense(char *, struct scsi_cmnd *);
-extern void __scsi_print_sense(const char *name,
-			       const unsigned char *sense_buffer,
-			       int sense_len);
+extern void __scsi_print_sense(struct scsi_device *, const char *,
+			       const unsigned char *, int);
 extern void scsi_show_result(int, char *, int);
 extern void scsi_print_result(struct scsi_cmnd *);
 extern void scsi_print_status(unsigned char);

@@ -1333,8 +1333,8 @@ static void sg_rq_end_io(struct request *rq, int uptodate)
 		if ((sdp->sgdebug > 0) &&
 		    ((CHECK_CONDITION == srp->header.masked_status) ||
 		     (COMMAND_TERMINATED == srp->header.masked_status)))
-			__scsi_print_sense("sg_cmd_done", sense,
-					   SCSI_SENSE_BUFFERSIZE);
+			__scsi_print_sense(sdp->device, "sg_cmd_done",
+					   sense, SCSI_SENSE_BUFFERSIZE);
 
 		/* Following if statement is a patch supplied by Eric Youngdale */
 		if (driver_byte(result) != 0

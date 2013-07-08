@@ -374,8 +374,8 @@ static int st_chk_result(struct scsi_tape *STp, struct st_request * SRpnt)
 			    SRpnt->cmd[0], SRpnt->cmd[1], SRpnt->cmd[2],
 			    SRpnt->cmd[3], SRpnt->cmd[4], SRpnt->cmd[5]);
 		if (cmdstatp->have_sense)
-			scsi_print_sense_hdr(STp->device, name,
-					     &cmdstatp->sense_hdr);
+			__scsi_print_sense(STp->device, name,
+					   SRpnt->sense, SCSI_SENSE_BUFFERSIZE);
 	} ) /* end DEB */
 	if (!debugging) { /* Abnormal conditions for tape */
 		if (!cmdstatp->have_sense)
@@ -391,8 +391,8 @@ static int st_chk_result(struct scsi_tape *STp, struct st_request * SRpnt)
 			 SRpnt->cmd[0] != MODE_SENSE &&
 			 SRpnt->cmd[0] != TEST_UNIT_READY) {
 
-			scsi_print_sense_hdr(STp->device, name,
-					     &cmdstatp->sense_hdr);
+			__scsi_print_sense(STp->device, name,
+					   SRpnt->sense, SCSI_SENSE_BUFFERSIZE);
 		}
 	}
 

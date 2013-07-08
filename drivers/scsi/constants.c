@@ -1537,39 +1537,49 @@ scsi_decode_fixed_format(const unsigned char *sense_buffer, int sense_len,
 }
 
 /* Normalize and print sense buffer with name prefix */
-void __scsi_print_sense(const char *name, const unsigned char *sense_buffer,
-			int sense_len)
+void __scsi_print_sense(struct scsi_device *sdev, const char *name,
+			const unsigned char *sense_buffer, int sense_len)
 {
 	struct scsi_sense_hdr sshdr;
 	char linebuf[128];
-	int res;
+	int res, i, linelen, remaining;
+	int num = (sense_len < 32) ? sense_len : 32;
 
 	res = scsi_normalize_sense(sense_buffer, sense_len, &sshdr);
 	if (0 == res) {
 		/* this may be SCSI-1 sense data */
-		int num = (sense_len < 32) ? sense_len : 32;
-		printk("%s: Unrecognized sense data (in hex):\n", name);
-		print_hex_dump(KERN_INFO, NULL, DUMP_PREFIX_NONE,
-			       16, 1, sense_buffer, num, false);
-		return;
+		sdev_printk(KERN_INFO, sdev,
+			    "%s: Unrecognized sense data (in hex):\n", name);
+		goto dump_sense;
 	}
 	scsi_show_sense_hdr(&sshdr, linebuf, 128);
-	printk(KERN_INFO "%s: %s\n", name, linebuf);
+	sdev_printk(KERN_INFO,sdev, "%s: %s\n", name, linebuf);
 
 	if (sshdr.response_code < 0x72) {
 		scsi_decode_fixed_format(sense_buffer, sense_len,
 					 linebuf, 128);
-		printk("%s\n", linebuf);
+		sdev_printk(KERN_INFO, sdev, "%s\n", linebuf);
 	} else if (sshdr.additional_length > 0) {
-		if (sense_len > sshdr.additional_length + 8)
-			sense_len = sshdr.additional_length + 8;
-		printk("Descriptor sense data with sense descriptors"
-		       " (in hex):\n");
-		print_hex_dump(KERN_INFO, NULL, DUMP_PREFIX_NONE,
-			       16, 1, sense_buffer, sense_len, false);
+		if (num > sshdr.additional_length + 8)
+			num = sshdr.additional_length + 8;
+		sdev_printk(KERN_INFO, sdev,
+			    "Descriptor sense data with sense descriptors"
+			    " (in hex):\n");
+		goto dump_sense;
 	}
 	scsi_show_extd_sense(sshdr.asc, sshdr.ascq, linebuf, 128);
-	printk(KERN_INFO "%s: %s\n", name, linebuf);
+	sdev_printk(KERN_INFO, sdev, "%s: %s\n", name, linebuf);
+	return;
+dump_sense:
+	remaining = num;
+	for (i = 0; i < num; i += 16) {
+		linelen = min(remaining, 16);
+		remaining -= 16;
+
+		hex_dump_to_buffer(sense_buffer + i, linelen, 16, 1,
+				   linebuf, sizeof(linebuf), false);
+		sdev_printk(KERN_INFO, sdev, "Sense: %s\n", linebuf);
+	}
 }
 EXPORT_SYMBOL(__scsi_print_sense);
 
