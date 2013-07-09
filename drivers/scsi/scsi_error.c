@@ -54,6 +54,56 @@ static void scsi_eh_done(struct scsi_cmnd *scmd);
 
 static int scsi_eh_try_stu(struct scsi_cmnd *scmd);
 
+void scsi_sense_emit(const char *level, struct scsi_cmnd *cmd,
+		    const char *fmt, ...)
+{
+	char *hdr;
+	size_t hdrlen = 512;
+	struct device *dev = &cmd->device->sdev_gendev;
+	va_list args;
+	size_t pos = 0;
+	int i, sense_len = 32;
+
+	hdr = kmalloc(hdrlen, GFP_ATOMIC);
+	if (!hdr)
+		return;
+
+	pos += snprintf(hdr + pos, hdrlen - pos, "SUBSYSTEM=scsi");
+	pos++;
+	pos += snprintf(hdr + pos, hdrlen - pos,
+			"DEVICE=+scsi:%s", dev_name(dev));
+
+	pos++;
+	pos += snprintf(hdr + pos, hdrlen - pos,
+			"SENSE_DATA=");
+	if (cmd->sense_buffer[0] == 0x70 ||
+	    cmd->sense_buffer[0] == 0x71) {
+		if (cmd->sense_buffer[7])
+			sense_len = cmd->sense_buffer[7] + 8;
+		else
+			sense_len = 14;
+	}
+	if (cmd->sense_buffer[0] == 0x72 ||
+	    cmd->sense_buffer[0] == 0x73) {
+		if (cmd->sense_buffer[7])
+			sense_len = cmd->sense_buffer[7] + 8;
+		else
+			sense_len = 4;
+	}
+	for (i = 0; i < sense_len; i++) {
+		pos += snprintf(hdr + pos, hdrlen - pos,
+				"%02x", cmd->sense_buffer[i]);
+		if (hdrlen <= pos)
+			break;
+	}
+	va_start(args, fmt);
+	vprintk_emit(0, level[1] - '0', hdr, pos, fmt, args);
+	va_end(args);
+	kfree(hdr);
+
+	return;
+}
+
 /* called with shost->host_lock held */
 void scsi_eh_wakeup(struct Scsi_Host *shost)
 {
@@ -238,6 +288,8 @@ static int scsi_check_sense(struct scsi_cmnd *scmd)
 {
 	struct scsi_device *sdev = scmd->device;
 	struct scsi_sense_hdr sshdr;
+
+	scsi_sense_emit(KERN_INFO, scmd, NULL);
 
 	if (! scsi_command_normalize_sense(scmd, &sshdr))
 		return FAILED;	/* no valid sense data */
