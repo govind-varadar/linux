@@ -939,6 +939,8 @@ static size_t msg_print_text(const struct log *msg, enum log_flags prev,
 			text_len = text_size;
 		}
 
+		if (!text_len)
+			break;
 		if (buf) {
 			if (print_prefix(msg, syslog, NULL) +
 			    text_len + 1 >= size - len)
@@ -997,7 +999,7 @@ static int syslog_print(char __user *buf, int size)
 		msg = log_from_idx(syslog_idx);
 		n = msg_print_text(msg, syslog_prev, true, text,
 				   LOG_LINE_MAX + PREFIX_MAX);
-		if (n - syslog_partial <= size) {
+		if (!n || n - syslog_partial <= size) {
 			/* message fits into buffer, move forward */
 			syslog_idx = log_next(syslog_idx);
 			syslog_seq++;
@@ -1500,7 +1502,7 @@ asmlinkage int vprintk_emit(int facility, int level,
 	static int recursion_bug;
 	static char textbuf[LOG_LINE_MAX];
 	char *text = textbuf;
-	size_t text_len;
+	size_t text_len = 0;
 	enum log_flags lflags = 0;
 	unsigned long flags;
 	int this_cpu;
@@ -1550,7 +1552,10 @@ asmlinkage int vprintk_emit(int facility, int level,
 	 * The printf needs to come first; we need the syslog
 	 * prefix which might be passed-in as a parameter.
 	 */
-	text_len = vscnprintf(text, sizeof(textbuf), fmt, args);
+	if (fmt)
+		text_len = vscnprintf(text, sizeof(textbuf), fmt, args);
+	else
+		text[0] = '\0';
 
 	/* mark and strip a trailing newline */
 	if (text_len && text[text_len-1] == '\n') {
@@ -2092,9 +2097,11 @@ skip:
 		console_prev = msg->flags;
 		raw_spin_unlock(&logbuf_lock);
 
-		stop_critical_timings();	/* don't trace print latency */
-		call_console_drivers(level, text, len);
-		start_critical_timings();
+		if (len) {
+			stop_critical_timings();	/* don't trace print latency */
+			call_console_drivers(level, text, len);
+			start_critical_timings();
+		}
 		local_irq_restore(flags);
 	}
 	console_locked = 0;
