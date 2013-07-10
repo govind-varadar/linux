@@ -165,9 +165,10 @@ void usb_stor_show_sense(const struct us_data *us,
 			 unsigned char ascq)
 {
 	const char *what, *keystr;
+	char *idstr = NULL;
 
 	keystr = scsi_sense_key_string(key);
-	what = scsi_extd_sense_format(asc, ascq);
+	what = scsi_extd_sense_format(asc, ascq, &idstr);
 
 	if (keystr == NULL)
 		keystr = "(Unknown Key)";

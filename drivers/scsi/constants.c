@@ -1330,16 +1330,17 @@ static const struct error_info additional[] =
 struct error_info2 {
 	unsigned char code1, code2_min, code2_max;
 	const char * fmt;
+	const char * id;
 };
 
 static const struct error_info2 additional2[] =
 {
-	{0x40, 0x00, 0x7f, "Ram failure (%x)"},
-	{0x40, 0x80, 0xff, "Diagnostic failure on component (%x)"},
-	{0x41, 0x00, 0xff, "Data path failure (%x)"},
-	{0x42, 0x00, 0xff, "Power-on or self-test failure (%x)"},
-	{0x4D, 0x00, 0xff, "Tagged overlapped commands (task tag %x)"},
-	{0x70, 0x00, 0xff, "Decompression exception short algorithm id of %x"},
+	{0x40, 0x00, 0x7f, "Ram failure"," should use 40"},
+	{0x40, 0x80, 0xff, "Diagnostic failure", "component"},
+	{0x41, 0x00, 0xff, "Data path failure", "should use 40"},
+	{0x42, 0x00, 0xff, "Power-on or self-test failure", "should use 40"},
+	{0x4D, 0x00, 0xff, "Tagged overlapped commands", "task tag"},
+	{0x70, 0x00, 0xff, "Decompression exception short algorithm", "id"},
 	{0, 0, 0, NULL}
 };
 
@@ -1386,19 +1387,23 @@ EXPORT_SYMBOL(scsi_sense_key_string);
  * This string may contain a "%x" and should be printed with ascq as arg.
  */
 const char *
-scsi_extd_sense_format(unsigned char asc, unsigned char ascq) {
+scsi_extd_sense_format(unsigned char asc, unsigned char ascq, const char **id) {
 #ifdef CONFIG_SCSI_CONSTANTS
 	int i;
 	unsigned short code = ((asc << 8) | ascq);
 
 	for (i = 0; additional[i].text; i++)
-		if (additional[i].code12 == code)
+		if (additional[i].code12 == code) {
+			*id = NULL;
 			return additional[i].text;
+		}
 	for (i = 0; additional2[i].fmt; i++) {
 		if (additional2[i].code1 == asc &&
 		    ascq >= additional2[i].code2_min &&
-		    ascq <= additional2[i].code2_max)
+		    ascq <= additional2[i].code2_max) {
+			*id = additional2[i].id;
 			return additional2[i].fmt;
+		}
 	}
 #endif
 	return NULL;
@@ -1406,49 +1411,54 @@ scsi_extd_sense_format(unsigned char asc, unsigned char ascq) {
 EXPORT_SYMBOL(scsi_extd_sense_format);
 
 void
-scsi_show_extd_sense(unsigned char asc, unsigned char ascq)
+scsi_show_extd_sense(unsigned char asc, unsigned char ascq,
+		     char *buf, int buf_len)
 {
-        const char *extd_sense_fmt = scsi_extd_sense_format(asc, ascq);
+	const char *idstr = NULL;
+	const char *extd_sense_fmt = scsi_extd_sense_format(asc, ascq, &idstr);
 
 	if (extd_sense_fmt) {
-		if (strstr(extd_sense_fmt, "%x")) {
-			printk("Add. Sense: ");
-			printk(extd_sense_fmt, ascq);
-		} else
-			printk("Add. Sense: %s", extd_sense_fmt);
+		if (idstr)
+			scnprintf(buf, buf_len, "Add. Sense: %s (%s %x)",
+				  extd_sense_fmt, idstr, ascq);
+		else
+			scnprintf(buf, buf_len, "Add. Sense: %s",
+				  extd_sense_fmt);
 	} else {
 		if (asc >= 0x80)
-			printk("<<vendor>> ASC=0x%x ASCQ=0x%x", asc,
-			       ascq);
+			scnprintf(buf, buf_len,
+				  "<<vendor>> ASC=0x%x ASCQ=0x%x", asc, ascq);
 		if (ascq >= 0x80)
-			printk("ASC=0x%x <<vendor>> ASCQ=0x%x", asc,
-			       ascq);
+			scnprintf(buf, buf_len,
+				  "ASC=0x%x <<vendor>> ASCQ=0x%x", asc, ascq);
 		else
-			printk("ASC=0x%x ASCQ=0x%x", asc, ascq);
+			scnprintf(buf, buf_len, "ASC=0x%x ASCQ=0x%x",
+				  asc, ascq);
 	}
-
-	printk("\n");
 }
 EXPORT_SYMBOL(scsi_show_extd_sense);
 
-void
-scsi_show_sense_hdr(struct scsi_sense_hdr *sshdr)
+int
+scsi_show_sense_hdr(struct scsi_sense_hdr *sshdr, char *buf, int buflen)
 {
 	const char *sense_txt;
+	int off = 0;
 
 	sense_txt = scsi_sense_key_string(sshdr->sense_key);
 	if (sense_txt)
-		printk("Sense Key : %s ", sense_txt);
+		off = snprintf(buf, buflen, "Sense Key : %s", sense_txt);
 	else
-		printk("Sense Key : 0x%x ", sshdr->sense_key);
+		off = snprintf(buf, buflen, "Sense Key : 0x%x",
+			       sshdr->sense_key);
 
-	printk("%s", scsi_sense_is_deferred(sshdr) ? "[deferred] " :
-	       "[current] ");
+	off += scnprintf(buf + off, buflen - off, " [%s]",
+			 scsi_sense_is_deferred(sshdr) ?
+			 "deferred" : "current");
 
 	if (sshdr->response_code >= 0x72)
-		printk("[descriptor]");
+		off += scnprintf(buf + off, buflen - off, " [descriptor]");
 
-	printk("\n");
+	return off;
 }
 EXPORT_SYMBOL(scsi_show_sense_hdr);
 
@@ -1458,10 +1468,12 @@ EXPORT_SYMBOL(scsi_show_sense_hdr);
 void
 scsi_print_sense_hdr(const char *name, struct scsi_sense_hdr *sshdr)
 {
-	printk(KERN_INFO "%s: ", name);
-	scsi_show_sense_hdr(sshdr);
-	printk(KERN_INFO "%s: ", name);
-	scsi_show_extd_sense(sshdr->asc, sshdr->ascq);
+	char linebuf[128];
+
+	scsi_show_sense_hdr(sshdr, linebuf, 128);
+	printk(KERN_INFO "%s: %s\n", name, linebuf);
+	scsi_show_extd_sense(sshdr->asc, sshdr->ascq, linebuf, 128);
+	printk(KERN_INFO "%s: %s\n", name, linebuf);
 }
 EXPORT_SYMBOL(scsi_print_sense_hdr);
 
@@ -1472,95 +1484,49 @@ void
 scsi_cmd_print_sense_hdr(struct scsi_cmnd *scmd, const char *desc,
 			  struct scsi_sense_hdr *sshdr)
 {
-	scmd_printk(KERN_INFO, scmd, "%s: ", desc);
-	scsi_show_sense_hdr(sshdr);
-	scmd_printk(KERN_INFO, scmd, "%s: ", desc);
-	scsi_show_extd_sense(sshdr->asc, sshdr->ascq);
+	char linebuf[128];
+
+	scsi_show_sense_hdr(sshdr, linebuf, 128);
+	scmd_printk(KERN_INFO, scmd, "%s: %s\n", desc, linebuf);
+	scsi_show_extd_sense(sshdr->asc, sshdr->ascq, linebuf, 128);
+	scmd_printk(KERN_INFO, scmd, "%s: %s\n", desc, linebuf);
 }
 EXPORT_SYMBOL(scsi_cmd_print_sense_hdr);
 
-static void
-scsi_decode_sense_buffer(const unsigned char *sense_buffer, int sense_len,
-		       struct scsi_sense_hdr *sshdr)
+static int
+scsi_decode_fixed_format(const unsigned char *sense_buffer, int sense_len,
+			 char *buff, int blen)
 {
-	int k, num, res;
+	int res = 0;
+	int fixed_valid;
+	unsigned int info;
 
-	res = scsi_normalize_sense(sense_buffer, sense_len, sshdr);
-	if (0 == res) {
-		/* this may be SCSI-1 sense data */
-		num = (sense_len < 32) ? sense_len : 32;
-		printk("Unrecognized sense data (in hex):");
-		for (k = 0; k < num; ++k) {
-			if (0 == (k % 16)) {
-				printk("\n");
-				printk(KERN_INFO "        ");
-			}
-			printk("%02x ", sense_buffer[k]);
-		}
-		printk("\n");
-		return;
-	}
-}
-
-static void
-scsi_decode_sense_extras(const unsigned char *sense_buffer, int sense_len,
-			 struct scsi_sense_hdr *sshdr)
-{
-	int k, num, res;
-
-	if (sshdr->response_code < 0x72)
-	{
-		/* only decode extras for "fixed" format now */
-		char buff[80];
-		int blen, fixed_valid;
-		unsigned int info;
-
-		fixed_valid = sense_buffer[0] & 0x80;
-		info = ((sense_buffer[3] << 24) | (sense_buffer[4] << 16) |
-			(sense_buffer[5] << 8) | sense_buffer[6]);
-		res = 0;
-		memset(buff, 0, sizeof(buff));
-		blen = sizeof(buff) - 1;
-		if (fixed_valid)
-			res += snprintf(buff + res, blen - res,
-					"Info fld=0x%x", info);
-		if (sense_buffer[2] & 0x80) {
-			/* current command has read a filemark */
-			if (res > 0)
-				res += snprintf(buff + res, blen - res, ", ");
-			res += snprintf(buff + res, blen - res, "FMK");
-		}
-		if (sense_buffer[2] & 0x40) {
-			/* end-of-medium condition exists */
-			if (res > 0)
-				res += snprintf(buff + res, blen - res, ", ");
-			res += snprintf(buff + res, blen - res, "EOM");
-		}
-		if (sense_buffer[2] & 0x20) {
-			/* incorrect block length requested */
-			if (res > 0)
-				res += snprintf(buff + res, blen - res, ", ");
-			res += snprintf(buff + res, blen - res, "ILI");
-		}
+	fixed_valid = sense_buffer[0] & 0x80;
+	info = ((sense_buffer[3] << 24) | (sense_buffer[4] << 16) |
+		(sense_buffer[5] << 8) | sense_buffer[6]);
+	memset(buff, 0, blen);
+	if (fixed_valid)
+		res += snprintf(buff + res, blen - res,
+				"Info fld=0x%x", info);
+	if (sense_buffer[2] & 0x80) {
+		/* current command has read a filemark */
 		if (res > 0)
-			printk("%s\n", buff);
-	} else if (sshdr->additional_length > 0) {
-		/* descriptor format with sense descriptors */
-		num = 8 + sshdr->additional_length;
-		num = (sense_len < num) ? sense_len : num;
-		printk("Descriptor sense data with sense descriptors "
-		       "(in hex):");
-		for (k = 0; k < num; ++k) {
-			if (0 == (k % 16)) {
-				printk("\n");
-				printk(KERN_INFO "        ");
-			}
-			printk("%02x ", sense_buffer[k]);
-		}
-
-		printk("\n");
+			res += snprintf(buff + res, blen - res, ", ");
+		res += snprintf(buff + res, blen - res, "FMK");
 	}
-
+	if (sense_buffer[2] & 0x40) {
+		/* end-of-medium condition exists */
+		if (res > 0)
+			res += snprintf(buff + res, blen - res, ", ");
+		res += snprintf(buff + res, blen - res, "EOM");
+	}
+	if (sense_buffer[2] & 0x20) {
+		/* incorrect block length requested */
+		if (res > 0)
+			res += snprintf(buff + res, blen - res, ", ");
+		res += snprintf(buff + res, blen - res, "ILI");
+	}
+	return res;
 }
 
 /* Normalize and print sense buffer with name prefix */
@@ -1568,13 +1534,35 @@ void __scsi_print_sense(const char *name, const unsigned char *sense_buffer,
 			int sense_len)
 {
 	struct scsi_sense_hdr sshdr;
+	char linebuf[128];
+	int res;
 
-	printk(KERN_INFO "%s: ", name);
-	scsi_decode_sense_buffer(sense_buffer, sense_len, &sshdr);
-	scsi_show_sense_hdr(&sshdr);
-	scsi_decode_sense_extras(sense_buffer, sense_len, &sshdr);
-	printk(KERN_INFO "%s: ", name);
-	scsi_show_extd_sense(sshdr.asc, sshdr.ascq);
+	res = scsi_normalize_sense(sense_buffer, sense_len, &sshdr);
+	if (0 == res) {
+		/* this may be SCSI-1 sense data */
+		int num = (sense_len < 32) ? sense_len : 32;
+		printk("%s: Unrecognized sense data (in hex):\n", name);
+		print_hex_dump(KERN_INFO, NULL, DUMP_PREFIX_NONE,
+			       16, 1, sense_buffer, num, false);
+		return;
+	}
+	scsi_show_sense_hdr(&sshdr, linebuf, 128);
+	printk(KERN_INFO "%s: %s\n", name, linebuf);
+
+	if (sshdr.response_code < 0x72) {
+		scsi_decode_fixed_format(sense_buffer, sense_len,
+					 linebuf, 128);
+		printk("%s\n", linebuf);
+	} else if (sshdr.additional_length > 0) {
+		if (sense_len > sshdr.additional_length + 8)
+			sense_len = sshdr.additional_length + 8;
+		printk("Descriptor sense data with sense descriptors"
+		       " (in hex):\n");
+		print_hex_dump(KERN_INFO, NULL, DUMP_PREFIX_NONE,
+			       16, 1, sense_buffer, sense_len, false);
+	}
+	scsi_show_extd_sense(sshdr.asc, sshdr.ascq, linebuf, 128);
+	printk(KERN_INFO "%s: %s\n", name, linebuf);
 }
 EXPORT_SYMBOL(__scsi_print_sense);
 
@@ -1582,15 +1570,46 @@ EXPORT_SYMBOL(__scsi_print_sense);
 void scsi_print_sense(char *name, struct scsi_cmnd *cmd)
 {
 	struct scsi_sense_hdr sshdr;
+	int sense_len = SCSI_SENSE_BUFFERSIZE;
+	char linebuf[128];
+	int res, i, linelen, remaining;
 
-	scmd_printk(KERN_INFO, cmd, " ");
-	scsi_decode_sense_buffer(cmd->sense_buffer, SCSI_SENSE_BUFFERSIZE,
-				 &sshdr);
-	scsi_show_sense_hdr(&sshdr);
-	scsi_decode_sense_extras(cmd->sense_buffer, SCSI_SENSE_BUFFERSIZE,
-				 &sshdr);
-	scmd_printk(KERN_INFO, cmd, " ");
-	scsi_show_extd_sense(sshdr.asc, sshdr.ascq);
+	res = scsi_normalize_sense(cmd->sense_buffer, SCSI_SENSE_BUFFERSIZE,
+				   &sshdr);
+	if (0 == res) {
+		/* this may be SCSI-1 sense data */
+		scmd_printk(KERN_INFO, cmd,
+			    "Unrecognized sense data (in hex):\n");
+		goto dump_sense;
+	}
+	scsi_show_sense_hdr(&sshdr, linebuf, 128);
+	scmd_printk(KERN_INFO, cmd, " %s\n", linebuf);
+	if (sshdr.response_code < 0x72) {
+		scsi_decode_fixed_format(cmd->sense_buffer,
+					 SCSI_SENSE_BUFFERSIZE, linebuf, 128);
+		scmd_printk(KERN_INFO, cmd, "%s\n", linebuf);
+	} else if (sshdr.additional_length > 0) {
+		if (sense_len > sshdr.additional_length + 8)
+			sense_len = sshdr.additional_length + 8;
+		scmd_printk(KERN_INFO, cmd,
+			    "Descriptor sense data with sense descriptors"
+			    " (in hex):\n");
+		goto dump_sense;
+	}
+	scsi_show_extd_sense(sshdr.asc, sshdr.ascq, linebuf, 128);
+	scmd_printk(KERN_INFO, cmd, " %s\n", linebuf);
+	return;
+dump_sense:
+	remaining = sense_len;
+	for (i = 0; i < sense_len; i += 16) {
+		linelen = min(remaining, 16);
+		remaining -= 16;
+
+		hex_dump_to_buffer(cmd->sense_buffer + i, linelen, 16, 1,
+				   linebuf, sizeof(linebuf), false);
+		scmd_printk(KERN_INFO, cmd, "Sense: %s\n", linebuf);
+	}
+
 }
 EXPORT_SYMBOL(scsi_print_sense);
 
