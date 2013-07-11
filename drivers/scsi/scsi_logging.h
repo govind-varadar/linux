@@ -41,7 +41,7 @@ extern unsigned int scsi_logging_level;
 #ifdef CONFIG_SCSI_LOGGING
 
 #define SCSI_LOG_LEVEL(SHIFT, BITS)				\
-        ((scsi_logging_level >> (SHIFT)) & ((1 << (BITS)) - 1))
+	((scsi_logging_level >> (SHIFT)) & ((1 << (BITS)) - 1))
 
 #define SCSI_CHECK_LOGGING(SHIFT, BITS, LEVEL, CMD)		\
 do {								\
@@ -81,6 +81,10 @@ do {								\
 } while (0)
 #else
 #define SCSI_CHECK_LOGGING(SHIFT, BITS, LEVEL, CMD)
+#define SHOST_CHECK_LOGGING(SHIFT, BITS, PRIO, SHOST, LEVEL, FMT, ARGS...)
+#define STARGET_CHECK_LOGGING(SHIFT, BITS, PRIO, STARGET, LEVEL, FMT, ARGS...)
+#define SDEV_CHECK_LOGGING(SHIFT, BITS, PRIO, SDEV, LEVEL, FMT, ARGS...)
+#define SCMD_CHECK_LOGGING(SHIFT, BITS, PRIO, SCMD, LEVEL, FMT, ARGS...)
 #endif /* CONFIG_SCSI_LOGGING */
 
 /*
