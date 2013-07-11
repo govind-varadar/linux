@@ -557,9 +557,9 @@ static int scsi_probe_lun(struct scsi_device *sdev, unsigned char *inq_result,
 	pass = 1;
 
  next_pass:
-	SCSI_LOG_SCAN_BUS(3, sdev_printk(KERN_INFO, sdev,
-				"scsi scan: INQUIRY pass %d length %d\n",
-				pass, try_inquiry_len));
+	SDEV_LOG_SCAN_BUS(3, KERN_INFO, sdev,
+			  "scsi scan: INQUIRY pass %d length %d\n",
+			  pass, try_inquiry_len);
 
 	/* Each pass gets up to three chances to ignore Unit Attention */
 	for (count = 0; count < 3; ++count) {
@@ -576,9 +576,9 @@ static int scsi_probe_lun(struct scsi_device *sdev, unsigned char *inq_result,
 					  HZ / 2 + HZ * scsi_inq_timeout, 3,
 					  &resid);
 
-		SCSI_LOG_SCAN_BUS(3, sdev_printk(KERN_INFO, sdev,
-				"scsi scan: INQUIRY %s with code 0x%x\n",
-				result ? "failed" : "successful", result));
+		SDEV_LOG_SCAN_BUS(3, KERN_INFO, sdev,
+				  "scsi scan: INQUIRY %s with code 0x%x\n",
+				  result ? "failed" : "successful", result);
 
 		if (result) {
 			/*
@@ -1024,9 +1024,9 @@ static int scsi_probe_and_add_lun(struct scsi_target *starget,
 	sdev = scsi_device_lookup_by_target(starget, lun);
 	if (sdev) {
 		if (rescan || !scsi_device_created(sdev)) {
-			SCSI_LOG_SCAN_BUS(3, sdev_printk(KERN_INFO, sdev,
-				"scsi scan: device exists on %s\n",
-				dev_name(&sdev->sdev_gendev)));
+			SDEV_LOG_SCAN_BUS(3, KERN_INFO, sdev,
+					  "scsi scan: device exists on %s\n",
+					  dev_name(&sdev->sdev_gendev));
 			if (sdevp)
 				*sdevp = sdev;
 			else
@@ -1068,21 +1068,18 @@ static int scsi_probe_and_add_lun(struct scsi_target *starget,
 		 * logical disk configured at sdev->lun, but there
 		 * is a target id responding.
 		 */
-		SCSI_LOG_SCAN_BUS(2, sdev_printk(KERN_INFO, sdev, "scsi scan:"
-				   " peripheral qualifier of 3, device not"
-				   " added\n"))
+		SDEV_LOG_SCAN_BUS(2, KERN_INFO, sdev,"scsi scan:"
+				  " peripheral qualifier of 3, device not"
+				  " added\n");
 		if (lun == 0) {
-			SCSI_LOG_SCAN_BUS(1, {
-				unsigned char vend[9];
-				unsigned char mod[17];
-
-				sdev_printk(KERN_INFO, sdev,
-					"scsi scan: consider passing scsi_mod."
-					"dev_flags=%s:%s:0x240 or 0x1000240\n",
-					scsi_inq_str(vend, result, 8, 16),
-					scsi_inq_str(mod, result, 16, 32));
-			});
-
+			unsigned char vend[9];
+			unsigned char mod[17];
+			SDEV_LOG_SCAN_BUS(1, KERN_INFO, sdev,
+					  "scsi scan: consider passing"
+					  " scsi_mod.dev_flags=%s:%s:0x240"
+					  " or 0x1000240\n",
+					  scsi_inq_str(vend, result, 8, 16),
+					  scsi_inq_str(mod, result, 16, 32));
 		}
 
 		res = SCSI_SCAN_TARGET_PRESENT;
@@ -1111,9 +1108,9 @@ static int scsi_probe_and_add_lun(struct scsi_target *starget,
 	if (((result[0] >> 5) == 1 || starget->pdt_1f_for_no_lun) &&
 	    (result[0] & 0x1f) == 0x1f &&
 	    !scsi_is_wlun(lun)) {
-		SCSI_LOG_SCAN_BUS(3, sdev_printk(KERN_INFO, sdev,
-					"scsi scan: peripheral device type"
-					" of 31, no device added\n"));
+		SDEV_LOG_SCAN_BUS(3, KERN_INFO, sdev,
+				  "scsi scan: peripheral device type"
+				  " of 31, no device added\n");
 		res = SCSI_SCAN_TARGET_PRESENT;
 		goto out_free_result;
 	}
@@ -1164,8 +1161,8 @@ static void scsi_sequential_lun_scan(struct scsi_target *starget,
 	unsigned int sparse_lun, lun, max_dev_lun;
 	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
 
-	SCSI_LOG_SCAN_BUS(3, starget_printk(KERN_INFO, starget,
-		"scsi scan: Sequential scan\n"));
+	STARGET_LOG_SCAN_BUS(3, KERN_INFO, starget,
+			     "scsi scan: Sequential scan\n");
 
 	max_dev_lun = min(max_scsi_luns, shost->max_lun);
 	/*
@@ -1402,17 +1399,18 @@ static int scsi_report_lun_scan(struct scsi_target *starget, int bflags,
 	 * a retry.
 	 */
 	for (retries = 0; retries < 3; retries++) {
-		SCSI_LOG_SCAN_BUS(3, sdev_printk (KERN_INFO, sdev,
-				"scsi scan: Sending REPORT LUNS (try %d)\n",
-				retries));
+		SDEV_LOG_SCAN_BUS(3, KERN_INFO, sdev,
+				  "scsi scan: Sending REPORT LUNS (try %d)\n",
+				  retries);
 
 		result = scsi_execute_req(sdev, scsi_cmd, DMA_FROM_DEVICE,
 					  lun_data, length, &sshdr,
 					  SCSI_TIMEOUT + 4 * HZ, 3, NULL);
 
-		SCSI_LOG_SCAN_BUS(3, sdev_printk (KERN_INFO, sdev,
-				"REPORT LUNS %s (try %d) result 0x%x\n", result
-				?  "failed" : "successful", retries, result));
+		SDEV_LOG_SCAN_BUS(3, KERN_INFO, sdev,
+				  "REPORT LUNS %s (try %d) result 0x%x\n",
+				  result ?  "failed" : "successful",
+				  retries, result);
 		if (result == 0)
 			break;
 		else if (scsi_sense_valid(&sshdr)) {
@@ -1446,8 +1444,8 @@ static int scsi_report_lun_scan(struct scsi_target *starget, int bflags,
 		num_luns = max_scsi_report_luns;
 	}
 
-	SCSI_LOG_SCAN_BUS(3, sdev_printk (KERN_INFO, sdev,
-		"scsi scan: REPORT LUN scan\n"));
+	SDEV_LOG_SCAN_BUS(3, KERN_INFO, sdev,
+			  "scsi scan: REPORT LUN scan\n");
 
 	/*
 	 * Scan the luns in lun_data. The entry at offset 0 is really
@@ -1685,9 +1683,9 @@ static void scsi_scan_channel(struct Scsi_Host *shost, unsigned int channel,
 int scsi_scan_host_selected(struct Scsi_Host *shost, unsigned int channel,
 			    unsigned int id, unsigned int lun, int rescan)
 {
-	SCSI_LOG_SCAN_BUS(3, shost_printk (KERN_INFO, shost,
-		"%s: <%u:%u:%u>\n",
-		__func__, channel, id, lun));
+	SHOST_LOG_SCAN_BUS(3, KERN_INFO, shost,
+			   "%s: <%u:%u:%u>\n",
+			   __func__, channel, id, lun);
 
 	if (((channel != SCAN_WILD_CARD) && (channel > shost->max_channel)) ||
 	    ((id != SCAN_WILD_CARD) && (id >= shost->max_id)) ||
