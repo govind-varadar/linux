@@ -2208,12 +2208,10 @@ scsi_device_set_state(struct scsi_device *sdev, enum scsi_device_state state)
 	return 0;
 
  illegal:
-	SCSI_LOG_ERROR_RECOVERY(1,
-				sdev_printk(KERN_ERR, sdev,
-					    "Illegal state transition %s->%s\n",
-					    scsi_device_state_name(oldstate),
-					    scsi_device_state_name(state))
-				);
+	SDEV_LOG_ERROR_RECOVERY(1, KERN_ERR, sdev,
+				"Illegal state transition %s->%s\n",
+				scsi_device_state_name(oldstate),
+				scsi_device_state_name(state));
 	return -EINVAL;
 }
 EXPORT_SYMBOL(scsi_device_set_state);
