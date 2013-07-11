@@ -894,19 +894,16 @@ static int sd_prep_fn(struct request_queue *q, struct request *rq)
 	 * is used for a killable error condition */
 	ret = BLKPREP_KILL;
 
-	SCSI_LOG_HLQUEUE(1, scmd_printk(KERN_INFO, SCpnt,
-					"sd_prep_fn: block=%llu, "
-					"count=%d\n",
-					(unsigned long long)block,
-					this_count));
+	SCMD_LOG_HLQUEUE(1, KERN_INFO, SCpnt,
+			 "sd_prep_fn: block=%llu, count=%d\n",
+			 (unsigned long long)block, this_count);
 
 	if (!sdp || !scsi_device_online(sdp) ||
 	    block + blk_rq_sectors(rq) > get_capacity(disk)) {
-		SCSI_LOG_HLQUEUE(2, scmd_printk(KERN_INFO, SCpnt,
-						"Finishing %u sectors\n",
-						blk_rq_sectors(rq)));
-		SCSI_LOG_HLQUEUE(2, scmd_printk(KERN_INFO, SCpnt,
-						"Retry with 0x%p\n", SCpnt));
+		SCMD_LOG_HLQUEUE(2, KERN_INFO, SCpnt,
+				 "Finishing %u sectors\n", blk_rq_sectors(rq));
+		SCMD_LOG_HLQUEUE(2, KERN_INFO, SCpnt,
+				 "Retry with 0x%p\n", SCpnt);
 		goto out;
 	}
 
@@ -936,8 +933,8 @@ static int sd_prep_fn(struct request_queue *q, struct request *rq)
 		}
 	}
 
-	SCSI_LOG_HLQUEUE(2, scmd_printk(KERN_INFO, SCpnt, "block=%llu\n",
-					(unsigned long long)block));
+	SCMD_LOG_HLQUEUE(2, KERN_INFO, SCpnt, "block=%llu\n",
+			 (unsigned long long)block);
 
 	/*
 	 * If we have a 1K hardware sectorsize, prevent access to single
@@ -998,11 +995,10 @@ static int sd_prep_fn(struct request_queue *q, struct request *rq)
 		goto out;
 	}
 
-	SCSI_LOG_HLQUEUE(2, scmd_printk(KERN_INFO, SCpnt,
-					"%s %d/%u 512 byte blocks.\n",
-					(rq_data_dir(rq) == WRITE) ?
-					"writing" : "reading", this_count,
-					blk_rq_sectors(rq)));
+	SCMD_LOG_HLQUEUE(2, KERN_INFO, SCpnt, "%s %d/%u 512 byte blocks.\n",
+			 (rq_data_dir(rq) == WRITE) ?
+			 "writing" : "reading", this_count,
+			 blk_rq_sectors(rq));
 
 	/* Set RDPROTECT/WRPROTECT if disk is formatted with DIF */
 	host_dif = scsi_host_dif_capable(sdp->host, sdkp->protection_type);
@@ -1145,7 +1141,7 @@ static int sd_open(struct block_device *bdev, fmode_t mode)
 	if (!sdkp)
 		return -ENXIO;
 
-	SCSI_LOG_HLQUEUE(3, sd_printk(KERN_INFO, sdkp, "sd_open\n"));
+	SD_LOG_HLQUEUE(3, KERN_INFO, sdkp, "sd_open\n");
 
 	sdev = sdkp->device;
 
@@ -1215,7 +1211,7 @@ static void sd_release(struct gendisk *disk, fmode_t mode)
 	struct scsi_disk *sdkp = scsi_disk(disk);
 	struct scsi_device *sdev = sdkp->device;
 
-	SCSI_LOG_HLQUEUE(3, sd_printk(KERN_INFO, sdkp, "sd_release\n"));
+	SD_LOG_HLQUEUE(3, KERN_INFO, sdkp, "sd_release\n");
 
 	if (atomic_dec_return(&sdkp->openers) == 0 && sdev->removable) {
 		if (scsi_block_when_processing_errors(sdev))
@@ -1362,7 +1358,7 @@ static unsigned int sd_check_events(struct gendisk *disk, unsigned int clearing)
 	struct scsi_sense_hdr *sshdr = NULL;
 	int retval;
 
-	SCSI_LOG_HLQUEUE(3, sd_printk(KERN_INFO, sdkp, "sd_check_events\n"));
+	SD_LOG_HLQUEUE(3, KERN_INFO, sdkp, "sd_check_events\n");
 
 	/*
 	 * If the device is offline, don't send any commands - just pretend as
@@ -1652,14 +1648,15 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 			sense_deferred = scsi_sense_is_deferred(&sshdr);
 	}
 #ifdef CONFIG_SCSI_LOGGING
-	SCSI_LOG_HLCOMPLETE(1, scsi_print_result(SCpnt));
-	if (sense_valid) {
-		SCSI_LOG_HLCOMPLETE(1, scmd_printk(KERN_INFO, SCpnt,
-						   "sd_done: sb[respc,sk,asc,"
-						   "ascq]=%x,%x,%x,%x\n",
-						   sshdr.response_code,
-						   sshdr.sense_key, sshdr.asc,
-						   sshdr.ascq));
+	if (unlikely(scsi_logging_level)) {
+		int level = SCSI_LOG_LEVEL(SCSI_LOG_HLCOMPLETE_SHIFT,
+					   SCSI_LOG_HLCOMPLETE_BITS);
+		if (level > 1) {
+			sd_print_result(sdkp, SCpnt->result);
+			if (sense_valid)
+				scsi_cmd_print_sense_hdr(SCpnt, "sd_done",
+							 &sshdr);
+		}
 	}
 #endif
 	if (driver_byte(result) != DRIVER_SENSE &&
@@ -2692,8 +2689,7 @@ static int sd_revalidate_disk(struct gendisk *disk)
 	unsigned char *buffer;
 	unsigned flush = 0;
 
-	SCSI_LOG_HLQUEUE(3, sd_printk(KERN_INFO, sdkp,
-				      "sd_revalidate_disk\n"));
+	SD_LOG_HLQUEUE(3, KERN_INFO, sdkp, "sd_revalidate_disk\n");
 
 	/*
 	 * If the device is offline, don't try and read capacity or any
@@ -2909,8 +2905,7 @@ static int sd_probe(struct device *dev)
 	if (sdp->type != TYPE_DISK && sdp->type != TYPE_MOD && sdp->type != TYPE_RBC)
 		goto out;
 
-	SCSI_LOG_HLQUEUE(3, sdev_printk(KERN_INFO, sdp,
-					"sd_probe\n"));
+	SDEV_LOG_HLQUEUE(3, KERN_INFO, sdp, "sd_probe\n");
 
 	error = -ENOMEM;
 	sdkp = kzalloc(sizeof(*sdkp), GFP_KERNEL);

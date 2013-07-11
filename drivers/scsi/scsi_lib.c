@@ -846,9 +846,9 @@ void scsi_io_completion(struct scsi_cmnd *cmd, unsigned int good_bytes)
 	 * Next deal with any sectors which we were able to correctly
 	 * handle.
 	 */
-	SCSI_LOG_HLCOMPLETE(1, scmd_printk(KERN_INFO, cmd,
-		"%u sectors total, %d bytes done.\n",
-		blk_rq_sectors(req), good_bytes));
+	SCMD_LOG_HLCOMPLETE(1, KERN_INFO, cmd,
+			    "%u sectors total, %d bytes done.\n",
+			    blk_rq_sectors(req), good_bytes);
 
 	/*
 	 * Recovered errors need reporting, but they're always treated

@@ -408,14 +408,14 @@ static int sr_prep_fn(struct request_queue *q, struct request *rq)
 	 * is used for a killable error condition */
 	ret = BLKPREP_KILL;
 
-	SCSI_LOG_HLQUEUE(1, scmd_printk(KERN_INFO, SCpnt,
-		"Doing sr request, block = %d\n", block));
+	SCMD_LOG_HLQUEUE(1, KERN_INFO, SCpnt,
+			 "Doing sr request, block = %d\n", block);
 
 	if (!cd->device || !scsi_device_online(cd->device)) {
-		SCSI_LOG_HLQUEUE(2, scmd_printk(KERN_INFO, SCpnt,
-			"Finishing %u sectors\n", blk_rq_sectors(rq)));
-		SCSI_LOG_HLQUEUE(2, scmd_printk(KERN_INFO, SCpnt,
-			"Retry with 0x%p\n", SCpnt));
+		SCMD_LOG_HLQUEUE(2, KERN_INFO, SCpnt,
+				 "Finishing %u sectors\n", blk_rq_sectors(rq));
+		SCMD_LOG_HLQUEUE(2, KERN_INFO, SCpnt,
+				 "Retry with 0x%p\n", SCpnt);
 		goto out;
 	}
 
@@ -487,11 +487,11 @@ static int sr_prep_fn(struct request_queue *q, struct request *rq)
 	this_count = (scsi_bufflen(SCpnt) >> 9) / (s_size >> 9);
 
 
-	SCSI_LOG_HLQUEUE(2, scmd_printk(KERN_INFO, SCpnt,
-					"%s %d/%u 512 byte blocks.\n",
-					(rq_data_dir(rq) == WRITE) ?
-					"writing" : "reading",
-					this_count, blk_rq_sectors(rq)));
+	SCMD_LOG_HLQUEUE(2, KERN_INFO, SCpnt,
+			 "%s %d/%u 512 byte blocks.\n",
+			 (rq_data_dir(rq) == WRITE) ?
+			 "writing" : "reading",
+			 this_count, blk_rq_sectors(rq));
 
 	SCpnt->cmnd[1] = 0;
 	block = (unsigned int)blk_rq_pos(rq) / (s_size >> 9);

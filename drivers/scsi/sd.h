@@ -100,6 +100,15 @@ static inline struct scsi_disk *scsi_disk(struct gendisk *disk)
 		    (sdsk)->disk->disk_name, ##a) :			\
 	sdev_printk(prefix, (sdsk)->device, fmt, ##a)
 
+#define SD_LOG_HLQUEUE(LEVEL, PRIO, SDKP, FMT, ARGS...)	\
+do {								\
+	if (unlikely((SCSI_LOG_LEVEL(SCSI_LOG_HLQUEUE_SHIFT,	\
+				     SCSI_LOG_HLQUEUE_BITS)) > (LEVEL))) \
+		do {						\
+			sd_printk(PRIO, SDKP, FMT, ##ARGS);	\
+		} while (0);					\
+} while (0)
+
 static inline int scsi_medium_access_command(struct scsi_cmnd *scmd)
 {
 	switch (scmd->cmnd[0]) {
