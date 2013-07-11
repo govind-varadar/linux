@@ -684,8 +684,8 @@ int scsi_dispatch_cmd(struct scsi_cmnd *cmd)
 
 		scsi_queue_insert(cmd, SCSI_MLQUEUE_DEVICE_BUSY);
 
-		SCSI_LOG_MLQUEUE(3, scmd_printk(KERN_INFO, cmd,
-			"queuecommand : device blocked\n"));
+		SCMD_LOG_MLQUEUE(3, KERN_INFO, cmd,
+				 "queuecommand : device blocked\n");
 
 		/*
 		 * NOTE: rtn is still zero here because we don't need the
@@ -710,10 +710,10 @@ int scsi_dispatch_cmd(struct scsi_cmnd *cmd)
 	 * length exceeds what the host adapter can handle.
 	 */
 	if (cmd->cmd_len > cmd->device->host->max_cmd_len) {
-		SCSI_LOG_MLQUEUE(3, scmd_printk(KERN_INFO, cmd,
-			       "queuecommand : command too long. "
-			       "cdb_size=%d host->max_cmd_len=%d\n",
-			       cmd->cmd_len, cmd->device->host->max_cmd_len));
+		SCMD_LOG_MLQUEUE(3, KERN_INFO, cmd,
+				 "queuecommand : command too long. "
+				 "cdb_size=%d host->max_cmd_len=%d\n",
+				 cmd->cmd_len, cmd->device->host->max_cmd_len);
 		cmd->result = (DID_ABORT << 16);
 
 		scsi_done(cmd);
@@ -735,8 +735,8 @@ int scsi_dispatch_cmd(struct scsi_cmnd *cmd)
 		    rtn != SCSI_MLQUEUE_TARGET_BUSY)
 			rtn = SCSI_MLQUEUE_HOST_BUSY;
 
-		SCSI_LOG_MLQUEUE(3, scmd_printk(KERN_INFO, cmd,
-			"queuecommand : request rejected\n"));
+		SCMD_LOG_MLQUEUE(3, KERN_INFO, cmd,
+				 "queuecommand : request rejected\n");
 
 		scsi_queue_insert(cmd, rtn);
 	}
@@ -801,9 +801,9 @@ void scsi_finish_command(struct scsi_cmnd *cmd)
 	if (SCSI_SENSE_VALID(cmd))
 		cmd->result |= (DRIVER_SENSE << 24);
 
-	SCSI_LOG_MLCOMPLETE(4, sdev_printk(KERN_INFO, sdev,
-				"Notifying upper driver of completion "
-				"(result %x)\n", cmd->result));
+	SCMD_LOG_MLCOMPLETE(4, KERN_INFO, cmd,
+			    "Notifying upper driver of completion "
+			    "(result %x)\n", cmd->result);
 
 	good_bytes = scsi_bufflen(cmd);
         if (cmd->request->cmd_type != REQ_TYPE_BLOCK_PC) {

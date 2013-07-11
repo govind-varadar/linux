@@ -139,8 +139,8 @@ static void __scsi_queue_insert(struct scsi_cmnd *cmd, int reason, int unbusy)
 	struct request_queue *q = device->request_queue;
 	unsigned long flags;
 
-	SCSI_LOG_MLQUEUE(1, scmd_printk(KERN_INFO, cmd,
-		"Inserting command %p into mlqueue\n", cmd));
+	SCMD_LOG_MLQUEUE(1, KERN_INFO, cmd,
+			 "Inserting command %p into mlqueue\n", cmd);
 
 	/*
 	 * Set the appropriate busy bit for the device/host.
@@ -1337,9 +1337,8 @@ static inline int scsi_dev_queue_ready(struct request_queue *q,
 		 * unblock after device_blocked iterates to zero
 		 */
 		if (--sdev->device_blocked == 0) {
-			SCSI_LOG_MLQUEUE(3,
-				   sdev_printk(KERN_INFO, sdev,
-				   "unblocking device at zero depth\n"));
+			SDEV_LOG_MLQUEUE(3, KERN_INFO, sdev,
+					 "unblocking device at zero depth\n");
 		} else {
 			blk_delay_queue(q, SCSI_QUEUE_DELAY);
 			return 0;
@@ -1375,8 +1374,8 @@ static inline int scsi_target_queue_ready(struct Scsi_Host *shost,
 		 * unblock after target_blocked iterates to zero
 		 */
 		if (--starget->target_blocked == 0) {
-			SCSI_LOG_MLQUEUE(3, starget_printk(KERN_INFO, starget,
-					 "unblocking target at zero depth\n"));
+			SDEV_LOG_MLQUEUE(3, KERN_INFO, sdev,
+					 "unblocking target at zero depth\n");
 		} else
 			return 0;
 	}
@@ -1407,9 +1406,8 @@ static inline int scsi_host_queue_ready(struct request_queue *q,
 		 * unblock after host_blocked iterates to zero
 		 */
 		if (--shost->host_blocked == 0) {
-			SCSI_LOG_MLQUEUE(3,
-				shost_printk(KERN_INFO, shost,
-					     "unblocking host at zero depth\n"));
+			SDEV_LOG_MLQUEUE(3, KERN_INFO, sdev,
+					 "unblocking host at zero depth\n");
 		} else {
 			return 0;
 		}
