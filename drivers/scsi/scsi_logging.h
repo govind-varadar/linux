@@ -45,9 +45,17 @@ extern unsigned int scsi_logging_level;
 
 #define SCSI_CHECK_LOGGING(SHIFT, BITS, LEVEL, CMD)		\
 do {								\
-        if (unlikely((SCSI_LOG_LEVEL(SHIFT, BITS)) > (LEVEL)))	\
+	if (unlikely((SCSI_LOG_LEVEL(SHIFT, BITS)) > (LEVEL)))	\
 		do {						\
 			CMD;					\
+		} while (0);					\
+} while (0)
+
+#define SDEV_CHECK_LOGGING(SHIFT, BITS, PRIO, SDEV, LEVEL, FMT, ARGS...) \
+do {								\
+	if (unlikely((SCSI_LOG_LEVEL(SHIFT, BITS)) > (LEVEL)))	\
+		do {						\
+			sdev_printk(PRIO, SDEV, FMT, ##ARGS);	\
 		} while (0);					\
 } while (0)
 #else
@@ -77,7 +85,8 @@ do {								\
         SCSI_CHECK_LOGGING(SCSI_LOG_HLQUEUE_SHIFT, SCSI_LOG_HLQUEUE_BITS, LEVEL,CMD);
 #define SCSI_LOG_HLCOMPLETE(LEVEL,CMD)  \
         SCSI_CHECK_LOGGING(SCSI_LOG_HLCOMPLETE_SHIFT, SCSI_LOG_HLCOMPLETE_BITS, LEVEL,CMD);
-#define SCSI_LOG_IOCTL(LEVEL,CMD)  \
-        SCSI_CHECK_LOGGING(SCSI_LOG_IOCTL_SHIFT, SCSI_LOG_IOCTL_BITS, LEVEL,CMD);
+#define SDEV_LOG_IOCTL(LEVEL,PRIO,SDEV,FMT,ARG...)			\
+	SDEV_CHECK_LOGGING(SCSI_LOG_IOCTL_SHIFT, SCSI_LOG_IOCTL_BITS,	\
+			   PRIO, SDEV, LEVEL, FMT, ##ARG);
 
 #endif /* _SCSI_LOGGING_H */

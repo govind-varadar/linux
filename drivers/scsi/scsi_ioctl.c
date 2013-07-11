@@ -91,14 +91,14 @@ static int ioctl_internal_command(struct scsi_device *sdev, char *cmd,
 	int result;
 	struct scsi_sense_hdr sshdr;
 
-	SCSI_LOG_IOCTL(1, sdev_printk(KERN_INFO, sdev,
-				      "Trying ioctl with scsi command %d\n", *cmd));
+	SDEV_LOG_IOCTL(1, KERN_INFO, sdev,
+		       "Trying ioctl with scsi command %d\n", *cmd);
 
 	result = scsi_execute_req(sdev, cmd, DMA_NONE, NULL, 0,
 				  &sshdr, timeout, retries, NULL);
 
-	SCSI_LOG_IOCTL(2, sdev_printk(KERN_INFO, sdev,
-				      "Ioctl returned  0x%x\n", result));
+	SDEV_LOG_IOCTL(2, KERN_INFO, sdev,
+		       "Ioctl returned  0x%x\n", result);
 
 	if ((driver_byte(result) & DRIVER_SENSE) &&
 	    (scsi_sense_valid(&sshdr))) {
@@ -131,8 +131,7 @@ static int ioctl_internal_command(struct scsi_device *sdev, char *cmd,
 		}
 	}
 
-	SCSI_LOG_IOCTL(2, sdev_printk(KERN_INFO, sdev,
-				      "IOCTL Releasing command\n"));
+	SDEV_LOG_IOCTL(2, KERN_INFO, sdev, "IOCTL Releasing command\n");
 	return result;
 }
 
