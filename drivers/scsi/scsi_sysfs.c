@@ -317,6 +317,33 @@ store_shost_eh_deadline(struct device *dev, struct device_attribute *attr,
 
 static DEVICE_ATTR(eh_deadline, S_IRUGO | S_IWUSR, show_shost_eh_deadline, store_shost_eh_deadline);
 
+static ssize_t
+show_shost_logging_level(struct device *dev,
+			 struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+
+	return sprintf(buf, "%d\n", shost->logging_level);
+}
+
+static ssize_t
+store_shost_logging_level(struct device *dev, struct device_attribute *attr,
+			  const char *buf, size_t count)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	int ret = -EINVAL;
+	unsigned int logging_level;
+
+	if (sscanf(buf, "%d\n", &logging_level) == 1) {
+		shost->logging_level = logging_level;
+		ret = count;
+	}
+	return ret;
+}
+
+static DEVICE_ATTR(shost_logging_level, S_IRUGO | S_IWUSR,
+		   show_shost_logging_level, store_shost_logging_level);
+
 shost_rd_attr(unique_id, "%u\n");
 shost_rd_attr(host_busy, "%hu\n");
 shost_rd_attr(cmd_per_lun, "%hd\n");
@@ -345,6 +372,7 @@ static struct attribute *scsi_sysfs_shost_attrs[] = {
 	&dev_attr_prot_guard_type.attr,
 	&dev_attr_host_reset.attr,
 	&dev_attr_eh_deadline.attr,
+	&dev_attr_shost_logging_level.attr,
 	NULL
 };
 
@@ -626,6 +654,33 @@ sdev_store_eh_timeout(struct device *dev, struct device_attribute *attr,
 static DEVICE_ATTR(eh_timeout, S_IRUGO | S_IWUSR, sdev_show_eh_timeout, sdev_store_eh_timeout);
 
 static ssize_t
+sdev_show_logging_level (struct device *dev, struct device_attribute *attr,
+			 char *buf)
+{
+	struct scsi_device *sdev;
+	sdev = to_scsi_device(dev);
+	return snprintf(buf, 20, "%d\n", sdev->logging_level);
+}
+
+static ssize_t
+sdev_store_logging_level (struct device *dev, struct device_attribute *attr,
+			  const char *buf, size_t count)
+{
+	struct scsi_device *sdev;
+	unsigned int logging_level;
+	int ret = -EINVAL;
+
+	sdev = to_scsi_device(dev);
+	if (sscanf (buf, "%d\n", &logging_level) == 1) {
+		sdev->logging_level = logging_level;
+		ret = count;
+	}
+	return ret;
+}
+static DEVICE_ATTR(sdev_logging_level, S_IRUGO | S_IWUSR,
+		   sdev_show_logging_level, sdev_store_logging_level);
+
+static ssize_t
 store_rescan_field (struct device *dev, struct device_attribute *attr,
 		    const char *buf, size_t count)
 {
@@ -790,6 +845,7 @@ static struct attribute *scsi_sdev_attrs[] = {
 	&dev_attr_state.attr,
 	&dev_attr_timeout.attr,
 	&dev_attr_eh_timeout.attr,
+	&dev_attr_sdev_logging_level.attr,
 	&dev_attr_iocounterbits.attr,
 	&dev_attr_iorequest_cnt.attr,
 	&dev_attr_iodone_cnt.attr,

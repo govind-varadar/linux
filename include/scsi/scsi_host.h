@@ -636,7 +636,10 @@ struct Scsi_Host {
 	short unsigned int sg_prot_tablesize;
 	short unsigned int max_sectors;
 	unsigned long dma_boundary;
-	/* 
+
+	unsigned int logging_level;
+
+	/*
 	 * Used to assign serial numbers to the cmds.
 	 * Protected by the host lock.
 	 */

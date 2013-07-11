@@ -40,6 +40,20 @@ extern unsigned int scsi_logging_level;
 
 #ifdef CONFIG_SCSI_LOGGING
 
+#define SDEV_LOGGING_LEVEL(SDEV)					\
+	((SDEV)->logging_level) ? (SDEV)->logging_level :		\
+	((SDEV)->host->logging_level) ? (SDEV)->host->logging_level :	\
+	scsi_logging_level
+
+#define SDEV_LOG_LEVEL(SDEV, SHIFT, BITS)			\
+	((SDEV_LOGGING_LEVEL(SDEV) >> (SHIFT)) & ((1 << (BITS)) - 1))
+
+#define SHOST_LOGGING_LEVEL(SHOST)					\
+	((SHOST)->logging_level) ? (SHOST)->logging_level : scsi_logging_level
+
+#define SHOST_LOG_LEVEL(SHOST, SHIFT, BITS)			\
+	((SHOST_LOGGING_LEVEL(SHOST) >> (SHIFT)) & ((1 << (BITS)) - 1))
+
 #define SCSI_LOG_LEVEL(SHIFT, BITS)				\
 	((scsi_logging_level >> (SHIFT)) & ((1 << (BITS)) - 1))
 
@@ -53,7 +67,7 @@ do {								\
 
 #define SHOST_CHECK_LOGGING(SHIFT, BITS, PRIO, SHOST, LEVEL, FMT, ARGS...) \
 do {								\
-	if (unlikely((SCSI_LOG_LEVEL(SHIFT, BITS)) > (LEVEL)))	\
+	if (unlikely((SHOST_LOG_LEVEL(SHOST, SHIFT, BITS)) > (LEVEL)))	\
 		do {						\
 			shost_printk(PRIO, SHOST, FMT, ##ARGS);	\
 		} while (0);					\
@@ -66,15 +80,15 @@ do {								\
 		} while (0);					\
 } while (0)
 #define SDEV_CHECK_LOGGING(SHIFT, BITS, PRIO, SDEV, LEVEL, FMT, ARGS...) \
-do {								\
-	if (unlikely((SCSI_LOG_LEVEL(SHIFT, BITS)) > (LEVEL)))	\
-		do {						\
-			sdev_printk(PRIO, SDEV, FMT, ##ARGS);	\
-		} while (0);					\
+	do {								\
+	if (unlikely((SDEV_LOG_LEVEL(SDEV, SHIFT, BITS)) > (LEVEL)))	\
+		do {							\
+			sdev_printk(PRIO, SDEV, FMT, ##ARGS);		\
+		} while (0);						\
 } while (0)
 #define SCMD_CHECK_LOGGING(SHIFT, BITS, PRIO, SCMD, LEVEL, FMT, ARGS...) \
 do {								\
-	if (unlikely((SCSI_LOG_LEVEL(SHIFT, BITS)) > (LEVEL)))	\
+	if (unlikely((SDEV_LOG_LEVEL((SCMD)->device, SHIFT, BITS)) > (LEVEL))) \
 		do {						\
 			scmd_printk(PRIO, SCMD, FMT, ##ARGS);	\
 		} while (0);					\
