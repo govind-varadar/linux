@@ -709,14 +709,13 @@ static int mvumi_reset_host_9143(struct mvumi_hba *mhba)
 	return mvumi_wait_for_outstanding(mhba);
 }
 
-static int mvumi_host_reset(struct scsi_cmnd *scmd)
+static int mvumi_host_reset(struct Scsi_Host *shost)
 {
 	struct mvumi_hba *mhba;
 
-	mhba = (struct mvumi_hba *) scmd->device->host->hostdata;
+	mhba = (struct mvumi_hba *) shost->hostdata;
 
-	scmd_printk(KERN_NOTICE, scmd, "RESET -%ld cmd=%x retries=%x\n",
-			scmd->serial_number, scmd->cmnd[0], scmd->retries);
+	shost_printk(KERN_NOTICE, shost, "RESET\n");
 
 	return mhba->instancet->reset_host(mhba);
 }

@@ -329,7 +329,7 @@ simscsi_queuecommand_lck (struct scsi_cmnd *sc, void (*done)(struct scsi_cmnd *)
 static DEF_SCSI_QCMD(simscsi_queuecommand)
 
 static int
-simscsi_host_reset (struct scsi_cmnd *sc)
+simscsi_host_reset (struct Scsi_Host *shost)
 {
 	printk(KERN_ERR "simscsi_host_reset: not implemented\n");
 	return 0;

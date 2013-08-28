@@ -2165,7 +2165,7 @@ retry:
 
 /**
  * cxlflash_eh_host_reset_handler() - reset the host adapter
- * @scp:	SCSI command from stack identifying host.
+ * @host:	SCSI host adapter.
  *
  * Following a reset, the state is evaluated again in case an EEH occurred
  * during the reset. In such a scenario, the host reset will either yield
@@ -2176,21 +2176,14 @@ retry:
  *	SUCCESS as defined in scsi/scsi.h
  *	FAILED as defined in scsi/scsi.h
  */
-static int cxlflash_eh_host_reset_handler(struct scsi_cmnd *scp)
+static int cxlflash_eh_host_reset_handler(struct Scsi_Host *host)
 {
 	int rc = SUCCESS;
 	int rcr = 0;
-	struct Scsi_Host *host = scp->device->host;
 	struct cxlflash_cfg *cfg = shost_priv(host);
 	struct device *dev = &cfg->dev->dev;
 
-	dev_dbg(dev, "%s: (scp=%p) %d/%d/%d/%llu "
-		"cdb=(%08x-%08x-%08x-%08x)\n", __func__, scp, host->host_no,
-		scp->device->channel, scp->device->id, scp->device->lun,
-		get_unaligned_be32(&((u32 *)scp->cmnd)[0]),
-		get_unaligned_be32(&((u32 *)scp->cmnd)[1]),
-		get_unaligned_be32(&((u32 *)scp->cmnd)[2]),
-		get_unaligned_be32(&((u32 *)scp->cmnd)[3]));
+	dev_dbg(dev, "%s: %d/-1/-1/-1\n", __func__, host->host_no);
 
 	switch (cfg->state) {
 	case STATE_NORMAL:

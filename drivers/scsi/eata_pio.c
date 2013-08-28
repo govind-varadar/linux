@@ -435,19 +435,18 @@ static int eata_pio_abort(struct scsi_cmnd *cmd)
 	panic("eata_pio: abort: invalid slot status\n");
 }
 
-static int eata_pio_host_reset(struct scsi_cmnd *cmd)
+static int eata_pio_host_reset(struct Scsi_Host *host)
 {
 	unsigned int x, limit = 0;
 	unsigned char success = 0;
 	struct scsi_cmnd *sp;
-	struct Scsi_Host *host = cmd->device->host;
 
-	DBG(DBG_ABNORM, scmd_printk(KERN_WARNING, cmd,
+	DBG(DBG_ABNORM, shost_printk(KERN_WARNING, host,
 		"eata_pio_reset called\n"));
 
 	spin_lock_irq(host->host_lock);
 
-	if (HD(cmd)->state == RESET) {
+	if (SD(host)->state == RESET) {
 		printk(KERN_WARNING "eata_pio_reset: exit, already in reset.\n");
 		spin_unlock_irq(host->host_lock);
 		return FAILED;
@@ -455,13 +454,13 @@ static int eata_pio_host_reset(struct scsi_cmnd *cmd)
 
 	/* force all slots to be free */
 
-	for (x = 0; x < cmd->device->host->can_queue; x++) {
+	for (x = 0; x < host->can_queue; x++) {
 
-		if (HD(cmd)->ccb[x].status == FREE)
+		if (SD(host)->ccb[x].status == FREE)
 			continue;
 
-		sp = HD(cmd)->ccb[x].cmd;
-		HD(cmd)->ccb[x].status = RESET;
+		sp = SD(host)->ccb[x].cmd;
+		SD(host)->ccb[x].status = RESET;
 		printk(KERN_WARNING "eata_pio_reset: slot %d in reset.\n", x);
 
 		if (sp == NULL)
@@ -469,10 +468,10 @@ static int eata_pio_host_reset(struct scsi_cmnd *cmd)
 	}
 
 	/* hard reset the HBA  */
-	outb(EATA_CMD_RESET, cmd->device->host->base + HA_WCOMMAND);
+	outb(EATA_CMD_RESET, host->base + HA_WCOMMAND);
 
 	DBG(DBG_ABNORM, printk(KERN_WARNING "eata_pio_reset: board reset done.\n"));
-	HD(cmd)->state = RESET;
+	SD(host)->state = RESET;
 
 	spin_unlock_irq(host->host_lock);
 	msleep(3000);
@@ -480,23 +479,23 @@ static int eata_pio_host_reset(struct scsi_cmnd *cmd)
 
 	DBG(DBG_ABNORM, printk(KERN_WARNING "eata_pio_reset: interrupts disabled, " "loops %d.\n", limit));
 
-	for (x = 0; x < cmd->device->host->can_queue; x++) {
+	for (x = 0; x < host->can_queue; x++) {
 
 		/* Skip slots already set free by interrupt */
-		if (HD(cmd)->ccb[x].status != RESET)
+		if (SD(host)->ccb[x].status != RESET)
 			continue;
 
-		sp = HD(cmd)->ccb[x].cmd;
+		sp = SD(host)->ccb[x].cmd;
 		sp->result = DID_RESET << 16;
 
 		/* This mailbox is terminated */
 		printk(KERN_WARNING "eata_pio_reset: reset ccb %d.\n", x);
-		HD(cmd)->ccb[x].status = FREE;
+		SD(host)->ccb[x].status = FREE;
 
 		sp->scsi_done(sp);
 	}
 
-	HD(cmd)->state = 0;
+	SD(host)->state = 0;
 
 	spin_unlock_irq(host->host_lock);
 

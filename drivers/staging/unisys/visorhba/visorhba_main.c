@@ -437,13 +437,13 @@ static int visorhba_bus_reset_handler(struct scsi_cmnd *scsicmd)
 
 /*
  *	visorhba_host_reset_handler - Not supported
- *	@scsicmd: The scsicmd that needs aborted
+ *	@shost: The scsi host that needs resetting
  *
  *	Not supported, return SUCCESS
  *	Returns SUCCESS
  */
 static int
-visorhba_host_reset_handler(struct scsi_cmnd *scsicmd)
+visorhba_host_reset_handler(struct Scsi_Host *shost)
 {
 	/* issue TASK_MGMT_TARGET_RESET for each target on each bus for host */
 	return SUCCESS;

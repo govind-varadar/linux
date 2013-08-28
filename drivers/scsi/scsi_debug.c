@@ -3878,27 +3878,27 @@ lie:
 	return SUCCESS;
 }
 
-static int scsi_debug_host_reset(struct scsi_cmnd * SCpnt)
+static int scsi_debug_host_reset(struct Scsi_Host * shost)
 {
 	struct sdebug_host_info * sdbg_host;
 	struct sdebug_dev_info *devip;
 	int k = 0;
 
 	++num_host_resets;
-	if ((SCpnt->device) && (SDEBUG_OPT_ALL_NOISE & sdebug_opts))
-		sdev_printk(KERN_INFO, SCpnt->device, "%s\n", __func__);
-        spin_lock(&sdebug_host_list_lock);
-        list_for_each_entry(sdbg_host, &sdebug_host_list, host_list) {
+	if (SDEBUG_OPT_ALL_NOISE & sdebug_opts)
+		shost_printk(KERN_INFO, shost, "%s\n", __func__);
+	spin_lock(&sdebug_host_list_lock);
+	list_for_each_entry(sdbg_host, &sdebug_host_list, host_list) {
 		list_for_each_entry(devip, &sdbg_host->dev_info_list,
 				    dev_list) {
 			set_bit(SDEBUG_UA_BUS_RESET, devip->uas_bm);
 			++k;
 		}
-        }
-        spin_unlock(&sdebug_host_list_lock);
+	}
+	spin_unlock(&sdebug_host_list_lock);
 	stop_all_queued();
 	if (SDEBUG_OPT_RESET_NOISE & sdebug_opts)
-		sdev_printk(KERN_INFO, SCpnt->device,
+		shost_printk(KERN_INFO, shost,
 			    "%s: %d device(s) found\n", __func__, k);
 	return SUCCESS;
 }

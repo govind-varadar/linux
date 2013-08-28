@@ -507,7 +507,7 @@ static int eata2x_detect(struct scsi_host_template *);
 static int eata2x_release(struct Scsi_Host *);
 static int eata2x_queuecommand(struct Scsi_Host *, struct scsi_cmnd *);
 static int eata2x_eh_abort(struct scsi_cmnd *);
-static int eata2x_eh_host_reset(struct scsi_cmnd *);
+static int eata2x_eh_host_reset(struct Scsi_Host *);
 static int eata2x_bios_param(struct scsi_device *, struct block_device *,
 			     sector_t, int *);
 static int eata2x_slave_configure(struct scsi_device *);
@@ -1896,19 +1896,15 @@ static int eata2x_eh_abort(struct scsi_cmnd *SCarg)
 	panic("%s: abort, mbox %d, invalid cp_stat.\n", ha->board_name, i);
 }
 
-static int eata2x_eh_host_reset(struct scsi_cmnd *SCarg)
+static int eata2x_eh_host_reset(struct Scsi_Host *shost)
 {
 	unsigned int i, time, k, c, limit = 0;
 	struct scsi_cmnd *SCpnt;
-	struct Scsi_Host *shost = SCarg->device->host;
 	struct hostdata *ha = (struct hostdata *)shost->hostdata;
 
-	scmd_printk(KERN_INFO, SCarg, "reset, enter.\n");
+	shost_printk(KERN_INFO, shost, "reset, enter.\n");
 
 	spin_lock_irq(shost->host_lock);
-
-	if (SCarg->host_scribble == NULL)
-		printk("%s: reset, inactive.\n", ha->board_name);
 
 	if (ha->in_reset) {
 		printk("%s: reset, exit, already in reset.\n", ha->board_name);

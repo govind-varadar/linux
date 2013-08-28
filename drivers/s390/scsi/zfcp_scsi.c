@@ -309,9 +309,8 @@ static int zfcp_scsi_eh_target_reset_handler(struct scsi_cmnd *scpnt)
 	return zfcp_task_mgmt_function(scpnt, FCP_TMF_TGT_RESET);
 }
 
-static int zfcp_scsi_eh_host_reset_handler(struct scsi_cmnd *scpnt)
+static int zfcp_scsi_eh_host_reset_handler(struct Scsi_Host *host)
 {
-	struct Scsi_Host *host = scpnt->device->host;
 	struct zfcp_adapter *adapter = (struct zfcp_adapter *)host->hostdata[0];
 	int ret = 0;
 	unsigned long flags;

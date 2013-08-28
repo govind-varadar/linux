@@ -3096,12 +3096,12 @@ static int pmcraid_eh_target_reset_handler(struct scsi_cmnd *scmd)
  * Return value
  *	SUCCESS or FAILED
  */
-static int pmcraid_eh_host_reset_handler(struct scsi_cmnd *scmd)
+static int pmcraid_eh_host_reset_handler(struct Scsi_Host *shost)
 {
 	unsigned long interval = 10000; /* 10 seconds interval */
 	int waits = jiffies_to_msecs(PMCRAID_RESET_HOST_TIMEOUT) / interval;
 	struct pmcraid_instance *pinstance =
-		(struct pmcraid_instance *)(scmd->device->host->hostdata);
+		(struct pmcraid_instance *)(shost->hostdata);
 
 
 	/* wait for an additional 150 seconds just in case firmware could come
