@@ -723,12 +723,9 @@ const char *sym53c416_info(struct Scsi_Host *SChost)
 	int i;
 	int base = SChost->io_port;
 	int irq = SChost->irq;
-	int scsi_id = 0;
+	int scsi_id = SChost->this_id;
 	int rev = inb(base + TC_HIGH);
 
-	for(i = 0; i < host_index; i++)
-		if(hosts[i].base == base)
-			scsi_id = hosts[i].scsi_id;
 	sprintf(info, "Symbios Logic 53c416 (rev. %d) at 0x%03x, irq %d, SCSI-ID %d, %s pio", rev, base, irq, scsi_id, (fastpio)? "fast" : "slow");
 	return info;
 }
@@ -762,21 +759,18 @@ static int sym53c416_queuecommand_lck(Scsi_Cmnd *SCpnt, void (*done)(Scsi_Cmnd *
 
 DEF_SCSI_QCMD(sym53c416_queuecommand)
 
-static int sym53c416_host_reset(Scsi_Cmnd *SCpnt)
+static int sym53c416_host_reset(struct Scsi_Host *SChost)
 {
 	int base;
-	int scsi_id = -1;	
+	int scsi_id;
 	int i;
 	unsigned long flags;
 
 	spin_lock_irqsave(&sym53c416_lock, flags);
 
 	/* printk("sym53c416_reset\n"); */
-	base = SCpnt->device->host->io_port;
-	/* search scsi_id - fixme, we shouldn't need to iterate for this! */
-	for(i = 0; i < host_index && scsi_id == -1; i++)
-		if(hosts[i].base == base)
-			scsi_id = hosts[i].scsi_id;
+	base = SChost->io_port;
+	scsi_id = SChost->this_id;
 	outb(RESET_CHIP, base + COMMAND_REG);
 	outb(NOOP | PIO_MODE, base + COMMAND_REG);
 	outb(RESET_SCSI_BUS, base + COMMAND_REG);

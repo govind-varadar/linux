@@ -1568,7 +1568,7 @@ static int fdomain_16x0_abort(struct scsi_cmnd *SCpnt)
    return SUCCESS;
 }
 
-int fdomain_16x0_host_reset(struct scsi_cmnd *SCpnt)
+int fdomain_16x0_host_reset(struct Scsi_Host *shost)
 {
    unsigned long flags;
 
