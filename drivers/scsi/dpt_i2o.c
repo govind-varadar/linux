@@ -797,12 +797,12 @@ static int adpt_bus_reset(struct scsi_cmnd* cmd)
 }
 
 // This version of reset is called by the eh_error_handler
-static int __adpt_reset(struct scsi_cmnd* cmd)
+static int __adpt_reset(struct Scsi_Host* shost)
 {
 	adpt_hba* pHba;
 	int rcode;
-	pHba = (adpt_hba*)cmd->device->host->hostdata[0];
-	printk(KERN_WARNING"%s: Hba Reset: scsi id %d: tid: %d\n",pHba->name,cmd->device->channel,pHba->channel[cmd->device->channel].tid );
+	pHba = (adpt_hba*)shost->hostdata[0];
+	printk(KERN_WARNING"%s: Hba Reset\n",pHba->name);
 	rcode =  adpt_hba_reset(pHba);
 	if(rcode == 0){
 		printk(KERN_WARNING"%s: HBA reset complete\n",pHba->name);
@@ -813,13 +813,13 @@ static int __adpt_reset(struct scsi_cmnd* cmd)
 	}
 }
 
-static int adpt_reset(struct scsi_cmnd* cmd)
+static int adpt_reset(struct Scsi_Host* shost)
 {
 	int rc;
 
-	spin_lock_irq(cmd->device->host->host_lock);
-	rc = __adpt_reset(cmd);
-	spin_unlock_irq(cmd->device->host->host_lock);
+	spin_lock_irq(shost->host_lock);
+	rc = __adpt_reset(shost);
+	spin_unlock_irq(shost->host_lock);
 
 	return rc;
 }

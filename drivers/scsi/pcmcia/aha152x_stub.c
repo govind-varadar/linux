@@ -197,7 +197,7 @@ static int aha152x_resume(struct pcmcia_device *link)
 {
 	scsi_info_t *info = link->priv;
 
-	aha152x_host_reset_host(info->host);
+	aha152x_host_reset(info->host);
 
 	return 0;
 }

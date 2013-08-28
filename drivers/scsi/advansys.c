@@ -7108,9 +7108,8 @@ static int AscISR(ASC_DVC_VAR *asc_dvc)
  * sleeping is allowed and no locking other than for host structures is
  * required. Returns SUCCESS or FAILED.
  */
-static int advansys_reset(struct scsi_cmnd *scp)
+static int advansys_reset(struct Scsi_Host *shost)
 {
-	struct Scsi_Host *shost = scp->device->host;
 	struct asc_board *boardp = shost_priv(shost);
 	unsigned long flags;
 	int status;
@@ -7120,7 +7119,7 @@ static int advansys_reset(struct scsi_cmnd *scp)
 
 	ASC_STATS(shost, reset);
 
-	scmd_printk(KERN_INFO, scp, "SCSI host reset started...\n");
+	shost_printk(KERN_INFO, shost, "SCSI host reset started...\n");
 
 	if (ASC_NARROW_BOARD(boardp)) {
 		ASC_DVC_VAR *asc_dvc = &boardp->dvc_var.asc_dvc_var;
@@ -7131,16 +7130,18 @@ static int advansys_reset(struct scsi_cmnd *scp)
 
 		/* Refer to ASC_IERR_* definitions for meaning of 'err_code'. */
 		if (asc_dvc->err_code || !asc_dvc->overrun_dma) {
-			scmd_printk(KERN_INFO, scp, "SCSI host reset error: "
-				    "0x%x, status: 0x%x\n", asc_dvc->err_code,
+			shost_printk(KERN_INFO, shost,
+				     "SCSI host reset error: 0x%x, status: 0x%x\n",
+				     asc_dvc->err_code,
 				    status);
 			ret = FAILED;
 		} else if (status) {
-			scmd_printk(KERN_INFO, scp, "SCSI host reset warning: "
-				    "0x%x\n", status);
+			shost_printk(KERN_INFO, shost,
+				     "SCSI host reset warning: 0x%x\n",
+				     status);
 		} else {
-			scmd_printk(KERN_INFO, scp, "SCSI host reset "
-				    "successful\n");
+			shost_printk(KERN_INFO, shost,
+				     "SCSI host reset successful\n");
 		}
 
 		ASC_DBG(1, "after AscInitAsc1000Driver()\n");
@@ -7157,12 +7158,13 @@ static int advansys_reset(struct scsi_cmnd *scp)
 		ASC_DBG(1, "before AdvResetChipAndSB()\n");
 		switch (AdvResetChipAndSB(adv_dvc)) {
 		case ASC_TRUE:
-			scmd_printk(KERN_INFO, scp, "SCSI host reset "
-				    "successful\n");
+			shost_printk(KERN_INFO, shost,
+				     "SCSI host reset successful\n");
 			break;
 		case ASC_FALSE:
 		default:
-			scmd_printk(KERN_INFO, scp, "SCSI host reset error\n");
+			shost_printk(KERN_INFO, shost,
+				     "SCSI host reset error\n");
 			ret = FAILED;
 			break;
 		}

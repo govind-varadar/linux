@@ -1205,21 +1205,12 @@ static void reset_ports(struct Scsi_Host *shpnt)
  * Reset the host (bus and controller)
  *
  */
-int aha152x_host_reset_host(struct Scsi_Host *shpnt)
+int aha152x_host_reset(struct Scsi_Host *shpnt)
 {
 	aha152x_bus_reset_host(shpnt);
 	reset_ports(shpnt);
 
 	return SUCCESS;
-}
-
-/*
- * Reset the host (bus and controller)
- *
- */
-static int aha152x_host_reset(Scsi_Cmnd *SCpnt)
-{
-	return aha152x_host_reset_host(SCpnt->device->host);
 }
 
 /*

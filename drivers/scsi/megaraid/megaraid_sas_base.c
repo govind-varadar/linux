@@ -2691,15 +2691,14 @@ kill_hba_and_failed:
  * reset requests. Device, bus and host specific reset handlers can use this
  * function after they do their specific tasks.
  */
-static int megasas_generic_reset(struct scsi_cmnd *scmd)
+static int megasas_generic_reset(struct Scsi_Host *shost)
 {
 	int ret_val;
 	struct megasas_instance *instance;
 
-	instance = (struct megasas_instance *)scmd->device->host->hostdata;
+	instance = (struct megasas_instance *)shost->hostdata;
 
-	scmd_printk(KERN_NOTICE, scmd, "megasas: RESET cmd=%x retries=%x\n",
-		 scmd->cmnd[0], scmd->retries);
+	shost_printk(KERN_NOTICE, shost, "megasas: RESET\n");
 
 	if (atomic_read(&instance->adprecovery) == MEGASAS_HW_CRITICAL_ERROR) {
 		dev_err(&instance->pdev->dev, "cannot recover from previous reset failures\n");
@@ -2768,34 +2767,29 @@ megasas_dump_frame(void *mpi_request, int sz)
 /**
  * megasas_reset_bus_host -	Bus & host reset handler entry point
  */
-static int megasas_reset_bus_host(struct scsi_cmnd *scmd)
+static int megasas_reset_bus_host(struct Scsi_Host *shost)
 {
 	int ret;
 	struct megasas_instance *instance;
 
-	instance = (struct megasas_instance *)scmd->device->host->hostdata;
+	instance = (struct megasas_instance *)shost->hostdata;
 
-	scmd_printk(KERN_INFO, scmd,
+	shost_printk(KERN_INFO, shost,
 		"Controller reset is requested due to IO timeout\n"
-		"SCSI command pointer: (%p)\t SCSI host state: %d\t"
+		"SCSI host state: %d\t"
 		" SCSI host busy: %d\t FW outstanding: %d\n",
-		scmd, scmd->device->host->shost_state,
-		atomic_read((atomic_t *)&scmd->device->host->host_busy),
+		shost->shost_state,
+		atomic_read(&shost->host_busy),
 		atomic_read(&instance->fw_outstanding));
 
 	/*
 	 * First wait for all commands to complete
 	 */
 	if (instance->ctrl_context) {
-		struct megasas_cmd_fusion *cmd;
-		cmd = (struct megasas_cmd_fusion *)scmd->SCp.ptr;
-		if (cmd)
-			megasas_dump_frame(cmd->io_request,
-				sizeof(struct MPI2_RAID_SCSI_IO_REQUEST));
-		ret = megasas_reset_fusion(scmd->device->host,
+		ret = megasas_reset_fusion(shost,
 				SCSIIO_TIMEOUT_OCR);
 	} else
-		ret = megasas_generic_reset(scmd);
+		ret = megasas_generic_reset(shost);
 
 	return ret;
 }
