@@ -4696,6 +4696,7 @@ lpfc_abort_handler(struct scsi_cmnd *cmnd)
 	struct lpfc_iocbq *iocb;
 	struct lpfc_iocbq *abtsiocb;
 	struct lpfc_scsi_buf *lpfc_cmd;
+	struct fc_rport *rport = starget_to_rport(scsi_target(cmnd->device));
 	IOCB_t *cmd, *icmd;
 	int ret = SUCCESS, status = 0;
 	struct lpfc_sli_ring *pring_s4;
@@ -4703,7 +4704,7 @@ lpfc_abort_handler(struct scsi_cmnd *cmnd)
 	unsigned long flags, iflags;
 	DECLARE_WAIT_QUEUE_HEAD_ONSTACK(waitq);
 
-	status = fc_block_scsi_eh(cmnd);
+	status = fc_block_scsi_eh(rport);
 	if (status != 0 && status != SUCCESS)
 		return status;
 
@@ -5166,6 +5167,7 @@ lpfc_device_reset_handler(struct scsi_cmnd *cmnd)
 	unsigned tgt_id = cmnd->device->id;
 	uint64_t lun_id = cmnd->device->lun;
 	struct lpfc_scsi_event_header scsi_event;
+	struct fc_rport *rport = starget_to_rport(scsi_target(cmnd->device));
 	int status;
 
 	rdata = lpfc_rport_data_from_scsi_device(cmnd->device);
@@ -5176,7 +5178,7 @@ lpfc_device_reset_handler(struct scsi_cmnd *cmnd)
 		return FAILED;
 	}
 	pnode = rdata->pnode;
-	status = fc_block_scsi_eh(cmnd);
+	status = fc_block_scsi_eh(rport);
 	if (status != 0 && status != SUCCESS)
 		return status;
 
@@ -5237,6 +5239,7 @@ lpfc_target_reset_handler(struct scsi_cmnd *cmnd)
 	unsigned tgt_id = cmnd->device->id;
 	uint64_t lun_id = cmnd->device->lun;
 	struct lpfc_scsi_event_header scsi_event;
+	struct fc_rport *rport = starget_to_rport(scsi_target(cmnd->device));
 	int status;
 
 	rdata = lpfc_rport_data_from_scsi_device(cmnd->device);
@@ -5246,7 +5249,7 @@ lpfc_target_reset_handler(struct scsi_cmnd *cmnd)
 		return FAILED;
 	}
 	pnode = rdata->pnode;
-	status = fc_block_scsi_eh(cmnd);
+	status = fc_block_scsi_eh(rport);
 	if (status != 0 && status != SUCCESS)
 		return status;
 
@@ -5294,6 +5297,7 @@ lpfc_target_reset_handler(struct scsi_cmnd *cmnd)
 }
 
 /**
+_scsi_eh
  * lpfc_host_reset_handler - scsi_host_template eh_host_reset_handler entry pt
  * @cmnd: Pointer to scsi_cmnd data structure.
  *

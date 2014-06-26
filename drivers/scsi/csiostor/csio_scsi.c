@@ -1920,7 +1920,7 @@ csio_eh_abort_handler(struct scsi_cmnd *cmnd)
 	int rv;
 	struct csio_rnode *rn = (struct csio_rnode *)(cmnd->device->hostdata);
 
-	ret = fc_block_scsi_eh(cmnd);
+	ret = fc_block_scsi_eh(rn->rport);
 	if (ret)
 		return ret;
 
@@ -2087,7 +2087,7 @@ csio_eh_lun_reset_handler(struct scsi_cmnd *cmnd)
 	}
 
 	/* Lnode is ready, now wait on rport node readiness */
-	ret = fc_block_scsi_eh(cmnd);
+	ret = fc_block_scsi_eh(rn->rport);
 	if (ret)
 		return ret;
 

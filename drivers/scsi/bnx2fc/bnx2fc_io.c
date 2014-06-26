@@ -690,7 +690,7 @@ static int bnx2fc_initiate_tmf(struct scsi_cmnd *sc_cmd, u8 tm_flags)
 	}
 	rp = rport->dd_data;
 
-	rc = fc_block_scsi_eh(sc_cmd);
+	rc = fc_block_scsi_eh(rport);
 	if (rc)
 		return rc;
 
@@ -1118,7 +1118,7 @@ int bnx2fc_eh_abort(struct scsi_cmnd *sc_cmd)
 	struct bnx2fc_rport *tgt;
 	int rc;
 
-	rc = fc_block_scsi_eh(sc_cmd);
+	rc = fc_block_scsi_eh(rport);
 	if (rc)
 		return rc;
 

@@ -1805,7 +1805,7 @@ int fnic_abort_cmd(struct scsi_cmnd *sc)
 	spinlock_t *io_lock;
 	unsigned long flags;
 	unsigned long start_time = 0;
-	int ret = SUCCESS;
+	int ret;
 	u32 task_req = 0;
 	struct scsi_lun fc_lun;
 	struct fnic_stats *fnic_stats;
@@ -1817,8 +1817,12 @@ int fnic_abort_cmd(struct scsi_cmnd *sc)
 	DECLARE_COMPLETION_ONSTACK(tm_done);
 
 	/* Wait for rport to unblock */
-	fc_block_scsi_eh(sc);
+	rport = starget_to_rport(scsi_target(sc->device));
+	ret = fc_block_scsi_eh(rport);
+	if (ret)
+		return ret;
 
+	ret = SUCCESS;
 	/* Get local-port, check ready and link up */
 	lp = shost_priv(sc->device->host);
 
@@ -1827,7 +1831,6 @@ int fnic_abort_cmd(struct scsi_cmnd *sc)
 	abts_stats = &fnic->fnic_stats.abts_stats;
 	term_stats = &fnic->fnic_stats.term_stats;
 
-	rport = starget_to_rport(scsi_target(sc->device));
 	tag = sc->request->tag;
 	FNIC_SCSI_DBG(KERN_DEBUG,
 		fnic->lport->host,
@@ -2323,7 +2326,7 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 	struct fnic_io_req *io_req = NULL;
 	struct fc_rport *rport;
 	int status;
-	int ret = FAILED;
+	int ret;
 	spinlock_t *io_lock;
 	unsigned long flags;
 	unsigned long start_time = 0;
@@ -2336,8 +2339,12 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 	bool new_sc = 0;
 
 	/* Wait for rport to unblock */
-	fc_block_scsi_eh(sc);
+	rport = starget_to_rport(scsi_target(sc->device));
+	ret = fc_block_scsi_eh(rport);
+	if (ret)
+		return ret;
 
+	ret = FAILED;
 	/* Get local-port, check ready and link up */
 	lp = shost_priv(sc->device->host);
 
@@ -2347,7 +2354,6 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 
 	atomic64_inc(&reset_stats->device_resets);
 
-	rport = starget_to_rport(scsi_target(sc->device));
 	FNIC_SCSI_DBG(KERN_DEBUG, fnic->lport->host,
 		      "Device reset called FCID 0x%x, LUN 0x%llx sc 0x%p\n",
 		      rport->port_id, sc->device->lun, sc);
