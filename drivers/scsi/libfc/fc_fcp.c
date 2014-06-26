@@ -2118,11 +2118,12 @@ int fc_eh_abort(struct scsi_cmnd *sc_cmd)
 	struct fc_fcp_pkt *fsp;
 	struct fc_lport *lport;
 	struct fc_fcp_internal *si;
+	struct fc_rport *rport = starget_to_rport(scsi_target(sc_cmd->device));
 	int rc = FAILED;
 	unsigned long flags;
 	int rval;
 
-	rval = fc_block_scsi_eh(sc_cmd);
+	rval = fc_block_scsi_eh(rport);
 	if (rval)
 		return rval;
 
@@ -2174,7 +2175,7 @@ int fc_eh_device_reset(struct scsi_cmnd *sc_cmd)
 	int rc = FAILED;
 	int rval;
 
-	rval = fc_block_scsi_eh(sc_cmd);
+	rval = fc_block_scsi_eh(rport);
 	if (rval)
 		return rval;
 

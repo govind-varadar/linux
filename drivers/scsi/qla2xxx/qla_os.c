@@ -1247,6 +1247,7 @@ static int
 qla2xxx_eh_abort(struct scsi_cmnd *cmd)
 {
 	scsi_qla_host_t *vha = shost_priv(cmd->device->host);
+	struct fc_rport *rport = starget_to_rport(scsi_target(cmd->device));
 	srb_t *sp;
 	int ret;
 	unsigned int id;
@@ -1263,7 +1264,7 @@ qla2xxx_eh_abort(struct scsi_cmnd *cmd)
 	if (!CMD_SP(cmd))
 		return SUCCESS;
 
-	ret = fc_block_scsi_eh(cmd);
+	ret = fc_block_scsi_eh(rport);
 	if (ret != 0)
 		return ret;
 	ret = SUCCESS;
@@ -1394,9 +1395,11 @@ __qla2xxx_eh_generic_reset(char *name, enum nexus_wait_type type,
 		return FAILED;
 	}
 
-	err = fc_block_scsi_eh(cmd);
-	if (err != 0)
-		return err;
+	if (fcport->rport) {
+		err = fc_block_scsi_eh(fcport->rport);
+		if (err != 0)
+			return err;
+	}
 
 	ql_log(ql_log_info, vha, 0x8009,
 	    "%s RESET ISSUED nexus=%ld:%d:%llu cmd=%p.\n", name, vha->host_no,
@@ -1507,10 +1510,12 @@ qla2xxx_eh_bus_reset(struct scsi_cmnd *cmd)
 		return ret;
 	}
 
-	ret = fc_block_scsi_eh(cmd);
-	if (ret != 0)
-		return ret;
-	ret = FAILED;
+	if (fcport->rport) {
+		ret = fc_block_scsi_eh(fcport->rport);
+		if (ret != 0)
+			return ret;
+		ret = FAILED;
+	}
 
 	ql_log(ql_log_info, vha, 0x8012,
 	    "BUS RESET ISSUED nexus=%ld:%d:%llu.\n", vha->host_no, id, lun);
