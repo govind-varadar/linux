@@ -4697,6 +4697,14 @@ LPFC_ATTR_RW(XLanePriority, 0, 0x0, 0x7f, "CS_CTL for Express Lane Feature.");
 LPFC_ATTR_R(enable_bg, 0, 0, 1, "Enable BlockGuard Support");
 
 /*
+# lpfc_enable_stats:  Enable HBA statistics
+#       0  = HBA statistics disabled
+#       1  = HBA statistics enabled (default)
+# Value range is [0,1]. Default value is 1
+*/
+LPFC_ATTR_RW(enable_stats, 1, 0, 1, "Enable HBA statistics.");
+
+/*
 # lpfc_fcp_look_ahead: Look ahead for completions in FCP start routine
 #       0  = disabled (default)
 #       1  = enabled
@@ -4876,6 +4884,7 @@ struct device_attribute *lpfc_hba_attrs[] = {
 	&dev_attr_lpfc_sriov_hw_max_virtfn,
 	&dev_attr_protocol,
 	&dev_attr_lpfc_xlane_supported,
+	&dev_attr_lpfc_enable_stats,
 	NULL,
 };
 
@@ -5866,6 +5875,7 @@ lpfc_get_cfgparam(struct lpfc_hba *phba)
 	lpfc_request_firmware_upgrade_init(phba, lpfc_req_fw_upgrade);
 	lpfc_suppress_link_up_init(phba, lpfc_suppress_link_up);
 	lpfc_iocb_cnt_init(phba, lpfc_iocb_cnt);
+	lpfc_enable_stats_init(phba, lpfc_enable_stats);
 	phba->cfg_enable_dss = 1;
 	return;
 }
