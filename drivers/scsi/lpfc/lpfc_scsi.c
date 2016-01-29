@@ -4133,23 +4133,32 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 
 	lpfc_scsi_unprep_dma_buf(phba, lpfc_cmd);
 
+	/*
+	 * If the 'abort_completions' flag is set we can
+	 * release the scsi_buf before calling 'done', thereby
+	 * avoiding a race condition between aborts and scsi_done
+	 */
+	if (shost->hostt->abort_completions)
+		lpfc_release_scsi_buf(phba, lpfc_cmd);
+
 	/* The sdev is not guaranteed to be valid post scsi_done upcall. */
 	cmd->scsi_done(cmd);
 
-	spin_lock_irqsave(&phba->hbalock, flags);
-	lpfc_cmd->pCmd = NULL;
-	spin_unlock_irqrestore(&phba->hbalock, flags);
+	if (!shost->hostt->abort_completions) {
+		spin_lock_irqsave(&phba->hbalock, flags);
+		lpfc_cmd->pCmd = NULL;
+		spin_unlock_irqrestore(&phba->hbalock, flags);
 
-	/*
-	 * If there is a thread waiting for command completion
-	 * wake up the thread.
-	 */
-	spin_lock_irqsave(shost->host_lock, flags);
-	if (lpfc_cmd->waitq)
-		wake_up(lpfc_cmd->waitq);
-	spin_unlock_irqrestore(shost->host_lock, flags);
-
-	lpfc_release_scsi_buf(phba, lpfc_cmd);
+		/*
+		 * If there is a thread waiting for command completion
+		 * wake up the thread.
+		 */
+		spin_lock_irqsave(shost->host_lock, flags);
+		if (lpfc_cmd->waitq)
+			wake_up(lpfc_cmd->waitq);
+		spin_unlock_irqrestore(shost->host_lock, flags);
+		lpfc_release_scsi_buf(phba, lpfc_cmd);
+	}
 }
 
 /**
@@ -4677,7 +4686,6 @@ lpfc_abort_handler(struct scsi_cmnd *cmnd)
 	struct lpfc_sli_ring *pring_s4;
 	int ring_number, ret_val;
 	unsigned long flags, iflags;
-	DECLARE_WAIT_QUEUE_HEAD_ONSTACK(waitq);
 
 	status = fc_block_scsi_eh(cmnd);
 	if (status != 0 && status != SUCCESS)
@@ -4690,7 +4698,7 @@ lpfc_abort_handler(struct scsi_cmnd *cmnd)
 		lpfc_printf_vlog(vport, KERN_WARNING, LOG_FCP,
 			"3168 SCSI Layer abort requested I/O has been "
 			"flushed by LLD.\n");
-		return FAILED;
+		return shost->hostt->abort_completions ? SUCCESS : FAILED;
 	}
 
 	lpfc_cmd = (struct lpfc_scsi_buf *)cmnd->host_scribble;
@@ -4700,7 +4708,7 @@ lpfc_abort_handler(struct scsi_cmnd *cmnd)
 			 "2873 SCSI Layer I/O Abort Request IO CMPL Status "
 			 "x%x ID %d LUN %llu\n",
 			 SUCCESS, cmnd->device->id, cmnd->device->lun);
-		return SUCCESS;
+		return shost->hostt->abort_completions ? SUCCESS : FAILED;
 	}
 
 	iocb = &lpfc_cmd->cur_iocbq;
@@ -4710,7 +4718,7 @@ lpfc_abort_handler(struct scsi_cmnd *cmnd)
 		lpfc_printf_vlog(vport, KERN_WARNING, LOG_FCP,
 			"3169 SCSI Layer abort requested I/O has been "
 			"cancelled by LLD.\n");
-		return FAILED;
+		return shost->hostt->abort_completions ? SUCCESS : FAILED;
 	}
 	/*
 	 * If pCmd field of the corresponding lpfc_scsi_buf structure
@@ -4802,24 +4810,28 @@ lpfc_abort_handler(struct scsi_cmnd *cmnd)
 			&phba->sli.ring[LPFC_FCP_RING], HA_R0RE_REQ);
 
 wait_for_cmpl:
-	lpfc_cmd->waitq = &waitq;
-	/* Wait for abort to complete */
-	wait_event_timeout(waitq,
-			  (lpfc_cmd->pCmd != cmnd),
-			   msecs_to_jiffies(2*vport->cfg_devloss_tmo*1000));
+	if (!shost->hostt->abort_completions) {
+		DECLARE_WAIT_QUEUE_HEAD_ONSTACK(waitq);
 
-	spin_lock_irqsave(shost->host_lock, flags);
-	lpfc_cmd->waitq = NULL;
-	spin_unlock_irqrestore(shost->host_lock, flags);
+		lpfc_cmd->waitq = &waitq;
+		/* Wait for abort to complete */
+		wait_event_timeout(waitq,
+			(lpfc_cmd->pCmd != cmnd),
+			msecs_to_jiffies(2*vport->cfg_devloss_tmo*1000));
 
-	if (lpfc_cmd->pCmd == cmnd) {
-		ret = FAILED;
-		lpfc_printf_vlog(vport, KERN_ERR, LOG_FCP,
-				 "0748 abort handler timed out waiting "
-				 "for abortng I/O (xri:x%x) to complete: "
-				 "ret %#x, ID %d, LUN %llu\n",
-				 iocb->sli4_xritag, ret,
-				 cmnd->device->id, cmnd->device->lun);
+		spin_lock_irqsave(shost->host_lock, flags);
+		lpfc_cmd->waitq = NULL;
+		spin_unlock_irqrestore(shost->host_lock, flags);
+
+		if (lpfc_cmd->pCmd == cmnd) {
+			ret = FAILED;
+			lpfc_printf_vlog(vport, KERN_ERR, LOG_FCP,
+				"0748 abort handler timed out waiting "
+				"for abortng I/O (xri:x%x) to complete: "
+				"ret %#x, ID %d, LUN %llu\n",
+				iocb->sli4_xritag, ret,
+				cmnd->device->id, cmnd->device->lun);
+		}
 	}
 	goto out;
 
@@ -5927,6 +5939,7 @@ struct scsi_host_template lpfc_template = {
 	.vendor_id		= LPFC_NL_VENDOR_ID,
 	.change_queue_depth	= scsi_change_queue_depth,
 	.track_queue_depth	= 1,
+	.abort_completions	= 1,
 };
 
 struct scsi_host_template lpfc_vport_template = {
@@ -5950,4 +5963,5 @@ struct scsi_host_template lpfc_vport_template = {
 	.max_sectors		= 0xFFFF,
 	.change_queue_depth	= scsi_change_queue_depth,
 	.track_queue_depth	= 1,
+	.abort_completions	= 1,
 };
