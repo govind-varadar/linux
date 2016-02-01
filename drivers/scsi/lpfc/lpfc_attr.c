@@ -4306,7 +4306,7 @@ lpfc_fcp_cpu_map_show(struct device *dev, struct device_attribute *attr,
 	struct lpfc_vport *vport = (struct lpfc_vport *)shost->hostdata;
 	struct lpfc_hba   *phba = vport->phba;
 	struct lpfc_vector_map_info *cpup;
-	int  len = 0;
+	int  len = 0, idx;
 
 	if ((phba->sli_rev != LPFC_SLI_REV4) ||
 	    (phba->intr_type != MSIX))
@@ -4315,8 +4315,14 @@ lpfc_fcp_cpu_map_show(struct device *dev, struct device_attribute *attr,
 	switch (phba->cfg_fcp_cpu_map) {
 	case 0:
 		len += snprintf(buf + len, PAGE_SIZE-len,
-				"fcp_cpu_map: No mapping (%d)\n",
+				"fcp_cpu_map: Manual mapping (%d)\n",
 				phba->cfg_fcp_cpu_map);
+		for (idx = 0; idx < phba->cfg_fcp_io_channel; idx++) {
+			len += snprintf(buf + len, PAGE_SIZE-len,
+					"io_chan %02d IRQ %d\n",
+					phba->sli4_hba.msix_entries[idx].entry,
+					phba->sli4_hba.msix_entries[idx].vector);
+		}
 		return len;
 	case 1:
 		len += snprintf(buf + len, PAGE_SIZE-len,
