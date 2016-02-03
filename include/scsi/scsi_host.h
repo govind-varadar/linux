@@ -449,6 +449,12 @@ struct scsi_host_template {
 	unsigned no_async_abort:1;
 
 	/*
+	 * True if aborts will trigger a command completion
+	 * of the failed command
+	 */
+	unsigned abort_completions:1;
+
+	/*
 	 * Countdown for host blocking with no commands outstanding.
 	 */
 	unsigned int max_host_blocked;

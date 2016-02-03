@@ -285,8 +285,11 @@ enum blk_eh_timer_return scsi_times_out(struct request *req)
 		rtn = host->hostt->eh_timed_out(scmd);
 
 	if (rtn == BLK_EH_NOT_HANDLED) {
-		if (!host->hostt->no_async_abort &&
-		    scsi_abort_command(scmd) == SUCCESS)
+		if (host->hostt->abort_completions &&
+		    scsi_try_to_abort_cmd(host->hostt, scmd) == SUCCESS)
+			return BLK_EH_RESET_TIMER;
+		else if (!host->hostt->no_async_abort &&
+			 scsi_abort_command(scmd) == SUCCESS)
 			return BLK_EH_NOT_HANDLED;
 
 		set_host_byte(scmd, DID_TIME_OUT);
