@@ -2133,6 +2133,12 @@ void scsi_mq_destroy_tags(struct Scsi_Host *shost)
 	blk_mq_free_tag_set(&shost->tag_set);
 }
 
+int scsi_mq_resize_tags(struct Scsi_Host *shost, int max_tags)
+{
+	return blk_mq_resize_tag_set(&shost->tag_set, max_tags);
+}
+EXPORT_SYMBOL_GPL(scsi_mq_resize_tags);
+
 /*
  * Function:    scsi_block_requests()
  *
