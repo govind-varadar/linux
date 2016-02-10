@@ -2099,6 +2099,7 @@ struct request_queue *scsi_mq_alloc_queue(struct scsi_device *sdev)
 int scsi_mq_setup_tags(struct Scsi_Host *shost)
 {
 	unsigned int cmd_size, sgl_size, tbl_size;
+	int ret;
 
 	tbl_size = shost->sg_tablesize;
 	if (tbl_size > SG_CHUNK_SIZE)
@@ -2119,7 +2120,12 @@ int scsi_mq_setup_tags(struct Scsi_Host *shost)
 		BLK_ALLOC_POLICY_TO_MQ_FLAG(shost->hostt->tag_alloc_policy);
 	shost->tag_set.driver_data = shost;
 
-	return blk_mq_alloc_tag_set(&shost->tag_set);
+	ret = blk_mq_alloc_tag_set(&shost->tag_set);
+	if (!ret) {
+		/* queue depth might have been adjusted */
+		shost->can_queue = shost->tag_set.queue_depth;
+	}
+	return ret;
 }
 
 void scsi_mq_destroy_tags(struct Scsi_Host *shost)
