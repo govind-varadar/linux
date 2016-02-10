@@ -181,6 +181,7 @@ void blk_mq_unregister_disk(struct gendisk *);
 
 int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set);
 void blk_mq_free_tag_set(struct blk_mq_tag_set *set);
+int blk_mq_resize_tag_set(struct blk_mq_tag_set *set, int new_tags);
 
 void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule);
 

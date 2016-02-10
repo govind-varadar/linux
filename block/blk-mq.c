@@ -2385,6 +2385,21 @@ void blk_mq_update_nr_hw_queues(struct blk_mq_tag_set *set, int nr_hw_queues)
 }
 EXPORT_SYMBOL_GPL(blk_mq_update_nr_hw_queues);
 
+int blk_mq_resize_tag_set(struct blk_mq_tag_set *set, int new_tags)
+{
+	int i, ret = 0;
+
+	for (i = 0; i < set->nr_hw_queues; i++) {
+		if (!set->tags[i])
+			continue;
+		ret = blk_mq_tag_update_depth(set->tags[i], new_tags);
+		if (ret)
+			break;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(blk_mq_resize_tag_set);
+
 void blk_mq_disable_hotplug(void)
 {
 	mutex_lock(&all_q_mutex);
