@@ -556,6 +556,7 @@ lpfc_sli4_fcp_xri_aborted(struct lpfc_hba *phba,
 		&phba->sli4_hba.lpfc_abts_scsi_buf_list, list) {
 		if (psb->cur_iocbq.sli4_xritag == xri) {
 			list_del(&psb->list);
+			clear_bit(LPFC_CMD_ABORTED, &psb->flags);
 			clear_bit(LPFC_CMD_EXCH_BUSY, &psb->flags);
 			psb->status = IOSTAT_SUCCESS;
 			spin_unlock(
@@ -1092,6 +1093,8 @@ lpfc_release_scsi_buf_s4(struct lpfc_hba *phba, struct lpfc_scsi_buf *psb)
 	psb->prot_seg_cnt = 0;
 
 	if (test_bit(LPFC_CMD_EXCH_BUSY, &psb->flags)) {
+		if (!test_and_set_bit(LPFC_CMD_ABORTED, &psb->flags))
+			return;
 		spin_lock_irqsave(&phba->sli4_hba.abts_scsi_buf_list_lock,
 					iflag);
 		psb->pCmd = NULL;

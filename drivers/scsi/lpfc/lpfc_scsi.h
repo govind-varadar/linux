@@ -145,6 +145,7 @@ struct lpfc_scsi_buf {
 
 	unsigned long flags;
 #define LPFC_CMD_EXCH_BUSY 1
+#define LPFC_CMD_ABORTED   2
 	dma_addr_t nonsg_phys;	/* Non scatter-gather physical address. */
 
 	/*

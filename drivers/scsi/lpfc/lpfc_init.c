@@ -1028,6 +1028,7 @@ lpfc_hba_down_post_s4(struct lpfc_hba *phba)
 	spin_unlock_irq(&phba->hbalock);
 
 	list_for_each_entry_safe(psb, psb_next, &aborts, list) {
+		clear_bit(LPFC_CMD_ABORTED, &psb->flags);
 		psb->pCmd = NULL;
 		psb->status = IOSTAT_SUCCESS;
 	}
