@@ -10442,7 +10442,10 @@ lpfc_sli_wake_iocb_wait(struct lpfc_hba *phba,
 		!(cmdiocbq->iocb_flag & LPFC_IO_LIBDFC)) {
 		lpfc_cmd = container_of(cmdiocbq, struct lpfc_scsi_buf,
 			cur_iocbq);
-		lpfc_cmd->exch_busy = rspiocbq->iocb_flag & LPFC_EXCHANGE_BUSY;
+		if (rspiocbq->iocb_flag & LPFC_EXCHANGE_BUSY)
+			set_bit(LPFC_CMD_EXCH_BUSY, &lpfc_cmd->flags);
+		else
+			clear_bit(LPFC_CMD_EXCH_BUSY, &lpfc_cmd->flags);
 	}
 
 	pdone_q = cmdiocbq->context_un.wait_queue;

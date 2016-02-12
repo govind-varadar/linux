@@ -556,7 +556,7 @@ lpfc_sli4_fcp_xri_aborted(struct lpfc_hba *phba,
 		&phba->sli4_hba.lpfc_abts_scsi_buf_list, list) {
 		if (psb->cur_iocbq.sli4_xritag == xri) {
 			list_del(&psb->list);
-			psb->exch_busy = 0;
+			clear_bit(LPFC_CMD_EXCH_BUSY, &psb->flags);
 			psb->status = IOSTAT_SUCCESS;
 			spin_unlock(
 				&phba->sli4_hba.abts_scsi_buf_list_lock);
@@ -588,7 +588,7 @@ lpfc_sli4_fcp_xri_aborted(struct lpfc_hba *phba,
 		if (iocbq->sli4_xritag != xri)
 			continue;
 		psb = container_of(iocbq, struct lpfc_scsi_buf, cur_iocbq);
-		psb->exch_busy = 0;
+		clear_bit(LPFC_CMD_EXCH_BUSY, &psb->flags);
 		spin_unlock_irqrestore(&phba->hbalock, iflag);
 		if (!list_empty(&pring->txq))
 			lpfc_worker_wake_up(phba);
@@ -675,10 +675,12 @@ lpfc_sli4_post_scsi_sgl_list(struct lpfc_hba *phba,
 						psb->cur_iocbq.sli4_xritag);
 				if (status) {
 					/* failure, put on abort scsi list */
-					psb->exch_busy = 1;
+					set_bit(LPFC_CMD_EXCH_BUSY,
+						&psb->flags);
 				} else {
 					/* success, put on SCSI buffer list */
-					psb->exch_busy = 0;
+					clear_bit(LPFC_CMD_EXCH_BUSY,
+						  &psb->flags);
 					psb->status = IOSTAT_SUCCESS;
 					num_posted++;
 				}
@@ -708,10 +710,10 @@ lpfc_sli4_post_scsi_sgl_list(struct lpfc_hba *phba,
 					 struct lpfc_scsi_buf, list);
 			if (status) {
 				/* failure, put on abort scsi list */
-				psb->exch_busy = 1;
+				set_bit(LPFC_CMD_EXCH_BUSY, &psb->flags);
 			} else {
 				/* success, put on SCSI buffer list */
-				psb->exch_busy = 0;
+				clear_bit(LPFC_CMD_EXCH_BUSY, &psb->flags);
 				psb->status = IOSTAT_SUCCESS;
 				num_posted++;
 			}
@@ -1089,7 +1091,7 @@ lpfc_release_scsi_buf_s4(struct lpfc_hba *phba, struct lpfc_scsi_buf *psb)
 	psb->nonsg_phys = 0;
 	psb->prot_seg_cnt = 0;
 
-	if (psb->exch_busy) {
+	if (test_bit(LPFC_CMD_EXCH_BUSY, &psb->flags)) {
 		spin_lock_irqsave(&phba->sli4_hba.abts_scsi_buf_list_lock,
 					iflag);
 		psb->pCmd = NULL;
@@ -3923,7 +3925,8 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 	lpfc_cmd->result = (pIocbOut->iocb.un.ulpWord[4] & IOERR_PARAM_MASK);
 	lpfc_cmd->status = pIocbOut->iocb.ulpStatus;
 	/* pick up SLI4 exhange busy status from HBA */
-	lpfc_cmd->exch_busy = pIocbOut->iocb_flag & LPFC_EXCHANGE_BUSY;
+	if (pIocbOut->iocb_flag & LPFC_EXCHANGE_BUSY)
+		set_bit(LPFC_CMD_EXCH_BUSY, &lpfc_cmd->flags);
 
 #ifdef CONFIG_SCSI_LPFC_DEBUG_FS
 	if (lpfc_cmd->prot_data_type) {
