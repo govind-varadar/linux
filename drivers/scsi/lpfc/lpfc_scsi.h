@@ -134,7 +134,7 @@ struct lpfc_scsi_buf {
 
 	uint32_t timeout;
 
-	uint16_t xx_exch_busy;     /* SLI4 hba reported XB on complete WCQE */
+	uint16_t iotag;
 	uint16_t status;	/* From IOCB Word 7- ulpStatus */
 	uint32_t result;	/* From IOCB Word 4. */
 
@@ -144,8 +144,9 @@ struct lpfc_scsi_buf {
 	uint32_t prot_seg_cnt;  /* seg_cnt's counterpart for protection data */
 
 	unsigned long flags;
-#define LPFC_CMD_EXCH_BUSY 1
-#define LPFC_CMD_ABORTED   2
+#define LPFC_CMD_EXCH_BUSY 0
+#define LPFC_CMD_ABORTED   1
+#define LPFC_CMD_QUEUED    2
 	dma_addr_t nonsg_phys;	/* Non scatter-gather physical address. */
 
 	/*

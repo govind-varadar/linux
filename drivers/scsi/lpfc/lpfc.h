@@ -840,6 +840,7 @@ struct lpfc_hba {
 	uint64_t bg_reftag_err_cnt;
 
 	/* fastpath list. */
+	struct lpfc_scsi_buf **lpfc_scsi_buf_arr;
 	spinlock_t scsi_buf_list_get_lock;  /* SCSI buf alloc list lock */
 	spinlock_t scsi_buf_list_put_lock;  /* SCSI buf free list lock */
 	struct list_head lpfc_scsi_buf_list_get;

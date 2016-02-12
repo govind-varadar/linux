@@ -746,9 +746,19 @@ int
 lpfc_sli4_repost_scsi_sgl_list(struct lpfc_hba *phba)
 {
 	LIST_HEAD(post_sblist);
-	int num_posted, rc = 0;
+	int i, num_posted, rc = 0;
 
 	/* get all SCSI buffers need to repost to a local list */
+	if (phba->lpfc_scsi_buf_arr) {
+		struct lpfc_scsi_buf *psb;
+
+		for (i = 0; i < phba->cfg_hba_queue_depth; i++) {
+			psb = phba->lpfc_scsi_buf_arr[i];
+			if (psb &&
+			    !test_and_set_bit(LPFC_CMD_QUEUED, &psb->flags))
+				list_add(&psb->list, &post_sblist);
+		}
+	}
 	spin_lock_irq(&phba->scsi_buf_list_get_lock);
 	spin_lock(&phba->scsi_buf_list_put_lock);
 	list_splice_init(&phba->lpfc_scsi_buf_list_get, &post_sblist);
@@ -913,6 +923,12 @@ lpfc_new_scsi_buf_s4(struct lpfc_vport *vport, int num_to_alloc)
 		psb->dma_phys_bpl = pdma_phys_bpl;
 
 		/* add the scsi buffer to a post list */
+		if (phba->lpfc_scsi_buf_arr) {
+			int idx = phba->total_scsi_bufs + bcnt;
+			psb->iotag = idx;
+			phba->lpfc_scsi_buf_arr[idx] = psb;
+			set_bit(LPFC_CMD_QUEUED, &psb->flags);
+		}
 		list_add_tail(&psb->list, &post_sblist);
 		spin_lock_irq(&phba->scsi_buf_list_get_lock);
 		phba->sli4_hba.scsi_xri_cnt++;
@@ -1105,9 +1121,13 @@ lpfc_release_scsi_buf_s4(struct lpfc_hba *phba, struct lpfc_scsi_buf *psb)
 	} else {
 		psb->pCmd = NULL;
 		psb->cur_iocbq.iocb_flag = LPFC_IO_FCP;
-		spin_lock_irqsave(&phba->scsi_buf_list_put_lock, iflag);
-		list_add_tail(&psb->list, &phba->lpfc_scsi_buf_list_put);
-		spin_unlock_irqrestore(&phba->scsi_buf_list_put_lock, iflag);
+		if (phba->lpfc_scsi_buf_arr)
+			clear_bit(LPFC_CMD_QUEUED, &psb->flags);
+		else {
+			spin_lock_irqsave(&phba->scsi_buf_list_put_lock, iflag);
+			list_add_tail(&psb->list, &phba->lpfc_scsi_buf_list_put);
+			spin_unlock_irqrestore(&phba->scsi_buf_list_put_lock, iflag);
+		}
 	}
 }
 
@@ -4533,7 +4553,7 @@ lpfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 	struct lpfc_hba   *phba = vport->phba;
 	struct lpfc_rport_data *rdata;
 	struct lpfc_nodelist *ndlp;
-	struct lpfc_scsi_buf *lpfc_cmd;
+	struct lpfc_scsi_buf *lpfc_cmd = NULL;
 	struct fc_rport *rport = starget_to_rport(scsi_target(cmnd->device));
 	int err;
 
@@ -4566,7 +4586,28 @@ lpfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 	if (atomic_read(&ndlp->cmd_pending) >= ndlp->cmd_qdepth)
 		goto out_tgt_busy;
 
-	lpfc_cmd = lpfc_get_scsi_buf(phba, ndlp);
+	if (phba->lpfc_scsi_buf_arr) {
+		u32 tag = blk_mq_unique_tag(cmnd->request);
+		u16 hwq = blk_mq_unique_tag_to_hwq(tag);
+		u16 idx = blk_mq_unique_tag_to_tag(tag);
+
+		idx = idx * phba->cfg_fcp_io_channel + hwq;
+		if (idx >= phba->cfg_hba_queue_depth) {
+			lpfc_printf_vlog(vport, KERN_ERR, LOG_SCSI_CMD,
+					 "9034 iotag %x too large\n", idx);
+		} else
+			lpfc_cmd = phba->lpfc_scsi_buf_arr[idx];
+		if (!lpfc_cmd)
+			lpfc_printf_vlog(vport, KERN_ERR, LOG_SCSI_CMD,
+					 "9035 iotag %x invalid\n", idx);
+		else if (test_and_set_bit(LPFC_CMD_QUEUED, &lpfc_cmd->flags)) {
+			lpfc_printf_vlog(vport, KERN_INFO, LOG_SCSI_CMD,
+					 "9036 iotag %x hwq %x busy\n",
+					 lpfc_cmd->iotag, hwq);
+			lpfc_cmd = NULL;
+		}
+	} else
+		lpfc_cmd = lpfc_get_scsi_buf(phba, ndlp);
 	if (lpfc_cmd == NULL) {
 		lpfc_rampdown_queue_depth(phba);
 
@@ -4962,7 +5003,7 @@ lpfc_send_taskmgmt(struct lpfc_vport *vport, struct lpfc_rport_data *rdata,
 		    uint8_t task_mgmt_cmd)
 {
 	struct lpfc_hba   *phba = vport->phba;
-	struct lpfc_scsi_buf *lpfc_cmd;
+	struct lpfc_scsi_buf *lpfc_cmd = NULL;
 	struct lpfc_iocbq *iocbq;
 	struct lpfc_iocbq *iocbqrsp;
 	struct lpfc_nodelist *pnode = rdata->pnode;
@@ -4972,7 +5013,21 @@ lpfc_send_taskmgmt(struct lpfc_vport *vport, struct lpfc_rport_data *rdata,
 	if (!pnode || !NLP_CHK_NODE_ACT(pnode))
 		return FAILED;
 
-	lpfc_cmd = lpfc_get_scsi_buf(phba, rdata->pnode);
+	if (phba->lpfc_scsi_buf_arr) {
+		int idx;
+		for (idx = 0; idx < phba->cfg_hba_queue_depth; idx++) {
+			lpfc_cmd = phba->lpfc_scsi_buf_arr[idx];
+			if (test_and_set_bit(LPFC_CMD_QUEUED,
+					     &lpfc_cmd->flags)) {
+				ret = 0;
+				break;
+			}
+			ret = -EBUSY;
+		}
+		if (ret < 0)
+			lpfc_cmd = NULL;
+	} else
+		lpfc_cmd = lpfc_get_scsi_buf(phba, rdata->pnode);
 	if (lpfc_cmd == NULL)
 		return FAILED;
 	lpfc_cmd->timeout = phba->cfg_task_mgmt_tmo;
@@ -5483,10 +5538,12 @@ lpfc_slave_alloc(struct scsi_device *sdev)
 	 * extra.  This list of scsi bufs exists for the lifetime of the driver.
 	 */
 	total = phba->total_scsi_bufs;
-	num_to_alloc = vport->cfg_lun_queue_depth + 2;
+	num_to_alloc = (vport->cfg_lun_queue_depth + 2) *
+		phba->cfg_fcp_io_channel;
 
 	/* If allocated buffers are enough do nothing */
-	if ((sdev_cnt * (vport->cfg_lun_queue_depth + 2)) < total)
+	if (!shost_use_blk_mq(sdev->host) &&
+	    (sdev_cnt * (vport->cfg_lun_queue_depth + 2)) < total)
 		return 0;
 
 	/* Allow some exchanges to be available always to complete discovery */
@@ -5514,8 +5571,13 @@ lpfc_slave_alloc(struct scsi_device *sdev)
 					 "Allocated %d buffers.\n",
 					 num_to_alloc, num_allocated);
 	}
-	if (num_allocated > 0)
+	if (num_allocated > 0) {
 		phba->total_scsi_bufs += num_allocated;
+		if (shost_use_blk_mq(sdev->host)) {
+			int num_tags = num_allocated / phba->cfg_fcp_io_channel;
+			scsi_mq_resize_tags(sdev->host, num_tags);
+		}
+	}
 	return 0;
 }
 

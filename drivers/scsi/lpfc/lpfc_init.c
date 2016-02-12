@@ -3071,6 +3071,20 @@ lpfc_scsi_free(struct lpfc_hba *phba)
 	}
 	spin_unlock(&phba->scsi_buf_list_get_lock);
 
+	if (phba->lpfc_scsi_buf_arr) {
+		int idx;
+		for (idx = 0; idx < phba->cfg_hba_queue_depth; idx++) {
+			sb = phba->lpfc_scsi_buf_arr[idx];
+			if (!sb)
+				continue;
+			clear_bit(LPFC_CMD_QUEUED, &sb->flags);
+			list_del(&sb->list);
+			pci_pool_free(phba->lpfc_scsi_dma_buf_pool, sb->data,
+				      sb->dma_handle);
+			kfree(sb);
+			phba->total_scsi_bufs--;
+		}
+	}
 	/* Release all the lpfc_iocbq entries maintained by this host. */
 	list_for_each_entry_safe(io, io_next, &phba->lpfc_iocb_list, list) {
 		list_del(&io->list);
@@ -3212,6 +3226,18 @@ lpfc_sli4_xri_sgl_update(struct lpfc_hba *phba)
 			phba->sli4_hba.scsi_xri_cnt,
 			phba->sli4_hba.scsi_xri_max);
 
+	if (phba->lpfc_scsi_buf_arr) {
+		for (i = 0; i < phba->cfg_hba_queue_depth; i++) {
+			psb = phba->lpfc_scsi_buf_arr[i];
+			if (psb) {
+				if (test_and_set_bit(LPFC_CMD_QUEUED,
+						     &psb->flags))
+					continue;
+				list_add_tail(&psb->list, &scsi_sgl_list);
+			}
+		}
+	}
+
 	spin_lock_irq(&phba->scsi_buf_list_get_lock);
 	spin_lock(&phba->scsi_buf_list_put_lock);
 	list_splice_init(&phba->lpfc_scsi_buf_list_get, &scsi_sgl_list);
@@ -3228,6 +3254,9 @@ lpfc_sli4_xri_sgl_update(struct lpfc_hba *phba)
 			list_remove_head(&scsi_sgl_list, psb,
 					 struct lpfc_scsi_buf, list);
 			if (psb) {
+				clear_bit(LPFC_CMD_QUEUED, &psb->flags);
+				if (phba->lpfc_scsi_buf_arr)
+					phba->lpfc_scsi_buf_arr[psb->iotag] = NULL;
 				pci_pool_free(phba->lpfc_scsi_dma_buf_pool,
 					      psb->data, psb->dma_handle);
 				kfree(psb);
@@ -3258,8 +3287,17 @@ lpfc_sli4_xri_sgl_update(struct lpfc_hba *phba)
 	list_splice_init(&scsi_sgl_list, &phba->lpfc_scsi_buf_list_get);
 	INIT_LIST_HEAD(&phba->lpfc_scsi_buf_list_put);
 	spin_unlock(&phba->scsi_buf_list_put_lock);
-	spin_unlock_irq(&phba->scsi_buf_list_get_lock);
 
+	if (phba->lpfc_scsi_buf_arr) {
+		for (i = 0; i < phba->cfg_hba_queue_depth; i++) {
+			psb = phba->lpfc_scsi_buf_arr[i];
+			if (psb) {
+				clear_bit(LPFC_CMD_QUEUED, &psb->flags);
+				list_del_init(&psb->list);
+			}
+		}
+	}
+	spin_unlock_irq(&phba->scsi_buf_list_get_lock);
 	return 0;
 
 out_free_mem:
@@ -3329,13 +3367,21 @@ lpfc_create_port(struct lpfc_hba *phba, int instance, struct device *dev)
 	 * scsi_add_host will fail. This will be adjusted later based on the
 	 * max xri value determined in hba setup.
 	 */
-	shost->can_queue = phba->cfg_hba_queue_depth - 10;
+	shost->can_queue = (phba->cfg_hba_queue_depth - 10) /
+		phba->cfg_fcp_io_channel;
 	if (dev != &phba->pcidev->dev) {
 		shost->transportt = lpfc_vport_transport_template;
 		vport->port_type = LPFC_NPIV_PORT;
 	} else {
 		shost->transportt = lpfc_transport_template;
 		vport->port_type = LPFC_PHYSICAL_PORT;
+	}
+
+	if (shost_use_blk_mq(shost) && phba->sli_rev == LPFC_SLI_REV4) {
+		phba->lpfc_scsi_buf_arr = kzalloc(sizeof(struct lpfc_scsi_buf *) *
+						  phba->cfg_hba_queue_depth, GFP_KERNEL);
+		if (!phba->lpfc_scsi_buf_arr)
+			goto out_put_shost;
 	}
 
 	/* Initialize all internally managed lists. */
@@ -6312,7 +6358,8 @@ lpfc_post_init_setup(struct lpfc_hba *phba)
 	 * adjust the value of can_queue.
 	 */
 	shost = pci_get_drvdata(phba->pcidev);
-	shost->can_queue = phba->cfg_hba_queue_depth - 10;
+	shost->can_queue = (phba->cfg_hba_queue_depth - 10) /
+		phba->cfg_fcp_io_channel;
 	if (phba->sli3_options & LPFC_SLI3_BG_ENABLED)
 		lpfc_setup_bg(phba, shost);
 
