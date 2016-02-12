@@ -2657,7 +2657,6 @@ lpfc_sli_process_unsol_iocb(struct lpfc_hba *phba, struct lpfc_sli_ring *pring,
 /**
  * lpfc_sli_iocbq_lookup - Find command iocb for the given response iocb
  * @phba: Pointer to HBA context object.
- * @pring: Pointer to driver SLI ring object.
  * @prspiocb: Pointer to response iocb object.
  *
  * This function looks up the iocb_lookup table to get the command iocb
@@ -2668,7 +2667,6 @@ lpfc_sli_process_unsol_iocb(struct lpfc_hba *phba, struct lpfc_sli_ring *pring,
  **/
 static struct lpfc_iocbq *
 lpfc_sli_iocbq_lookup(struct lpfc_hba *phba,
-		      struct lpfc_sli_ring *pring,
 		      struct lpfc_iocbq *prspiocb)
 {
 	struct lpfc_iocbq *cmd_iocb = NULL;
@@ -2697,7 +2695,6 @@ lpfc_sli_iocbq_lookup(struct lpfc_hba *phba,
 /**
  * lpfc_sli_iocbq_lookup_by_tag - Find command iocb for the iotag
  * @phba: Pointer to HBA context object.
- * @pring: Pointer to driver SLI ring object.
  * @iotag: IOCB tag.
  *
  * This function looks up the iocb_lookup table to get the command iocb
@@ -2708,7 +2705,7 @@ lpfc_sli_iocbq_lookup(struct lpfc_hba *phba,
  **/
 static struct lpfc_iocbq *
 lpfc_sli_iocbq_lookup_by_tag(struct lpfc_hba *phba,
-			     struct lpfc_sli_ring *pring, uint16_t iotag)
+			     uint16_t iotag)
 {
 	struct lpfc_iocbq *cmd_iocb;
 
@@ -2755,7 +2752,7 @@ lpfc_sli_process_sol_iocb(struct lpfc_hba *phba, struct lpfc_sli_ring *pring,
 
 	/* Based on the iotag field, get the cmd IOCB from the txcmplq */
 	spin_lock_irqsave(&phba->hbalock, iflag);
-	cmdiocbp = lpfc_sli_iocbq_lookup(phba, pring, saveq);
+	cmdiocbp = lpfc_sli_iocbq_lookup(phba, saveq);
 	spin_unlock_irqrestore(&phba->hbalock, iflag);
 
 	if (cmdiocbp) {
@@ -3088,8 +3085,7 @@ lpfc_sli_handle_fast_ring_event(struct lpfc_hba *phba,
 				break;
 			}
 
-			cmdiocbq = lpfc_sli_iocbq_lookup(phba, pring,
-							 &rspiocbq);
+			cmdiocbq = lpfc_sli_iocbq_lookup(phba, &rspiocbq);
 			if (unlikely(!cmdiocbq))
 				break;
 			if (cmdiocbq->iocb_flag & LPFC_DRIVER_ABORTED)
@@ -3284,8 +3280,7 @@ lpfc_sli_sp_handle_rspiocb(struct lpfc_hba *phba, struct lpfc_sli_ring *pring,
 		case LPFC_ABORT_IOCB:
 			cmdiocbp = NULL;
 			if (irsp->ulpCommand != CMD_XRI_ABORTED_CX)
-				cmdiocbp = lpfc_sli_iocbq_lookup(phba, pring,
-								 saveq);
+				cmdiocbp = lpfc_sli_iocbq_lookup(phba, saveq);
 			if (cmdiocbp) {
 				/* Call the specified completion routine */
 				if (cmdiocbp->iocb_cmpl) {
@@ -11711,7 +11706,7 @@ lpfc_sli4_els_wcqe_to_rspiocbq(struct lpfc_hba *phba,
 	spin_lock_irqsave(&pring->ring_lock, iflags);
 	pring->stats.iocb_event++;
 	/* Look up the ELS command IOCB and create pseudo response IOCB */
-	cmdiocbq = lpfc_sli_iocbq_lookup_by_tag(phba, pring,
+	cmdiocbq = lpfc_sli_iocbq_lookup_by_tag(phba,
 				bf_get(lpfc_wcqe_c_request_tag, wcqe));
 	spin_unlock_irqrestore(&pring->ring_lock, iflags);
 
@@ -12302,7 +12297,7 @@ lpfc_sli4_fp_handle_fcp_wcqe(struct lpfc_hba *phba, struct lpfc_queue *cq,
 	/* Look up the FCP command IOCB and create pseudo response IOCB */
 	spin_lock_irqsave(&pring->ring_lock, iflags);
 	pring->stats.iocb_event++;
-	cmdiocbq = lpfc_sli_iocbq_lookup_by_tag(phba, pring,
+	cmdiocbq = lpfc_sli_iocbq_lookup_by_tag(phba,
 				bf_get(lpfc_wcqe_c_request_tag, wcqe));
 	spin_unlock_irqrestore(&pring->ring_lock, iflags);
 	if (unlikely(!cmdiocbq)) {
