@@ -1285,9 +1285,10 @@ static int enic_poll(struct napi_struct *napi, int budget)
 {
 	struct net_device *netdev = napi->dev;
 	struct enic *enic = netdev_priv(netdev);
-	unsigned int cq_rq = enic_cq_rq(enic, 0);
-	unsigned int cq_wq = enic_cq_wq(enic, 0);
-	unsigned int intr = enic_legacy_io_intr();
+	unsigned int index = (napi - &enic->napi[0]);
+	unsigned int cq_rq = enic_cq_rq(enic, index);
+	unsigned int cq_wq = enic_cq_wq(enic, index);
+	unsigned int intr = enic_msix_rq_intr(enic, index);
 	unsigned int rq_work_to_do = budget;
 	unsigned int wq_work_to_do = -1; /* no limit */
 	unsigned int  work_done, rq_work_done = 0, wq_work_done;
@@ -1322,7 +1323,7 @@ static int enic_poll(struct napi_struct *napi, int budget)
 			0 /* don't unmask intr */,
 			0 /* don't reset intr timer */);
 
-	err = vnic_rq_fill(&enic->rq[0], enic_rq_alloc_buf);
+	err = vnic_rq_fill(&enic->rq[cq_rq], enic_rq_alloc_buf);
 	enic_poll_unlock_napi(&enic->rq[cq_rq], napi);
 
 	/* Buffer allocation failed. Stay in polling
@@ -1335,7 +1336,7 @@ static int enic_poll(struct napi_struct *napi, int budget)
 		/* Call the function which refreshes the intr coalescing timer
 		 * value based on the traffic.
 		 */
-		enic_calc_int_moderation(enic, &enic->rq[0]);
+		enic_calc_int_moderation(enic, &enic->rq[cq_rq]);
 
 	if (rq_work_done < rq_work_to_do) {
 
@@ -1345,7 +1346,7 @@ static int enic_poll(struct napi_struct *napi, int budget)
 
 		napi_complete_done(napi, rq_work_done);
 		if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
-			enic_set_int_moderation(enic, &enic->rq[0]);
+			enic_set_int_moderation(enic, &enic->rq[cq_rq]);
 		vnic_intr_unmask(&enic->intr[intr]);
 	}
 
