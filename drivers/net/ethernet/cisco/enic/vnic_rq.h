@@ -68,9 +68,10 @@ struct vnic_rq_ctrl {
 struct vnic_rq_buf {
 	struct vnic_rq_buf *next;
 	dma_addr_t dma_addr;
-	void *os_buf;
+	void *va;
+	struct enic_page_cache *ec;
+	struct page_frag pgfrag;
 	unsigned int os_buf_index;
-	unsigned int len;
 	unsigned int index;
 	void *desc;
 	uint64_t wr_id;
@@ -95,6 +96,7 @@ struct vnic_rq {
 #ifdef CONFIG_NET_RX_BUSY_POLL
 	atomic_t bpoll_state;
 #endif /* CONFIG_NET_RX_BUSY_POLL */
+	struct enic_page_cache *ec;
 };
 
 static inline unsigned int vnic_rq_desc_avail(struct vnic_rq *rq)
@@ -119,17 +121,12 @@ static inline unsigned int vnic_rq_next_index(struct vnic_rq *rq)
 	return rq->to_use->index;
 }
 
-static inline void vnic_rq_post(struct vnic_rq *rq,
-	void *os_buf, unsigned int os_buf_index,
-	dma_addr_t dma_addr, unsigned int len,
-	uint64_t wrid)
+static inline void vnic_rq_post(struct vnic_rq *rq, unsigned int os_buf_index,
+				uint64_t wrid)
 {
 	struct vnic_rq_buf *buf = rq->to_use;
 
-	buf->os_buf = os_buf;
 	buf->os_buf_index = os_buf_index;
-	buf->dma_addr = dma_addr;
-	buf->len = len;
 	buf->wr_id = wrid;
 
 	buf = buf->next;

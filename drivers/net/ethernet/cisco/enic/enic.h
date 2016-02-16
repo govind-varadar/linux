@@ -45,6 +45,22 @@
 
 #define ENIC_AIC_LARGE_PKT_DIFF	3
 
+#define ENIC_ALLOC_ORDER	get_order(32 * 1024)
+#define ENIC_HDR_SPLIT		128
+
+struct enic_page {
+	void			*va;
+	dma_addr_t		dma_addr;
+	struct page_frag	frag;
+};
+
+struct enic_page_cache {
+	struct enic_page *cur;
+	struct enic_page *renew;
+	struct enic_page a, b;
+	int count;
+};
+
 struct enic_msix_entry {
 	int requested;
 	char devname[IFNAMSIZ];

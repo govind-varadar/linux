@@ -1019,45 +1019,191 @@ nla_put_failure:
 static void enic_free_rq_buf(struct vnic_rq *rq, struct vnic_rq_buf *buf)
 {
 	struct enic *enic = vnic_dev_priv(rq->vdev);
+	struct enic_page_cache *ec = buf->ec;
 
-	if (!buf->os_buf)
-		return;
+	if (buf->pgfrag.page)
+		__free_pages(buf->pgfrag.page, ENIC_ALLOC_ORDER);
 
-	pci_unmap_single(enic->pdev, buf->dma_addr,
-		buf->len, PCI_DMA_FROMDEVICE);
-	dev_kfree_skb_any(buf->os_buf);
-	buf->os_buf = NULL;
+	if (ec && !--ec->count) {
+		if (ec->cur->frag.page) {
+			pci_unmap_page(enic->pdev, ec->cur->dma_addr,
+				       PAGE_SIZE << ENIC_ALLOC_ORDER,
+				       PCI_DMA_FROMDEVICE);
+			__free_pages(ec->cur->frag.page, ENIC_ALLOC_ORDER);
+		}
+
+		if (ec->renew->frag.page) {
+			pci_unmap_page(enic->pdev, ec->renew->dma_addr,
+				       PAGE_SIZE << ENIC_ALLOC_ORDER,
+				       PCI_DMA_FROMDEVICE);
+			__free_pages(ec->renew->frag.page, ENIC_ALLOC_ORDER);
+		}
+
+		kfree(ec);
+	}
+
+	buf->ec = NULL;
+	rq->ec = NULL;
+}
+
+static int enic_rq_alloc_page(struct enic *enic, struct enic_page *pg)
+{
+	gfp_t gfp_comp = GFP_ATOMIC | __GFP_COMP | __GFP_NOWARN | __GFP_NORETRY;
+
+	pg->frag.page = alloc_pages_node(NUMA_NO_NODE, gfp_comp,
+					 ENIC_ALLOC_ORDER);
+	if (!pg->frag.page)
+		return -ENOMEM;
+
+	pg->frag.size = PAGE_SIZE << ENIC_ALLOC_ORDER;
+	pg->va = page_address(pg->frag.page);
+	pg->dma_addr = pci_map_page(enic->pdev, pg->frag.page, 0,
+				    PAGE_SIZE << ENIC_ALLOC_ORDER,
+				    PCI_DMA_FROMDEVICE);
+	pg->frag.offset = 0;
+	if (unlikely(enic_dma_map_check(enic, pg->dma_addr))) {
+		__free_pages(pg->frag.page, ENIC_ALLOC_ORDER);
+		pg->frag.page = NULL;
+
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static struct enic_page_cache *enic_rq_alloc_ec(struct enic *enic)
+{
+	struct enic_page_cache *ec;
+	int ret;
+
+	ec = kzalloc(sizeof(*ec), GFP_ATOMIC);
+	if (!ec)
+		goto no_ec;
+
+	ec->cur = &ec->a;
+	ec->renew = &ec->b;
+	ret = enic_rq_alloc_page(enic, ec->cur);
+	if (ret)
+		goto free_ec;
+
+	return ec;
+
+free_ec:
+	kfree(ec);
+no_ec:
+	return NULL;
+}
+
+static int enic_rq_get_frag(struct enic *enic, struct enic_page_cache *ec,
+			    struct page_frag *frag)
+{
+	int offset;
+	int len;
+
+	len = enic->netdev->mtu + VLAN_ETH_HLEN;
+	len = SKB_DATA_ALIGN(len);
+	offset = ec->cur->frag.offset + len;
+	if (offset > ec->cur->frag.size)
+		return -ENOMEM;
+	frag->page = ec->cur->frag.page;
+	frag->offset = ec->cur->frag.offset;
+	frag->size = len;
+	ec->cur->frag.offset = offset;
+	get_page(frag->page);
+
+	return 0;
+}
+
+static int enic_rq_alloc_frag(struct vnic_rq *rq, struct vnic_rq_buf *buf)
+{
+	struct enic *enic = rq->vdev->priv;
+	struct enic_page_cache *ec;
+	struct page_frag *pg = &buf->pgfrag;
+	int ret;
+
+	ec = buf->ec;
+	if (unlikely(!ec)) {
+		ec = rq->ec;
+		if (!ec) {
+alloc_new_ec:
+			ec = enic_rq_alloc_ec(enic);
+			rq->ec = ec;
+			buf->ec = ec;
+			if (!ec)
+				return -ENOMEM;
+			ec->count++;
+			enic_rq_get_frag(enic, ec, pg);
+			goto success;
+		} else {
+			ret = enic_rq_get_frag(enic, ec, pg);
+			if (ret)
+				goto alloc_new_ec;
+			buf->ec = ec;
+			ec->count++;
+			goto success;
+		}
+	}
+
+	if (unlikely(!ec->cur->frag.page)) {
+		ret = enic_rq_alloc_page(enic, ec->cur);
+		if (ret)
+			return -ENOMEM;
+	}
+
+	ret = enic_rq_get_frag(enic, ec, pg);
+	if (ret) {
+		if (unlikely(!ec->renew->frag.page)) {
+			ret = enic_rq_alloc_page(enic, ec->renew);
+			if (ret)
+				return -ENOMEM;
+		}
+		swap(ec->cur, ec->renew);
+
+		/* all fragments in this page is used. store the page for
+		 * reuse. Check if we can renew the old page.
+		 */
+
+		if (page_count(ec->cur->frag.page) == 1) {
+			/* Driver is the only user of this page.
+			 * We can reuse the page
+			 */
+			ec->cur->frag.offset = 0;
+
+			enic_rq_get_frag(enic, ec, pg);
+			goto success;
+		} else {
+			/* page cannot be reused. */
+			pci_unmap_page(enic->pdev, ec->cur->dma_addr,
+				       PAGE_SIZE << ENIC_ALLOC_ORDER,
+				       PCI_DMA_FROMDEVICE);
+			__free_pages(ec->cur->frag.page, ENIC_ALLOC_ORDER);
+
+			ret = enic_rq_alloc_page(enic, ec->cur);
+			if (ret)
+				return -ENOMEM;
+			enic_rq_get_frag(enic, ec, pg);
+			goto success;
+		}
+	}
+
+success:
+	buf->va = ec->cur->va + pg->offset;
+	buf->dma_addr = ec->cur->dma_addr + pg->offset;
+
+	return 0;
 }
 
 static int enic_rq_alloc_buf(struct vnic_rq *rq)
 {
-	struct enic *enic = vnic_dev_priv(rq->vdev);
-	struct net_device *netdev = enic->netdev;
-	struct sk_buff *skb;
-	unsigned int len = netdev->mtu + VLAN_ETH_HLEN;
+	int ret;
 	unsigned int os_buf_index = 0;
-	dma_addr_t dma_addr;
 	struct vnic_rq_buf *buf = rq->to_use;
 
-	if (buf->os_buf) {
-		enic_queue_rq_desc(rq, buf->os_buf, os_buf_index, buf->dma_addr,
-				   buf->len);
-
-		return 0;
-	}
-	skb = netdev_alloc_skb_ip_align(netdev, len);
-	if (!skb)
+	ret = enic_rq_alloc_frag(rq, buf);
+	if (ret)
 		return -ENOMEM;
 
-	dma_addr = pci_map_single(enic->pdev, skb->data, len,
-				  PCI_DMA_FROMDEVICE);
-	if (unlikely(enic_dma_map_check(enic, dma_addr))) {
-		dev_kfree_skb(skb);
-		return -ENOMEM;
-	}
-
-	enic_queue_rq_desc(rq, skb, os_buf_index,
-		dma_addr, len);
+	enic_queue_rq_desc(rq, os_buf_index, buf->dma_addr, buf->pgfrag.size);
 
 	return 0;
 }
@@ -1071,23 +1217,60 @@ static void enic_intr_update_pkt_size(struct vnic_rx_bytes_counter *pkt_size,
 		pkt_size->small_pkt_bytes_cnt += pkt_len;
 }
 
-static bool enic_rxcopybreak(struct net_device *netdev, struct sk_buff **skb,
-			     struct vnic_rq_buf *buf, u16 len)
+static struct sk_buff *enic_mk_gro_skb(struct napi_struct *napi,
+				       struct vnic_rq_buf *buf, u16 len)
 {
-	struct enic *enic = netdev_priv(netdev);
-	struct sk_buff *new_skb;
 
-	if (len > enic->rx_copybreak)
-		return false;
-	new_skb = netdev_alloc_skb_ip_align(netdev, len);
-	if (!new_skb)
-		return false;
-	pci_dma_sync_single_for_cpu(enic->pdev, buf->dma_addr, len,
-				    DMA_FROM_DEVICE);
-	memcpy(new_skb->data, (*skb)->data, len);
-	*skb = new_skb;
+	struct sk_buff *skb;
 
-	return true;
+	skb = napi_get_frags(napi);
+	if (!skb)
+		return NULL;
+
+	skb_fill_page_desc(skb, skb_shinfo(skb)->nr_frags, buf->pgfrag.page,
+			   buf->pgfrag.offset, len);
+	skb->len += len;
+	skb->data_len += len;
+	skb->truesize += len;
+
+	return skb;
+}
+
+static struct sk_buff *enic_mk_rx_skb(struct napi_struct *napi,
+				      struct vnic_rq_buf *buf,
+				      struct enic *enic,
+				      u16 len)
+{
+	struct sk_buff *skb;
+	struct net_device *netdev = enic->netdev;
+	bool rx_copybreak = len <= enic->rx_copybreak;
+	u16 hdr_len = rx_copybreak ? len : ENIC_HDR_SPLIT;
+
+	skb = netdev_alloc_skb_ip_align(netdev, hdr_len);
+	if (!skb)
+		return NULL;
+
+	memcpy(skb->data, buf->va, hdr_len);
+	skb_put(skb, hdr_len);
+
+	if (!rx_copybreak) {
+		buf->pgfrag.offset += hdr_len;
+		len -= hdr_len;
+		skb_fill_page_desc(skb, skb_shinfo(skb)->nr_frags,
+				   buf->pgfrag.page,
+				   buf->pgfrag.offset,
+				   len);
+		skb->len += len;
+		skb->data_len += len;
+		skb->truesize += len;
+	} else {
+		__free_pages(buf->pgfrag.page, ENIC_ALLOC_ORDER);
+	}
+
+	skb->protocol = eth_type_trans(skb, netdev);
+	skb_mark_napi_id(skb, napi);
+
+	return skb;
 }
 
 static void enic_rq_indicate_buf(struct vnic_rq *rq,
@@ -1098,6 +1281,9 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 	struct net_device *netdev = enic->netdev;
 	struct sk_buff *skb;
 	struct vnic_cq *cq = &enic->cq[enic_cq_rq(enic, rq->index)];
+	bool gro = (netdev->features & NETIF_F_GRO) &&
+		   (!enic_poll_busy_polling(rq));
+	struct napi_struct *napi = &enic->napi[rq->index];
 
 	u8 type, color, eop, sop, ingress_port, vlan_stripped;
 	u8 fcoe, fcoe_sof, fcoe_fc_crc_ok, fcoe_enc_error, fcoe_eof;
@@ -1108,9 +1294,7 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 	u32 rss_hash;
 
 	if (skipped)
-		return;
-
-	skb = buf->os_buf;
+		goto fail;
 
 	cq_enet_rq_desc_dec((struct cq_enet_rq_desc *)cq_desc,
 		&type, &color, &q_number, &completed_index,
@@ -1131,28 +1315,24 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 				enic->rq_truncated_pkts++;
 		}
 
-		pci_unmap_single(enic->pdev, buf->dma_addr, buf->len,
-				 PCI_DMA_FROMDEVICE);
-		dev_kfree_skb_any(skb);
-		buf->os_buf = NULL;
-
-		return;
+		goto fail;
 	}
 
 	if (eop && bytes_written > 0) {
 
 		/* Good receive
 		 */
+		pci_dma_sync_single_for_cpu(enic->pdev, buf->dma_addr,
+					    bytes_written, DMA_FROM_DEVICE);
 
-		if (!enic_rxcopybreak(netdev, &skb, buf, bytes_written)) {
-			buf->os_buf = NULL;
-			pci_unmap_single(enic->pdev, buf->dma_addr, buf->len,
-					 PCI_DMA_FROMDEVICE);
-		}
-		prefetch(skb->data - NET_IP_ALIGN);
+		if (gro)
+			skb = enic_mk_gro_skb(napi, buf, bytes_written);
+		else
+			skb = enic_mk_rx_skb(napi, buf, enic, bytes_written);
 
-		skb_put(skb, bytes_written);
-		skb->protocol = eth_type_trans(skb, netdev);
+		if (!skb)
+			goto fail;
+
 		skb_record_rx_queue(skb, q_number);
 		if (netdev->features & NETIF_F_RXHASH) {
 			switch (rss_type) {
@@ -1181,12 +1361,10 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 		if (vlan_stripped)
 			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan_tci);
 
-		skb_mark_napi_id(skb, &enic->napi[rq->index]);
-		if (enic_poll_busy_polling(rq) ||
-		    !(netdev->features & NETIF_F_GRO))
-			netif_receive_skb(skb);
+		if (gro)
+			napi_gro_frags(napi);
 		else
-			napi_gro_receive(&enic->napi[q_number], skb);
+			netif_receive_skb(skb);
 		if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
 			enic_intr_update_pkt_size(&cq->pkt_size_counter,
 						  bytes_written);
@@ -1194,12 +1372,14 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 
 		/* Buffer overflow
 		 */
-
-		pci_unmap_single(enic->pdev, buf->dma_addr, buf->len,
-				 PCI_DMA_FROMDEVICE);
-		dev_kfree_skb_any(skb);
-		buf->os_buf = NULL;
+		goto fail;
 	}
+	buf->pgfrag.page = NULL;
+
+	return;
+fail:
+	__free_pages(buf->pgfrag.page, ENIC_ALLOC_ORDER);
+	buf->pgfrag.page = NULL;
 }
 
 static int enic_rq_service(struct vnic_dev *vdev, struct cq_desc *cq_desc,
