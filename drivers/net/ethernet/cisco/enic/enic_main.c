@@ -330,8 +330,8 @@ static irqreturn_t enic_isr_legacy(int irq, void *data)
 	struct net_device *netdev = data;
 	struct enic *enic = netdev_priv(netdev);
 	unsigned int io_intr = enic_rq_intr(enic, 0); /* get intr of rq[0] */
-	unsigned int err_intr = enic_legacy_err_intr();
-	unsigned int notify_intr = enic_legacy_notify_intr();
+	unsigned int err_intr = enic_err_intr(enic);
+	unsigned int notify_intr = enic_notify_intr(enic);
 	u32 pba;
 
 	vnic_intr_mask(&enic->intr[io_intr]);
@@ -400,7 +400,7 @@ static irqreturn_t enic_isr_msix(int irq, void *data)
 static irqreturn_t enic_isr_msix_err(int irq, void *data)
 {
 	struct enic *enic = data;
-	unsigned int intr = enic_msix_err_intr(enic);
+	unsigned int intr = enic_err_intr(enic);
 
 	vnic_intr_return_all_credits(&enic->intr[intr]);
 
@@ -414,7 +414,7 @@ static irqreturn_t enic_isr_msix_err(int irq, void *data)
 static irqreturn_t enic_isr_msix_notify(int irq, void *data)
 {
 	struct enic *enic = data;
-	unsigned int intr = enic_msix_notify_intr(enic);
+	unsigned int intr = enic_notify_intr(enic);
 
 	enic_notify_check(enic);
 	vnic_intr_return_all_credits(&enic->intr[intr]);
@@ -1587,14 +1587,14 @@ static int enic_request_intr(struct enic *enic)
 			enic->msix[intr].devid = &enic->napi[wq];
 		}
 
-		intr = enic_msix_err_intr(enic);
+		intr = enic_err_intr(enic);
 		snprintf(enic->msix[intr].devname,
 			sizeof(enic->msix[intr].devname),
 			"%.11s-err", netdev->name);
 		enic->msix[intr].isr = enic_isr_msix_err;
 		enic->msix[intr].devid = enic;
 
-		intr = enic_msix_notify_intr(enic);
+		intr = enic_notify_intr(enic);
 		snprintf(enic->msix[intr].devname,
 			sizeof(enic->msix[intr].devname),
 			"%.11s-notify", netdev->name);
@@ -1681,11 +1681,11 @@ static int enic_dev_notify_set(struct enic *enic)
 	switch (vnic_dev_get_intr_mode(enic->vdev)) {
 	case VNIC_DEV_INTR_MODE_INTX:
 		err = vnic_dev_notify_set(enic->vdev,
-			enic_legacy_notify_intr());
+			enic_notify_intr(enic));
 		break;
 	case VNIC_DEV_INTR_MODE_MSIX:
 		err = vnic_dev_notify_set(enic->vdev,
-			enic_msix_notify_intr(enic));
+			enic_notify_intr(enic));
 		break;
 	default:
 		err = vnic_dev_notify_set(enic->vdev, -1 /* no intr */);

@@ -231,16 +231,6 @@ static inline unsigned int enic_cq_wq(struct enic *enic, unsigned int wq)
 	return enic->rq_count + wq;
 }
 
-static inline unsigned int enic_legacy_err_intr(void)
-{
-	return 1;
-}
-
-static inline unsigned int enic_legacy_notify_intr(void)
-{
-	return 2;
-}
-
 static inline unsigned int enic_rq_intr(struct enic *enic, unsigned int rq)
 {
 	return enic->cq[enic_cq_rq(enic, rq)].interrupt_offset;
@@ -251,40 +241,25 @@ static inline unsigned int enic_wq_intr(struct enic *enic, unsigned int wq)
 	return enic->cq[enic_cq_wq(enic, wq)].interrupt_offset;
 }
 
-static inline unsigned int enic_msix_err_intr(struct enic *enic)
+static inline unsigned int enic_err_intr(struct enic *enic)
 {
-	return enic->rq_count + enic->wq_count;
+	return enic->rq_count == enic->wq_count ? enic->rq_count :
+		enic->rq_count + enic->wq_count;
 }
 
-static inline unsigned int enic_msix_notify_intr(struct enic *enic)
+static inline unsigned int enic_notify_intr(struct enic *enic)
 {
-	return enic->rq_count + enic->wq_count + 1;
+	return enic_err_intr(enic) + 1;
 }
 
 static inline bool enic_is_err_intr(struct enic *enic, int intr)
 {
-	switch (vnic_dev_get_intr_mode(enic->vdev)) {
-	case VNIC_DEV_INTR_MODE_INTX:
-		return intr == enic_legacy_err_intr();
-	case VNIC_DEV_INTR_MODE_MSIX:
-		return intr == enic_msix_err_intr(enic);
-	case VNIC_DEV_INTR_MODE_MSI:
-	default:
-		return false;
-	}
+	return intr == enic_err_intr(enic);
 }
 
 static inline bool enic_is_notify_intr(struct enic *enic, int intr)
 {
-	switch (vnic_dev_get_intr_mode(enic->vdev)) {
-	case VNIC_DEV_INTR_MODE_INTX:
-		return intr == enic_legacy_notify_intr();
-	case VNIC_DEV_INTR_MODE_MSIX:
-		return intr == enic_msix_notify_intr(enic);
-	case VNIC_DEV_INTR_MODE_MSI:
-	default:
-		return false;
-	}
+	return intr == enic_notify_intr(enic);
 }
 
 static inline int enic_dma_map_check(struct enic *enic, dma_addr_t dma_addr)
