@@ -365,7 +365,7 @@ static irqreturn_t enic_isr_legacy(int irq, void *data)
 
 static irqreturn_t enic_isr_msi(int irq, void *data)
 {
-	struct enic *enic = data;
+	struct napi_struct *napi = data;
 
 	/* With MSI, there is no sharing of interrupts, so this is
 	 * our interrupt and there is no need to ack it.  The device
@@ -382,15 +382,6 @@ static irqreturn_t enic_isr_msi(int irq, void *data)
 	 * _after_ corresponding Memory Writes (i.e. descriptor
 	 * writes).
 	 */
-
-	napi_schedule_irqoff(&enic->napi[0]);
-
-	return IRQ_HANDLED;
-}
-
-static irqreturn_t enic_isr_msix(int irq, void *data)
-{
-	struct napi_struct *napi = data;
 
 	napi_schedule_irqoff(napi);
 
@@ -1531,7 +1522,7 @@ static void enic_free_intr(struct enic *enic)
 		free_irq(enic->pdev->irq, netdev);
 		break;
 	case VNIC_DEV_INTR_MODE_MSI:
-		free_irq(enic->pdev->irq, enic);
+		free_irq(enic->pdev->irq, &enic->napi[0]);
 		break;
 	case VNIC_DEV_INTR_MODE_MSIX:
 		for (i = 0; i < ARRAY_SIZE(enic->msix); i++)
@@ -1561,8 +1552,8 @@ static int enic_request_intr(struct enic *enic)
 
 	case VNIC_DEV_INTR_MODE_MSI:
 
-		err = request_irq(enic->pdev->irq, enic_isr_msi,
-			0, netdev->name, enic);
+		err = request_irq(enic->pdev->irq, enic_isr_msi, 0,
+				  netdev->name, &enic->napi[0]);
 		break;
 
 	case VNIC_DEV_INTR_MODE_MSIX:
@@ -1572,7 +1563,7 @@ static int enic_request_intr(struct enic *enic)
 			snprintf(enic->msix[intr].devname,
 				sizeof(enic->msix[intr].devname),
 				"%.11s-rx-%u", netdev->name, i);
-			enic->msix[intr].isr = enic_isr_msix;
+			enic->msix[intr].isr = enic_isr_msi;
 			enic->msix[intr].devid = &enic->napi[i];
 		}
 
@@ -1583,7 +1574,7 @@ static int enic_request_intr(struct enic *enic)
 			snprintf(enic->msix[intr].devname,
 				sizeof(enic->msix[intr].devname),
 				"%.11s-tx-%u", netdev->name, i);
-			enic->msix[intr].isr = enic_isr_msix;
+			enic->msix[intr].isr = enic_isr_msi;
 			enic->msix[intr].devid = &enic->napi[wq];
 		}
 
@@ -1929,19 +1920,19 @@ static void enic_poll_controller(struct net_device *netdev)
 	case VNIC_DEV_INTR_MODE_MSIX:
 		for (i = 0; i < enic->rq_count; i++) {
 			intr = enic_rq_intr(enic, i);
-			enic_isr_msix(enic->msix_entry[intr].vector,
-				      &enic->napi[i]);
+			enic_isr_msi(enic->msix_entry[intr].vector,
+				     &enic->napi[i]);
 		}
 
 		for (i = 0; i < enic->wq_count; i++) {
 			intr = enic_wq_intr(enic, i);
-			enic_isr_msix(enic->msix_entry[intr].vector,
-				      &enic->napi[enic_cq_wq(enic, i)]);
+			enic_isr_msi(enic->msix_entry[intr].vector,
+				     &enic->napi[enic_cq_wq(enic, i)]);
 		}
 
 		break;
 	case VNIC_DEV_INTR_MODE_MSI:
-		enic_isr_msi(enic->pdev->irq, enic);
+		enic_isr_msi(enic->pdev->irq, &enic->napi[0]);
 		break;
 	case VNIC_DEV_INTR_MODE_INTX:
 		enic_isr_legacy(enic->pdev->irq, netdev);
