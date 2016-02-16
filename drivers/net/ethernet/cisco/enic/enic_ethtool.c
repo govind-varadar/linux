@@ -228,7 +228,8 @@ static int enic_get_coalesce(struct net_device *netdev,
 	struct enic *enic = netdev_priv(netdev);
 	struct enic_rx_coal *rxcoal = &enic->rx_coalesce_setting;
 
-	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX)
+	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX &&
+	    !enic_shared_irq(enic))
 		ecmd->tx_coalesce_usecs = enic->tx_coalesce_usecs;
 	ecmd->rx_coalesce_usecs = enic->rx_coalesce_usecs;
 	if (rxcoal->use_adaptive_rx_coalesce)
@@ -269,6 +270,8 @@ static int enic_coalesce_valid(struct enic *enic,
 
 	if ((vnic_dev_get_intr_mode(enic->vdev) != VNIC_DEV_INTR_MODE_MSIX) &&
 	    ec->tx_coalesce_usecs)
+		return -EINVAL;
+	else if (enic_shared_irq(enic) && ec->tx_coalesce_usecs)
 		return -EINVAL;
 
 	if ((ec->tx_coalesce_usecs > coalesce_usecs_max)	||
@@ -313,7 +316,8 @@ static int enic_set_coalesce(struct net_device *netdev,
 	rx_coalesce_usecs_high = min_t(u32, ecmd->rx_coalesce_usecs_high,
 				       coalesce_usecs_max);
 
-	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX) {
+	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX &&
+	    !enic_shared_irq(enic)) {
 		for (i = 0; i < enic->wq_count; i++) {
 			intr = enic_wq_intr(enic, i);
 			vnic_intr_coalescing_timer_set(&enic->intr[intr],
