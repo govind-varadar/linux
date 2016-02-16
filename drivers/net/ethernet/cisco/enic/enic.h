@@ -241,10 +241,15 @@ static inline unsigned int enic_wq_intr(struct enic *enic, unsigned int wq)
 	return enic->cq[enic_cq_wq(enic, wq)].interrupt_offset;
 }
 
+static inline bool enic_shared_irq(struct enic *enic)
+{
+	return enic->rq_count == enic->wq_count;
+}
+
 static inline unsigned int enic_err_intr(struct enic *enic)
 {
-	return enic->rq_count == enic->wq_count ? enic->rq_count :
-		enic->rq_count + enic->wq_count;
+	return enic_shared_irq(enic) ? enic->rq_count :
+				       enic->rq_count + enic->wq_count;
 }
 
 static inline unsigned int enic_notify_intr(struct enic *enic)

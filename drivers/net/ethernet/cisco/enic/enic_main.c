@@ -1558,24 +1558,35 @@ static int enic_request_intr(struct enic *enic)
 
 	case VNIC_DEV_INTR_MODE_MSIX:
 
-		for (i = 0; i < enic->rq_count; i++) {
-			intr = enic_rq_intr(enic, i);
-			snprintf(enic->msix[intr].devname,
-				sizeof(enic->msix[intr].devname),
-				"%.11s-rx-%u", netdev->name, i);
-			enic->msix[intr].isr = enic_isr_msi;
-			enic->msix[intr].devid = &enic->napi[i];
-		}
+		if (enic_shared_irq(enic)) {
+			for (i = 0; i < enic->rq_count; i++) {
+				intr = enic_rq_intr(enic, i);
+				snprintf(enic->msix[intr].devname,
+					 sizeof(enic->msix[intr].devname),
+					 "%.11s-TxRx-%u", netdev->name, i);
+				enic->msix[intr].isr = enic_isr_msi;
+				enic->msix[intr].devid = &enic->napi[i];
+			}
+		} else {
+			for (i = 0; i < enic->rq_count; i++) {
+				intr = enic_rq_intr(enic, i);
+				snprintf(enic->msix[intr].devname,
+					 sizeof(enic->msix[intr].devname),
+					 "%.11s-rx-%u", netdev->name, i);
+				enic->msix[intr].isr = enic_isr_msi;
+				enic->msix[intr].devid = &enic->napi[i];
+			}
 
-		for (i = 0; i < enic->wq_count; i++) {
-			int wq = enic_cq_wq(enic, i);
+			for (i = 0; i < enic->wq_count; i++) {
+				int wq = enic_cq_wq(enic, i);
 
-			intr = enic_wq_intr(enic, i);
-			snprintf(enic->msix[intr].devname,
-				sizeof(enic->msix[intr].devname),
-				"%.11s-tx-%u", netdev->name, i);
-			enic->msix[intr].isr = enic_isr_msi;
-			enic->msix[intr].devid = &enic->napi[wq];
+				intr = enic_wq_intr(enic, i);
+				snprintf(enic->msix[intr].devname,
+					 sizeof(enic->msix[intr].devname),
+					 "%.11s-tx-%u", netdev->name, i);
+				enic->msix[intr].isr = enic_isr_msi;
+				enic->msix[intr].devid = &enic->napi[wq];
+			}
 		}
 
 		intr = enic_err_intr(enic);
@@ -1747,7 +1758,8 @@ static int enic_open(struct net_device *netdev)
 		enic_busy_poll_init_lock(&enic->rq[i]);
 		napi_enable(&enic->napi[i]);
 	}
-	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX)
+	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX &&
+	    !enic_shared_irq(enic))
 		for (i = 0; i < enic->wq_count; i++)
 			napi_enable(&enic->napi[enic_cq_wq(enic, i)]);
 	enic_dev_enable(enic);
@@ -1800,7 +1812,8 @@ static int enic_stop(struct net_device *netdev)
 
 	netif_carrier_off(netdev);
 	netif_tx_disable(netdev);
-	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX)
+	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX &&
+	    !enic_shared_irq(enic))
 		for (i = 0; i < enic->wq_count; i++)
 			napi_disable(&enic->napi[enic_cq_wq(enic, i)]);
 
@@ -1924,11 +1937,12 @@ static void enic_poll_controller(struct net_device *netdev)
 				     &enic->napi[i]);
 		}
 
-		for (i = 0; i < enic->wq_count; i++) {
-			intr = enic_wq_intr(enic, i);
-			enic_isr_msi(enic->msix_entry[intr].vector,
-				     &enic->napi[enic_cq_wq(enic, i)]);
-		}
+		if (!enic_shared_irq(enic))
+			for (i = 0; i < enic->wq_count; i++) {
+				intr = enic_wq_intr(enic, i);
+				enic_isr_msi(enic->msix_entry[intr].vector,
+					     &enic->napi[enic_cq_wq(enic, i)]);
+			}
 
 		break;
 	case VNIC_DEV_INTR_MODE_MSI:
@@ -2197,6 +2211,23 @@ static int enic_set_intr_mode(struct enic *enic)
 	/* Use multiple RQs if RSS is enabled
 	 */
 
+	if (n == m &&
+	    enic->config.intr_mode < 1 &&
+	    enic->cq_count >= n * 2 &&
+	    enic->intr_count >= n + 2) {
+		if (pci_enable_msix_range(enic->pdev, enic->msix_entry,
+					  n + 2, n + 2) > 0) {
+			enic->rq_count = n;
+			enic->wq_count = n;
+			enic->cq_count = n * 2;
+			enic->intr_count = n + 2;
+			vnic_dev_set_intr_mode(enic->vdev,
+					       VNIC_DEV_INTR_MODE_MSIX);
+
+			return 0;
+		}
+	}
+
 	if (ENIC_SETTING(enic, RSS) &&
 	    enic->config.intr_mode < 1 &&
 	    enic->rq_count >= n &&
@@ -2366,7 +2397,8 @@ static void enic_dev_deinit(struct enic *enic)
 		napi_hash_del(&enic->napi[i]);
 		netif_napi_del(&enic->napi[i]);
 	}
-	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX)
+	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX &&
+	    !enic_shared_irq(enic))
 		for (i = 0; i < enic->wq_count; i++)
 			netif_napi_del(&enic->napi[enic_cq_wq(enic, i)]);
 
@@ -2453,13 +2485,23 @@ static int enic_dev_init(struct enic *enic)
 		netif_napi_add(netdev, &enic->napi[0], enic_poll, 64);
 		break;
 	case VNIC_DEV_INTR_MODE_MSIX:
-		for (i = 0; i < enic->rq_count; i++) {
-			netif_napi_add(netdev, &enic->napi[i],
-				enic_poll_msix_rq, NAPI_POLL_WEIGHT);
+		if (enic_shared_irq(enic)) {
+			for (i = 0; i < enic->rq_count; i++) {
+				netif_napi_add(netdev, &enic->napi[i],
+					       enic_poll, NAPI_POLL_WEIGHT);
+			}
+		} else {
+			for (i = 0; i < enic->rq_count; i++) {
+				netif_napi_add(netdev, &enic->napi[i],
+					       enic_poll_msix_rq,
+					       NAPI_POLL_WEIGHT);
+			}
+			for (i = 0; i < enic->wq_count; i++)
+				netif_napi_add(netdev,
+					       &enic->napi[enic_cq_wq(enic, i)],
+					       enic_poll_msix_wq,
+					       NAPI_POLL_WEIGHT);
 		}
-		for (i = 0; i < enic->wq_count; i++)
-			netif_napi_add(netdev, &enic->napi[enic_cq_wq(enic, i)],
-				       enic_poll_msix_wq, NAPI_POLL_WEIGHT);
 		break;
 	}
 
