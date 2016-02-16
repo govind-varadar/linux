@@ -98,7 +98,7 @@ static void enic_intr_coal_set_rx(struct enic *enic, u32 timer)
 	int intr;
 
 	for (i = 0; i < enic->rq_count; i++) {
-		intr = enic_msix_rq_intr(enic, i);
+		intr = enic_rq_intr(enic, i);
 		vnic_intr_coalescing_timer_set(&enic->intr[intr], timer);
 	}
 }
@@ -315,7 +315,7 @@ static int enic_set_coalesce(struct net_device *netdev,
 
 	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX) {
 		for (i = 0; i < enic->wq_count; i++) {
-			intr = enic_msix_wq_intr(enic, i);
+			intr = enic_wq_intr(enic, i);
 			vnic_intr_coalescing_timer_set(&enic->intr[intr],
 						       tx_coalesce_usecs);
 		}

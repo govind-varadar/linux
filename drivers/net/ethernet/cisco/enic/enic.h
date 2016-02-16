@@ -231,11 +231,6 @@ static inline unsigned int enic_cq_wq(struct enic *enic, unsigned int wq)
 	return enic->rq_count + wq;
 }
 
-static inline unsigned int enic_legacy_io_intr(void)
-{
-	return 0;
-}
-
 static inline unsigned int enic_legacy_err_intr(void)
 {
 	return 1;
@@ -246,14 +241,12 @@ static inline unsigned int enic_legacy_notify_intr(void)
 	return 2;
 }
 
-static inline unsigned int enic_msix_rq_intr(struct enic *enic,
-	unsigned int rq)
+static inline unsigned int enic_rq_intr(struct enic *enic, unsigned int rq)
 {
 	return enic->cq[enic_cq_rq(enic, rq)].interrupt_offset;
 }
 
-static inline unsigned int enic_msix_wq_intr(struct enic *enic,
-	unsigned int wq)
+static inline unsigned int enic_wq_intr(struct enic *enic, unsigned int wq)
 {
 	return enic->cq[enic_cq_wq(enic, wq)].interrupt_offset;
 }

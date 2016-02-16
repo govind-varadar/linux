@@ -160,7 +160,7 @@ static void enic_set_affinity_hint(struct enic *enic)
 	}
 
 	for (i = 0; i < enic->wq_count; i++) {
-		int wq_intr = enic_msix_wq_intr(enic, i);
+		int wq_intr = enic_wq_intr(enic, i);
 
 		if (enic->msix[wq_intr].affinity_mask &&
 		    !cpumask_empty(enic->msix[wq_intr].affinity_mask))
@@ -329,7 +329,7 @@ static irqreturn_t enic_isr_legacy(int irq, void *data)
 {
 	struct net_device *netdev = data;
 	struct enic *enic = netdev_priv(netdev);
-	unsigned int io_intr = enic_legacy_io_intr();
+	unsigned int io_intr = enic_rq_intr(enic, 0); /* get intr of rq[0] */
 	unsigned int err_intr = enic_legacy_err_intr();
 	unsigned int notify_intr = enic_legacy_notify_intr();
 	u32 pba;
@@ -1225,7 +1225,7 @@ static int enic_rq_service(struct vnic_dev *vdev, struct cq_desc *cq_desc,
 
 static void enic_set_int_moderation(struct enic *enic, struct vnic_rq *rq)
 {
-	unsigned int intr = enic_msix_rq_intr(enic, rq->index);
+	unsigned int intr = enic_rq_intr(enic, rq->index);
 	struct vnic_cq *cq = &enic->cq[enic_cq_rq(enic, rq->index)];
 	u32 timer = cq->tobe_rx_coal_timeval;
 
@@ -1288,7 +1288,7 @@ static int enic_poll(struct napi_struct *napi, int budget)
 	unsigned int index = (napi - &enic->napi[0]);
 	unsigned int cq_rq = enic_cq_rq(enic, index);
 	unsigned int cq_wq = enic_cq_wq(enic, index);
-	unsigned int intr = enic_msix_rq_intr(enic, index);
+	unsigned int intr = enic_rq_intr(enic, index);
 	unsigned int rq_work_to_do = budget;
 	unsigned int wq_work_to_do = -1; /* no limit */
 	unsigned int  work_done, rq_work_done = 0, wq_work_done;
@@ -1398,7 +1398,7 @@ static int enic_busy_poll(struct napi_struct *napi)
 	struct enic *enic = netdev_priv(netdev);
 	unsigned int rq = (napi - &enic->napi[0]);
 	unsigned int cq = enic_cq_rq(enic, rq);
-	unsigned int intr = enic_msix_rq_intr(enic, rq);
+	unsigned int intr = enic_rq_intr(enic, rq);
 	unsigned int work_to_do = -1; /* clean all pkts possible */
 	unsigned int work_done;
 
@@ -1433,7 +1433,7 @@ static int enic_poll_msix_wq(struct napi_struct *napi, int budget)
 
 	wq_irq = wq->index;
 	cq = enic_cq_wq(enic, wq_irq);
-	intr = enic_msix_wq_intr(enic, wq_irq);
+	intr = enic_wq_intr(enic, wq_irq);
 	wq_work_done = vnic_cq_service(&enic->cq[cq], wq_work_to_do,
 				       enic_wq_service, NULL);
 
@@ -1455,7 +1455,7 @@ static int enic_poll_msix_rq(struct napi_struct *napi, int budget)
 	struct enic *enic = netdev_priv(netdev);
 	unsigned int rq = (napi - &enic->napi[0]);
 	unsigned int cq = enic_cq_rq(enic, rq);
-	unsigned int intr = enic_msix_rq_intr(enic, rq);
+	unsigned int intr = enic_rq_intr(enic, rq);
 	unsigned int work_to_do = budget;
 	unsigned int work_done = 0;
 	int err;
@@ -1568,7 +1568,7 @@ static int enic_request_intr(struct enic *enic)
 	case VNIC_DEV_INTR_MODE_MSIX:
 
 		for (i = 0; i < enic->rq_count; i++) {
-			intr = enic_msix_rq_intr(enic, i);
+			intr = enic_rq_intr(enic, i);
 			snprintf(enic->msix[intr].devname,
 				sizeof(enic->msix[intr].devname),
 				"%.11s-rx-%u", netdev->name, i);
@@ -1579,7 +1579,7 @@ static int enic_request_intr(struct enic *enic)
 		for (i = 0; i < enic->wq_count; i++) {
 			int wq = enic_cq_wq(enic, i);
 
-			intr = enic_msix_wq_intr(enic, i);
+			intr = enic_wq_intr(enic, i);
 			snprintf(enic->msix[intr].devname,
 				sizeof(enic->msix[intr].devname),
 				"%.11s-tx-%u", netdev->name, i);
@@ -1928,13 +1928,13 @@ static void enic_poll_controller(struct net_device *netdev)
 	switch (vnic_dev_get_intr_mode(vdev)) {
 	case VNIC_DEV_INTR_MODE_MSIX:
 		for (i = 0; i < enic->rq_count; i++) {
-			intr = enic_msix_rq_intr(enic, i);
+			intr = enic_rq_intr(enic, i);
 			enic_isr_msix(enic->msix_entry[intr].vector,
 				      &enic->napi[i]);
 		}
 
 		for (i = 0; i < enic->wq_count; i++) {
-			intr = enic_msix_wq_intr(enic, i);
+			intr = enic_wq_intr(enic, i);
 			enic_isr_msix(enic->msix_entry[intr].vector,
 				      &enic->napi[enic_cq_wq(enic, i)]);
 		}
