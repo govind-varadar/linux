@@ -86,6 +86,7 @@ static const struct enic_stat enic_rx_stats[] = {
 
 static const struct enic_stat enic_gen_stats[] = {
 	ENIC_GEN_STAT(dma_map_error),
+	ENIC_GEN_STAT(page_alloc),
 };
 
 static const unsigned int enic_n_tx_stats = ARRAY_SIZE(enic_tx_stats);

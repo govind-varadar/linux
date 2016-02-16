@@ -1067,6 +1067,7 @@ static int enic_rq_alloc_page(struct enic *enic, struct enic_page *pg)
 
 		return -ENOMEM;
 	}
+	enic->gen_stats.page_alloc++;
 
 	return 0;
 }

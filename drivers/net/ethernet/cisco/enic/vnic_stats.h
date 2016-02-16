@@ -65,6 +65,7 @@ struct vnic_rx_stats {
 /* Generic statistics */
 struct vnic_gen_stats {
 	u64 dma_map_error;
+	u64 page_alloc;
 };
 
 struct vnic_stats {
