@@ -45,6 +45,7 @@
 #endif
 #include <net/busy_poll.h>
 #include <linux/crash_dump.h>
+#include <net/vxlan.h>
 
 #include "cq_enet_desc.h"
 #include "vnic_dev.h"
@@ -174,6 +175,116 @@ static void enic_unset_affinity_hint(struct enic *enic)
 
 	for (i = 0; i < enic->intr_count; i++)
 		irq_set_affinity_hint(enic->msix_entry[i].vector, NULL);
+}
+
+static void enic_add_vxlan_port(struct net_device *netdev,
+				struct udp_tunnel_info *ti)
+{
+	struct enic *enic = netdev_priv(netdev);
+	int err;
+	u64 patch_level = 0;
+	__be16 port = ti->port;
+
+	spin_lock_bh(&enic->devcmd_lock);
+
+	if (ti->type != UDP_TUNNEL_TYPE_VXLAN) {
+		netdev_info(netdev, "only vxlan udp tunnel offload supported");
+
+		goto unlock;
+	}
+
+	if (ti->sa_family != AF_INET) {
+		netdev_info(netdev, "vxlan: only IPv4 tunnel supported");
+
+		goto error;
+	}
+
+	if (enic->wq_count != 1) {
+		netdev_info(netdev, "vxlan: offload not supported for WQs > 1");
+
+		goto error;
+	}
+
+	if (enic->vxlan.vxlan_udp_port_number) {
+		if (ntohs(port) == enic->vxlan.vxlan_udp_port_number)
+			netdev_warn(netdev, "vxlan: udp port already offloaded");
+		else
+			netdev_info(netdev, "vxlan: offload supported for only one UDP port");
+
+		goto error;
+	}
+
+	err = vnic_dev_overlay_offload_cfg(enic->vdev,
+					   OVERLAY_CFG_VXLAN_PORT_UPDATE,
+					   ntohs(port));
+	if (err)
+		goto error;
+
+	/* Get the supported patch level bitmap from the firmware
+	 * and select the highest version as the vxlan patch level.
+	 */
+	err = vnic_dev_get_supported_feature_ver(enic->vdev,
+						 VIC_FEATURE_VXLAN,
+						 &patch_level);
+	if (err)
+		patch_level = 0;
+
+	enic->vxlan.patch_level = fls(patch_level >> 1);
+
+	if (enic->vxlan.patch_level == 1)
+		enic->vxlan.patch_level = 0;
+	else if (enic->vxlan.patch_level >= OVERLAY_OFFLOAD_MAX)
+		enic->vxlan.patch_level = OVERLAY_OFFLOAD_MAX - 1;
+
+	err = vnic_dev_overlay_offload_ctrl(enic->vdev, OVERLAY_FEATURE_VXLAN,
+					    enic->vxlan.patch_level);
+	if (err)
+		goto error;
+
+	enic->vxlan.vxlan_udp_port_number = ntohs(port);
+
+	netdev_info(netdev, "vxlan patch%d: offload enabled for udp port: %d, family: %d\n",
+		    (int)enic->vxlan.patch_level, ntohs(port), ti->sa_family);
+
+	goto unlock;
+
+error:
+	netdev_err(netdev, "vxlan failed to offload vxlan udp port %d",
+		   ntohs(port));
+unlock:
+	spin_unlock_bh(&enic->devcmd_lock);
+}
+
+static void enic_del_vxlan_port(struct net_device *netdev,
+				struct udp_tunnel_info *ti)
+{
+	struct enic *enic = netdev_priv(netdev);
+	int err;
+
+	spin_lock_bh(&enic->devcmd_lock);
+
+	if ((ti->type != UDP_TUNNEL_TYPE_VXLAN) ||
+	    (ntohs(ti->port) != enic->vxlan.vxlan_udp_port_number) ||
+	    (ti->sa_family != AF_INET))
+		goto unlock;
+
+	err = vnic_dev_overlay_offload_ctrl(enic->vdev, OVERLAY_FEATURE_VXLAN,
+					    OVERLAY_OFFLOAD_DISABLE);
+	if (err)
+		goto error;
+
+	enic->vxlan.vxlan_udp_port_number = 0;
+
+	netdev_info(netdev, "vxlan: del offload udp port %d, family %d",
+		    ntohs(ti->port), ti->sa_family);
+
+	goto unlock;
+
+error:
+	netdev_err(netdev, "vxlan: del offload udp port %d failed: %d",
+		   ntohs(ti->port), err);
+unlock:
+	spin_unlock_bh(&enic->devcmd_lock);
 }
 
 int enic_is_dynamic(struct enic *enic)
@@ -1290,6 +1401,7 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 	u8 packet_error;
 	u16 q_number, completed_index, bytes_written, vlan_tci, checksum;
 	u32 rss_hash;
+	bool encap = false, outer_csum = true;
 
 	if (skipped)
 		goto fail;
@@ -1332,7 +1444,8 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 			goto fail;
 
 		skb_record_rx_queue(skb, q_number);
-		if (netdev->features & NETIF_F_RXHASH) {
+		if ((netdev->features & NETIF_F_RXHASH) && rss_hash &&
+		    (type == 3))
 			switch (rss_type) {
 			case CQ_ENET_RQ_DESC_RSS_TYPE_TCP_IPv4:
 			case CQ_ENET_RQ_DESC_RSS_TYPE_TCP_IPv6:
@@ -1345,6 +1458,24 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 				skb_set_hash(skb, rss_hash, PKT_HASH_TYPE_L3);
 				break;
 			}
+
+		if (enic->vxlan.vxlan_udp_port_number) {
+			switch(enic->vxlan.patch_level) {
+			case 0:
+				if (fcoe) {
+					encap = true;
+					outer_csum = fcoe_fc_crc_ok;
+				}
+				break;
+			case 1:
+				if ((type == 7) &&
+				    (rss_hash & BIT(0))) {
+					encap = true;
+					outer_csum = (rss_hash & (BIT(1) |
+								  BIT(2)));
+				}
+				break;
+			}
 		}
 
 		/* Hardware does not provide whole packet checksum. It only
@@ -1352,9 +1483,11 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 		 * checksum but not provide us the checksum value. use
 		 * CHECSUM_UNNECESSARY.
 		 */
-		if ((netdev->features & NETIF_F_RXCSUM) && tcp_udp_csum_ok &&
-		    ipv4_csum_ok)
+		if ((netdev->features & NETIF_F_RXCSUM) &&
+		    tcp_udp_csum_ok && ipv4_csum_ok && outer_csum) {
 			skb->ip_summed = CHECKSUM_UNNECESSARY;
+			skb->csum_level = encap;
+		}
 
 		if (vlan_stripped)
 			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan_tci);
@@ -2488,6 +2621,8 @@ static const struct net_device_ops enic_netdev_dynamic_ops = {
 #ifdef CONFIG_RFS_ACCEL
 	.ndo_rx_flow_steer	= enic_rx_flow_steer,
 #endif
+	.ndo_udp_tunnel_add	= enic_add_vxlan_port,
+	.ndo_udp_tunnel_del	= enic_del_vxlan_port,
 };
 
 static const struct net_device_ops enic_netdev_ops = {
@@ -2511,6 +2646,8 @@ static const struct net_device_ops enic_netdev_ops = {
 #ifdef CONFIG_RFS_ACCEL
 	.ndo_rx_flow_steer	= enic_rx_flow_steer,
 #endif
+	.ndo_udp_tunnel_add	= enic_add_vxlan_port,
+	.ndo_udp_tunnel_del	= enic_del_vxlan_port,
 };
 
 static void enic_dev_deinit(struct enic *enic)

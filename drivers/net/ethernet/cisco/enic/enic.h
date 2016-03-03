@@ -151,6 +151,11 @@ struct enic_rfs_flw_tbl {
 	struct timer_list rfs_may_expire;
 };
 
+struct vxlan_offload {
+	u16 vxlan_udp_port_number;
+	u8 patch_level;
+};
+
 /* Per-instance private data structure */
 struct enic {
 	struct net_device *netdev;
@@ -180,6 +185,7 @@ struct enic {
 #endif
 	spinlock_t enic_api_lock;
 	struct enic_port_profile *pp;
+	struct vxlan_offload vxlan;
 
 	/* work queue cache line section */
 	____cacheline_aligned struct vnic_wq wq[ENIC_WQ_MAX];
