@@ -658,6 +658,26 @@ lpfc_clr_rrq_active(struct lpfc_hba *phba,
 		goto out;
 
 	if (test_and_clear_bit(xritag, ndlp->active_rrqs_xri_bitmap)) {
+		unsigned long iflag;
+		int i;
+		struct lpfc_iocbq *iocbq;
+		struct lpfc_scsi_buf *psb;
+
+		spin_lock_irqsave(&phba->hbalock, iflag);
+		for (i = 1; i <= phba->sli.last_iotag; i++) {
+			iocbq = phba->sli.iocbq_lookup[i];
+			if (!(iocbq->iocb_flag & LPFC_IO_FCP) ||
+			    (iocbq->iocb_flag & LPFC_IO_LIBDFC))
+				continue;
+			if (iocbq->sli4_lxritag != rrq->xritag)
+				continue;
+
+			psb = container_of(iocbq, struct lpfc_scsi_buf,
+					   cur_iocbq);
+			clear_bit(LPFC_CMD_RRQ_ACTIVE, &psb->flags);
+			break;
+		}
+		spin_unlock_irqrestore(&phba->hbalock, iflag);
 		rrq->send_rrq = 0;
 		rrq->xritag = 0;
 		rrq->rrq_stop_time = 0;
@@ -15271,9 +15291,30 @@ lpfc_sli4_seq_abort_rsp(struct lpfc_vport *vport,
 	else
 		xri = rxid;
 	lxri = lpfc_sli4_xri_inrange(phba, xri);
-	if (lxri != NO_XRI)
+	if (lxri != NO_XRI) {
+		unsigned long iflag;
+		int i;
+		struct lpfc_iocbq *iocbq;
+		struct lpfc_scsi_buf *psb;
+
 		lpfc_set_rrq_active(phba, ndlp, lxri,
 			(xri == oxid) ? rxid : oxid, 0);
+		spin_lock_irqsave(&phba->hbalock, iflag);
+		for (i = 1; i <= phba->sli.last_iotag; i++) {
+			iocbq = phba->sli.iocbq_lookup[i];
+			if (!(iocbq->iocb_flag & LPFC_IO_FCP) ||
+			    (iocbq->iocb_flag & LPFC_IO_LIBDFC))
+				continue;
+			if (iocbq->sli4_lxritag != lxri)
+				continue;
+
+			psb = container_of(iocbq, struct lpfc_scsi_buf,
+					   cur_iocbq);
+			set_bit(LPFC_CMD_RRQ_ACTIVE, &psb->flags);
+			break;
+		}
+		spin_unlock_irqrestore(&phba->hbalock, iflag);
+	}
 	/* For BA_ABTS from exchange responder, if the logical xri with
 	 * the oxid maps to the FCP XRI range, the port no longer has
 	 * that exchange context, send a BLS_RJT. Override the IOCB for

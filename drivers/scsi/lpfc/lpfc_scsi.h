@@ -147,6 +147,7 @@ struct lpfc_scsi_buf {
 #define LPFC_CMD_EXCH_BUSY 0
 #define LPFC_CMD_ABORTED   1
 #define LPFC_CMD_QUEUED    2
+#define LPFC_CMD_RRQ_ACTIVE 3
 	dma_addr_t nonsg_phys;	/* Non scatter-gather physical address. */
 
 	/*

@@ -571,6 +571,7 @@ lpfc_sli4_fcp_xri_aborted(struct lpfc_hba *phba,
 			if (ndlp) {
 				lpfc_set_rrq_active(phba, ndlp,
 					psb->cur_iocbq.sli4_lxritag, rxid, 1);
+				set_bit(LPFC_CMD_RRQ_ACTIVE, &psb->flags);
 				lpfc_sli4_abts_err_handler(phba, ndlp, axri);
 			}
 			lpfc_release_scsi_buf_s4(phba, psb);
@@ -4093,6 +4094,7 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 				lpfc_set_rrq_active(phba, pnode,
 					lpfc_cmd->cur_iocbq.sli4_lxritag,
 					0, 0);
+				set_bit(LPFC_CMD_RRQ_ACTIVE, &lpfc_cmd->flags);
 			}
 		/* else: fall through */
 		default:
@@ -4603,6 +4605,11 @@ lpfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 		else if (test_and_set_bit(LPFC_CMD_QUEUED, &lpfc_cmd->flags)) {
 			lpfc_printf_vlog(vport, KERN_INFO, LOG_SCSI_CMD,
 					 "9036 iotag %x hwq %x busy\n",
+					 lpfc_cmd->iotag, hwq);
+			lpfc_cmd = NULL;
+		} else if (test_bit(LPFC_CMD_RRQ_ACTIVE, &lpfc_cmd->flags)) {
+			lpfc_printf_vlog(vport, KERN_INFO, LOG_SCSI_CMD,
+					 "9037 iotag %x hwq %x rrq active\n",
 					 lpfc_cmd->iotag, hwq);
 			lpfc_cmd = NULL;
 		}
