@@ -1084,7 +1084,6 @@ lpfc_release_scsi_buf_s3(struct lpfc_hba *phba, struct lpfc_scsi_buf *psb)
 	psb->prot_seg_cnt = 0;
 
 	spin_lock_irqsave(&phba->scsi_buf_list_put_lock, iflag);
-	psb->pCmd = NULL;
 	psb->cur_iocbq.iocb_flag = LPFC_IO_FCP;
 	list_add_tail(&psb->list, &phba->lpfc_scsi_buf_list_put);
 	spin_unlock_irqrestore(&phba->scsi_buf_list_put_lock, iflag);
@@ -1114,13 +1113,11 @@ lpfc_release_scsi_buf_s4(struct lpfc_hba *phba, struct lpfc_scsi_buf *psb)
 			return;
 		spin_lock_irqsave(&phba->sli4_hba.abts_scsi_buf_list_lock,
 					iflag);
-		psb->pCmd = NULL;
 		list_add_tail(&psb->list,
 			&phba->sli4_hba.lpfc_abts_scsi_buf_list);
 		spin_unlock_irqrestore(&phba->sli4_hba.abts_scsi_buf_list_lock,
 					iflag);
 	} else {
-		psb->pCmd = NULL;
 		psb->cur_iocbq.iocb_flag = LPFC_IO_FCP;
 		if (phba->lpfc_scsi_buf_arr)
 			clear_bit(LPFC_CMD_QUEUED, &psb->flags);
@@ -4166,8 +4163,13 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 	 * release the scsi_buf before calling 'done', thereby
 	 * avoiding a race condition between aborts and scsi_done
 	 */
-	if (shost->hostt->abort_completions)
+	if (shost->hostt->abort_completions) {
 		lpfc_release_scsi_buf(phba, lpfc_cmd);
+		if (test_bit(LPFC_CMD_EXCH_BUSY, &lpfc_cmd->flags) &&
+		    test_bit(LPFC_CMD_ABORTED, &lpfc_cmd->flags))
+			return;
+		lpfc_cmd->pCmd = NULL;
+	}
 
 	/* The sdev is not guaranteed to be valid post scsi_done upcall. */
 	cmd->scsi_done(cmd);

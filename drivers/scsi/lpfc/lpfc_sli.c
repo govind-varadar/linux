@@ -662,6 +662,7 @@ lpfc_clr_rrq_active(struct lpfc_hba *phba,
 		int i;
 		struct lpfc_iocbq *iocbq;
 		struct lpfc_scsi_buf *psb;
+		struct scsi_cmnd *cmd;
 
 		spin_lock_irqsave(&phba->hbalock, iflag);
 		for (i = 1; i <= phba->sli.last_iotag; i++) {
@@ -674,7 +675,18 @@ lpfc_clr_rrq_active(struct lpfc_hba *phba,
 
 			psb = container_of(iocbq, struct lpfc_scsi_buf,
 					   cur_iocbq);
-			clear_bit(LPFC_CMD_RRQ_ACTIVE, &psb->flags);
+			if (!test_and_clear_bit(LPFC_CMD_RRQ_ACTIVE,
+					       &psb->flags))
+				continue;
+
+			cmd = psb->pCmd;
+			if (cmd) {
+				psb->pCmd = NULL;
+				if (!cmd->result)
+					cmd->result = ScsiResult(DID_ABORT,
+							SAM_STAT_TASK_ABORTED);
+				cmd->scsi_done(cmd);
+			}
 			break;
 		}
 		spin_unlock_irqrestore(&phba->hbalock, iflag);
