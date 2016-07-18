@@ -362,8 +362,10 @@ static inline void fc_exch_timer_set_locked(struct fc_exch *ep,
 
 	fc_exch_hold(ep);		/* hold for timer */
 	if (!queue_delayed_work(fc_exch_workqueue, &ep->timeout_work,
-				msecs_to_jiffies(timer_msec)))
+				msecs_to_jiffies(timer_msec))) {
+		FC_EXCH_DBG(ep, "Exchange already queued\n");
 		fc_exch_release(ep);
+	}
 }
 
 /**
@@ -632,9 +634,13 @@ static int fc_exch_abort_locked(struct fc_exch *ep,
 	struct fc_frame *fp;
 	int error;
 
+	FC_EXCH_DBG(ep, "exch: abort, time %d msecs\n", timer_msec);
 	if (ep->esb_stat & (ESB_ST_COMPLETE | ESB_ST_ABNORMAL) ||
-	    ep->state & (FC_EX_DONE | FC_EX_RST_CLEANUP))
+	    ep->state & (FC_EX_DONE | FC_EX_RST_CLEANUP)) {
+		FC_EXCH_DBG(ep, "exch: already completed esb %x state %x\n",
+			    ep->esb_stat, ep->state);
 		return -ENXIO;
+	}
 
 	/*
 	 * Send the abort on a new sequence if possible.
@@ -758,7 +764,7 @@ static void fc_exch_timeout(struct work_struct *work)
 	u32 e_stat;
 	int rc = 1;
 
-	FC_EXCH_DBG(ep, "Exchange timed out\n");
+	FC_EXCH_DBG(ep, "Exchange timed out state %x\n", ep->state);
 
 	spin_lock_bh(&ep->ex_lock);
 	if (ep->state & (FC_EX_RST_CLEANUP | FC_EX_DONE))
@@ -1383,6 +1389,7 @@ static void fc_exch_recv_abts(struct fc_exch *ep, struct fc_frame *rx_fp)
 	if (!ep)
 		goto reject;
 
+	FC_EXCH_DBG(ep, "exch: ABTS received\n");
 	fp = fc_frame_alloc(ep->lp, sizeof(*ap));
 	if (!fp)
 		goto free;
@@ -1978,6 +1985,8 @@ static void fc_exch_els_rec(struct fc_frame *rfp)
 	explan = ELS_EXPL_OXID_RXID;
 	if (!ep)
 		goto reject;
+	FC_EXCH_DBG(ep, "REC request from %x: rxid %x oxid %x\n",
+		    sid, rxid, oxid);
 	if (ep->oid != sid || oxid != ep->oxid)
 		goto rel;
 	if (rxid != FC_XID_UNKNOWN && rxid != ep->rxid)
@@ -2177,6 +2186,7 @@ static void fc_exch_rrq(struct fc_exch *ep)
 		return;
 
 retry:
+	FC_EXCH_DBG(ep, "exch: RRQ send failed\n");
 	spin_lock_bh(&ep->ex_lock);
 	if (ep->state & (FC_EX_RST_CLEANUP | FC_EX_DONE)) {
 		spin_unlock_bh(&ep->ex_lock);
@@ -2219,6 +2229,8 @@ static void fc_exch_els_rrq(struct fc_frame *fp)
 	if (!ep)
 		goto reject;
 	spin_lock_bh(&ep->ex_lock);
+	FC_EXCH_DBG(ep, "RRQ request from %x: xid %x rxid %x oxid %x\n",
+		    sid, xid, ntohs(rp->rrq_rx_id), ntohs(rp->rrq_ox_id));
 	if (ep->oxid != ntohs(rp->rrq_ox_id))
 		goto unlock_reject;
 	if (ep->rxid != ntohs(rp->rrq_rx_id) &&

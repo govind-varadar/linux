@@ -387,8 +387,10 @@ static void fc_rport_work(struct work_struct *work)
 			 * Re-open for events.  Reissue READY event if ready.
 			 */
 			rdata->event = RPORT_EV_NONE;
-			if (rdata->rp_state == RPORT_ST_READY)
+			if (rdata->rp_state == RPORT_ST_READY) {
+				FC_RPORT_DBG(rdata, "work reopen\n");
 				fc_rport_enter_ready(rdata);
+			}
 			mutex_unlock(&rdata->rp_mutex);
 		}
 		break;
@@ -1052,6 +1054,7 @@ static void fc_rport_prli_resp(struct fc_seq *sp, struct fc_frame *fp,
 		struct fc_els_spp spp;
 	} *pp;
 	struct fc_els_spp temp_spp;
+	struct fc_els_ls_rjt *rjt;
 	struct fc4_prov *prov;
 	u32 roles = FC_RPORT_ROLE_UNKNOWN;
 	u32 fcp_parm = 0;
@@ -1121,8 +1124,10 @@ static void fc_rport_prli_resp(struct fc_seq *sp, struct fc_frame *fp,
 		fc_rport_enter_rtv(rdata);
 
 	} else {
-		FC_RPORT_DBG(rdata, "Bad ELS response for PRLI command\n");
-		fc_rport_error_retry(rdata, fp);
+		rjt = fc_frame_payload_get(fp, sizeof (*rjt));
+		FC_RPORT_DBG(rdata, "PRLI ELS rejected, reason %x expl %x\n",
+			     rjt->er_reason, rjt->er_explan);
+		fc_rport_error_retry(rdata, NULL);
 	}
 
 out:
