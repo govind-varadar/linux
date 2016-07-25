@@ -1094,8 +1094,8 @@ static void fc_rport_prli_resp(struct fc_seq *sp, struct fc_frame *fp,
 			goto out;
 
 		resp_code = (pp->spp.spp_flags & FC_SPP_RESP_MASK);
-		FC_RPORT_DBG(rdata, "PRLI spp_flags = 0x%x\n",
-			     pp->spp.spp_flags);
+		FC_RPORT_DBG(rdata, "PRLI spp_flags = 0x%x spp_type 0x%x\n",
+			     pp->spp.spp_flags, pp->spp.spp_type);
 		rdata->spp_type = pp->spp.spp_type;
 		if (resp_code != FC_SPP_RESP_ACK) {
 			if (resp_code == FC_SPP_RESP_CONF)
@@ -1805,7 +1805,6 @@ static void fc_rport_recv_prli_req(struct fc_rport_priv *rdata,
 	unsigned int len;
 	unsigned int plen;
 	enum fc_els_spp_resp resp;
-	enum fc_els_spp_resp passive;
 	struct fc_seq_els_data rjt_data;
 	struct fc4_prov *prov;
 
@@ -1855,15 +1854,21 @@ static void fc_rport_recv_prli_req(struct fc_rport_priv *rdata,
 		resp = 0;
 
 		if (rspp->spp_type < FC_FC4_PROV_SIZE) {
+			enum fc_els_spp_resp active = 0, passive = 0;
+
 			prov = fc_active_prov[rspp->spp_type];
 			if (prov)
-				resp = prov->prli(rdata, plen, rspp, spp);
+				active = prov->prli(rdata, plen, rspp, spp);
 			prov = fc_passive_prov[rspp->spp_type];
-			if (prov) {
+			if (prov)
 				passive = prov->prli(rdata, plen, rspp, spp);
-				if (!resp || passive == FC_SPP_RESP_ACK)
-					resp = passive;
-			}
+			if (!active || passive == FC_SPP_RESP_ACK)
+				resp = passive;
+			else
+				resp = active;
+			FC_RPORT_DBG(rdata, "PRLI rspp type %x "
+				     "active %x passive %x\n",
+				     rspp->spp_type, active, passive);
 		}
 		if (!resp) {
 			if (spp->spp_flags & FC_SPP_EST_IMG_PAIR)
