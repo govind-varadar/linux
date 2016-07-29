@@ -203,18 +203,33 @@ enum fc_els_rjt_explan {
 	ELS_EXPL_NONE =		0x00,	/* No additional explanation */
 	ELS_EXPL_SPP_OPT_ERR =	0x01,	/* service parameter error - options */
 	ELS_EXPL_SPP_ICTL_ERR =	0x03,	/* service parm error - initiator ctl */
+	ELS_EXPL_SPP_RCTL_ERR = 0x05,	/* service parm error - recipient ctl */
+	ELS_EXPL_SPP_RDF_ERR =	0x07,	/* service parm error - receive data field size */
+	ELS_EXPL_SPP_SEQ_ERR =	0x09,	/* service parm error - concurrrent seq */
+	ELS_EXPL_SPP_CRED_ERR =	0x0b,	/* service parm error - credit */
+	ELS_EXPL_PORT_NAME =	0x0d,	/* invalid n_port/f_port name */
+	ELS_EXPL_NODE_NAME =	0x0e,	/* invalid node/fabric name */
+	ELS_EXPL_CSP =		0x0f,	/* invalid common service parameters */
 	ELS_EXPL_AH =		0x11,	/* invalid association header */
 	ELS_EXPL_AH_REQ =	0x13,	/* association_header required */
 	ELS_EXPL_SID =		0x15,	/* invalid originator S_ID */
 	ELS_EXPL_OXID_RXID =	0x17,	/* invalid OX_ID-RX_ID combination */
 	ELS_EXPL_INPROG =	0x19,	/* Request already in progress */
 	ELS_EXPL_PLOGI_REQD =	0x1e,	/* N_Port login required */
+	ELS_EXPL_PORT_ID =	0x1f,	/* invalid N_Port ID */
 	ELS_EXPL_INSUF_RES =	0x29,	/* insufficient resources */
 	ELS_EXPL_UNAB_DATA =	0x2a,	/* unable to supply requested data */
 	ELS_EXPL_UNSUPR =	0x2c,	/* Request not supported */
 	ELS_EXPL_INV_LEN =	0x2d,	/* Invalid payload length */
+	ELS_EXPL_INV_PORT =	0x44,	/* Invalid Port/Node name */
+	ELS_EXPL_LOGIN_EXT =	0x46,	/* Login extension not supported */
+	ELS_EXPL_AUTH =		0x48,	/* Authentification required */
+	ELS_EXPL_VAL_SCAN =	0x50,	/* Periodic scan value not allowed */
+	ELS_EXPL_INV_SCAN =	0x51,	/* Periodic scanning not supported */
+	ELS_EXPL_RES =		0x52,	/* No resources assigned */
+	ELS_EXPL_INV_MAC =	0x60,	/* MAC addressing not supported */
+	ELS_EXPL_VAL_MAC =	0x61,	/* Proposed MAC address incorrectly formed */
 	ELS_EXPL_NOT_NEIGHBOR = 0x62,	/* VN2VN_Port not in neighbor set */
-	/* TBD - above definitions incomplete */
 };
 
 /*
