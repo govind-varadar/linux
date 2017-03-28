@@ -231,7 +231,7 @@ static int _vnic_dev_cmd(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd,
 {
 	struct vnic_devcmd __iomem *devcmd = vdev->devcmd;
 	unsigned int i;
-	int delay;
+	u32 delay;
 	u32 status;
 	int err;
 
@@ -256,9 +256,7 @@ static int _vnic_dev_cmd(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd,
 	if ((_CMD_FLAGS(cmd) & _CMD_FLAGS_NOWAIT))
 		return 0;
 
-	for (delay = 0; delay < wait; delay++) {
-
-		udelay(100);
+	for (delay = 0; delay < (u32)(~0UL); delay++) {
 
 		status = ioread32(&devcmd->status);
 		if (status == 0xFFFFFFFF) {
@@ -290,7 +288,7 @@ static int _vnic_dev_cmd(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd,
 		}
 	}
 
-	vdev_neterr(vdev, "Timedout devcmd %d\n", _CMD_N(cmd));
+	vdev_neterr(vdev, "Timedout devcmd %d", _CMD_N(cmd));
 	return -ETIMEDOUT;
 }
 
@@ -298,10 +296,11 @@ static int _vnic_dev_cmd2(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd,
 			  int wait)
 {
 	struct devcmd2_controller *dc2c = vdev->devcmd2;
-	struct devcmd2_result *result;
+	struct devcmd2_result __iomem *result;
 	u8 color;
 	unsigned int i;
-	int delay, err;
+	int  err;
+	u32 delay;
 	u32 fetch_index, new_posted;
 	u32 posted = dc2c->posted;
 
@@ -346,8 +345,8 @@ static int _vnic_dev_cmd2(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd,
 		dc2c->color = dc2c->color ? 0 : 1;
 	}
 
-	for (delay = 0; delay < wait; delay++) {
-		if (result->color == color) {
+	for (delay = 0; delay < (u32)(~0UL) ; delay++) {
+		if (READ_ONCE(result->color) == color) {
 			if (result->error) {
 				err = result->error;
 				if (err != ERR_ECMDUNKNOWN ||
@@ -362,7 +361,6 @@ static int _vnic_dev_cmd2(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd,
 
 			return 0;
 		}
-		udelay(100);
 	}
 
 	vdev_neterr(vdev, "devcmd %d timed out\n", _CMD_N(cmd));
