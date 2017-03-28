@@ -20,6 +20,12 @@
 #ifndef _ENIC_H_
 #define _ENIC_H_
 
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/timecounter.h>
+#include <linux/net_tstamp.h>
+#include <linux/clocksource.h>
+
 #include "vnic_enet.h"
 #include "vnic_dev.h"
 #include "vnic_wq.h"
@@ -140,6 +146,17 @@ struct vxlan_offload {
 	u8 patch_level;
 };
 
+struct enic_tstamp {
+	/* lock to access this structure */
+	spinlock_t		lock;
+	struct cyclecounter	cycles;
+	struct timecounter	clock;
+	struct hwtstamp_config	hwtstamp_config;
+	u32			nominal_c_mult;
+	u32			overflow_period;
+	struct delayed_work	overflow_work;
+};
+
 /* Per-instance private data structure */
 struct enic {
 	struct net_device *netdev;
@@ -179,6 +196,7 @@ struct enic {
 
 	/* receive queue cache line section */
 	____cacheline_aligned struct vnic_rq rq[ENIC_RQ_MAX];
+	struct enic_tstamp tstamp;
 	unsigned int rq_count;
 	struct vxlan_offload vxlan;
 	u64 rq_truncated_pkts;
@@ -319,5 +337,10 @@ int enic_is_valid_vf(struct enic *enic, int vf);
 int enic_is_dynamic(struct enic *enic);
 void enic_set_ethtool_ops(struct net_device *netdev);
 int __enic_set_rsskey(struct enic *enic);
+void enic_fill_hwstamp(struct enic_tstamp *tstamp, u64 timestamp,
+		       struct skb_shared_hwtstamps *hwts);
+int enic_hwstamp_set(struct net_device *netdev, struct ifreq *ifr);
+void enic_tstamp_init(struct enic *enic);
+void enic_tstamp_cleanup(struct enic *enic);
 
 #endif /* _ENIC_H_ */

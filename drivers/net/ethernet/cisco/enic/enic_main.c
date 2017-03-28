@@ -819,6 +819,7 @@ static netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb,
 	struct vnic_wq *wq;
 	unsigned int txq_map;
 	struct netdev_queue *txq;
+	bool tstamp_needed = skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP;
 
 	if (skb->len <= 0) {
 		dev_kfree_skb_any(skb);
@@ -856,7 +857,19 @@ static netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb,
 
 	if (vnic_wq_desc_avail(wq) < MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS)
 		netif_tx_stop_queue(txq);
-	if (!skb->xmit_more || netif_xmit_stopped(txq))
+	if (unlikely(tstamp_needed)) {
+		u64 a0, a1;
+
+		spin_lock_bh(&enic->devcmd_lock);
+		vnic_dev_cmd(enic->vdev, CMD_HW_TIMESTAMP_GET, &a0, &a1,
+			     1000);
+		spin_unlock_bh(&enic->devcmd_lock);
+		enic_fill_hwstamp(&enic->tstamp, a0, skb_hwtstamps(skb));
+		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
+		skb_tstamp_tx(skb, skb_hwtstamps(skb));
+	}
+
+	if (tstamp_needed || !skb->xmit_more || netif_xmit_stopped(txq))
 		vnic_wq_doorbell(wq);
 
 	spin_unlock(&enic->wq_lock[txq_map]);
@@ -1363,6 +1376,13 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 				skb_set_hash(skb, rss_hash, PKT_HASH_TYPE_L3);
 				break;
 			}
+		}
+		if (unlikely(rss_type == 8)) {
+			u64 clock;
+
+			clock  = ((u64)checksum << 32ULL) | (u64)rss_hash;
+			enic_fill_hwstamp(&enic->tstamp, clock,
+					  skb_hwtstamps(skb));
 		}
 		if (enic->vxlan.vxlan_udp_port_number) {
 			switch (enic->vxlan.patch_level) {
@@ -1933,6 +1953,7 @@ static int enic_open(struct net_device *netdev)
 
 	enic_notify_timer_start(enic);
 	enic_rfs_flw_tbl_init(enic);
+	enic_tstamp_init(enic);
 
 	return 0;
 
@@ -2001,6 +2022,7 @@ static int enic_stop(struct net_device *netdev)
 		vnic_cq_clean(&enic->cq[i]);
 	for (i = 0; i < enic->intr_count; i++)
 		vnic_intr_clean(&enic->intr[i]);
+	enic_tstamp_cleanup(enic);
 
 	return 0;
 }
@@ -2477,6 +2499,21 @@ static void enic_clear_intr_mode(struct enic *enic)
 	vnic_dev_set_intr_mode(enic->vdev, VNIC_DEV_INTR_MODE_UNKNOWN);
 }
 
+static int enic_do_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
+{
+	switch (cmd) {
+	case SIOCSHWTSTAMP:
+		netdev_info(netdev, "SIOCSHWTSTAMP");
+		enic_hwstamp_set(netdev, ifr);
+		return 0;
+	case SIOCGHWTSTAMP:
+		netdev_info(netdev, "SIOCGHWTSTAMP");
+		return 0;
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
 static const struct net_device_ops enic_netdev_dynamic_ops = {
 	.ndo_open		= enic_open,
 	.ndo_stop		= enic_stop,
@@ -2501,6 +2538,7 @@ static const struct net_device_ops enic_netdev_dynamic_ops = {
 	.ndo_udp_tunnel_add	= enic_udp_tunnel_add,
 	.ndo_udp_tunnel_del	= enic_udp_tunnel_del,
 	.ndo_features_check	= enic_features_check,
+	.ndo_do_ioctl		= enic_do_ioctl,
 };
 
 static const struct net_device_ops enic_netdev_ops = {
@@ -2527,6 +2565,7 @@ static const struct net_device_ops enic_netdev_ops = {
 	.ndo_udp_tunnel_add	= enic_udp_tunnel_add,
 	.ndo_udp_tunnel_del	= enic_udp_tunnel_del,
 	.ndo_features_check	= enic_features_check,
+	.ndo_do_ioctl		= enic_do_ioctl,
 };
 
 static void enic_dev_deinit(struct enic *enic)

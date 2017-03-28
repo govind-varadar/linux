@@ -503,6 +503,24 @@ static int enic_set_rxfh(struct net_device *netdev, const u32 *indir,
 	return __enic_set_rsskey(enic);
 }
 
+static int enic_get_ts_info(struct net_device *netdev,
+			    struct ethtool_ts_info *info)
+{
+	struct enic *enic = netdev_priv(netdev);
+
+	info->so_timestamping |= SOF_TIMESTAMPING_TX_HARDWARE |
+				 SOF_TIMESTAMPING_RX_HARDWARE |
+				 SOF_TIMESTAMPING_RAW_HARDWARE;
+
+	info->tx_types = (BIT(1) << HWTSTAMP_TX_OFF) |
+			 (BIT(1) << HWTSTAMP_TX_ON);
+
+	info->rx_filters = (BIT(1) << HWTSTAMP_FILTER_NONE) |
+			   (BIT(1) << HWTSTAMP_FILTER_ALL);
+
+	return 0;
+}
+
 static const struct ethtool_ops enic_ethtool_ops = {
 	.get_drvinfo = enic_get_drvinfo,
 	.get_msglevel = enic_get_msglevel,
@@ -520,6 +538,7 @@ static const struct ethtool_ops enic_ethtool_ops = {
 	.get_rxfh = enic_get_rxfh,
 	.set_rxfh = enic_set_rxfh,
 	.get_link_ksettings = enic_get_ksettings,
+	.get_ts_info = enic_get_ts_info,
 };
 
 void enic_set_ethtool_ops(struct net_device *netdev)
