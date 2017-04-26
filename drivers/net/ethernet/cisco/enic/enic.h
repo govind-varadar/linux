@@ -25,6 +25,7 @@
 #include <linux/timecounter.h>
 #include <linux/net_tstamp.h>
 #include <linux/clocksource.h>
+#include <linux/ptp_clock_kernel.h>
 
 #include "vnic_enet.h"
 #include "vnic_dev.h"
@@ -155,6 +156,10 @@ struct enic_tstamp {
 	u32			nominal_c_mult;
 	u32			overflow_period;
 	struct delayed_work	overflow_work;
+	struct ptp_clock	*ptp;
+	struct ptp_clock_info	ptp_info;
+	u32			freq;
+	s64			adjtime;
 };
 
 /* Per-instance private data structure */

@@ -99,6 +99,89 @@ int enic_hwstamp_get(struct net_device *netdev, struct ifreq *ifr)
 	return copy_to_user(ifr->ifr_data, cfg, sizeof(*cfg)) ? -EFAULT : 0;
 }
 
+static int enic_ptp_settime(struct ptp_clock_info *ptp,
+			    const struct timespec64 *ts)
+{
+	u64 ns = timespec64_to_ns(ts);
+	struct enic_tstamp *tstamp = container_of(ptp, struct enic_tstamp,
+						  ptp_info);
+
+	spin_lock_bh(&tstamp->lock);
+	timecounter_init(&tstamp->clock, &tstamp->cycles, ns);
+	spin_unlock_bh(&tstamp->lock);
+
+	return 0;
+}
+
+static int enic_ptp_gettime(struct ptp_clock_info *ptp, struct timespec64 *ts)
+{
+	struct enic_tstamp *tstamp = container_of(ptp, struct enic_tstamp,
+						  ptp_info);
+	u64 ns;
+
+	spin_lock_bh(&tstamp->lock);
+	ns = timecounter_read(&tstamp->clock);
+	spin_unlock_bh(&tstamp->lock);
+
+	*ts = ns_to_timespec64(ns);
+
+	return 0;
+}
+
+static int enic_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
+{
+	struct enic_tstamp *tstamp = container_of(ptp, struct enic_tstamp,
+						  ptp_info);
+
+	spin_lock_bh(&tstamp->lock);
+	timecounter_adjtime(&tstamp->clock, delta);
+	tstamp->adjtime += delta;
+	spin_unlock_bh(&tstamp->lock);
+
+	return 0;
+}
+
+static int enic_ptp_adjfreq(struct ptp_clock_info *ptp, s32 delta)
+{
+	u64 adj;
+	u32 diff;
+	int neg_adj = 0;
+	struct enic_tstamp *tstamp = container_of(ptp, struct enic_tstamp,
+						  ptp_info);
+
+	if (delta < 0) {
+		neg_adj = 1;
+		delta = -delta;
+	}
+
+	adj = tstamp->nominal_c_mult;
+	adj *= delta;
+	diff = div_u64(adj, 1000000000ULL);
+
+	spin_lock_bh(&tstamp->lock);
+	timecounter_read(&tstamp->clock);
+	tstamp->cycles.mult = neg_adj ? tstamp->nominal_c_mult - diff :
+					tstamp->nominal_c_mult + diff;
+	spin_unlock_bh(&tstamp->lock);
+
+	return 0;
+}
+
+static const struct ptp_clock_info enic_ptp_clock_info = {
+	.owner		= THIS_MODULE,
+	.max_adj	= 1000000000,
+	.n_alarm	= 0,
+	.n_ext_ts	= 0,
+	.n_per_out	= 0,
+	.n_pins		= 0,
+	.pps		= 0,
+	.adjfreq	= enic_ptp_adjfreq,
+	.adjtime	= enic_ptp_adjtime,
+	.gettime64	= enic_ptp_gettime,
+	.settime64	= enic_ptp_settime,
+	.enable		= NULL,
+};
+
 void enic_tstamp_init(struct enic *enic)
 {
 	ktime_t time;
@@ -114,6 +197,12 @@ void enic_tstamp_init(struct enic *enic)
 	spin_unlock_bh(&enic->devcmd_lock);
 
 	spin_lock_init(&tstamp->lock);
+	tstamp->freq = dev_freq;
+	if (!tstamp->freq) {
+		netdev_info(enic->netdev, "HW timestamping not supported");
+
+		return;
+	}
 	tstamp->cycles.read = enic_read_cycle;
 	tstamp->cycles.shift = freq_to_shift(dev_freq, ENIC_TSTAMP_WRAP_SEC);
 	tstamp->cycles.mult = clocksource_khz2mult(dev_freq * 1000,
@@ -122,9 +211,19 @@ void enic_tstamp_init(struct enic *enic)
 	tstamp->cycles.mask = CLOCKSOURCE_MASK(48);
 	timecounter_init(&tstamp->clock, &tstamp->cycles,
 			 ktime_to_ns(time));
+	tstamp->adjtime = 0;
 	netdev_info(enic->netdev, "init tstamp: clock: %d, shift: %d, mult: %u",
 		    (u32)dev_freq, tstamp->cycles.shift, tstamp->cycles.mult);
 	tstamp->overflow_period = ENIC_TSTAMP_OVERFLOW_PERIOD;
+
+	tstamp->ptp_info = enic_ptp_clock_info;
+	snprintf(tstamp->ptp_info.name, 16, "enic ptp");
+	tstamp->ptp = ptp_clock_register(&tstamp->ptp_info, enic_get_dev(enic));
+	if (IS_ERR_OR_NULL(tstamp->ptp)) {
+		netdev_warn(enic->netdev, "ptp_clock_register failed %ld",
+			    PTR_ERR(tstamp->ptp));
+		tstamp->ptp = NULL;
+	}
 	INIT_DELAYED_WORK(&tstamp->overflow_work, enic_cycle_overflow);
 	schedule_delayed_work(&tstamp->overflow_work, 0);
 }
@@ -133,6 +232,12 @@ void enic_tstamp_cleanup(struct enic *enic)
 {
 	struct enic_tstamp *tstamp = &enic->tstamp;
 
+	if (!tstamp->freq)
+		return;
+	if (tstamp->ptp) {
+		ptp_clock_unregister(tstamp->ptp);
+		tstamp->ptp = NULL;
+	}
 	cancel_delayed_work_sync(&tstamp->overflow_work);
 }
 

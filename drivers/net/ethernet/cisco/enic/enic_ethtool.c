@@ -508,6 +508,9 @@ static int enic_get_ts_info(struct net_device *netdev,
 {
 	struct enic *enic = netdev_priv(netdev);
 
+	info->phc_index = enic->tstamp.ptp ?
+			  ptp_clock_index(enic->tstamp.ptp) : -1;
+
 	info->so_timestamping |= SOF_TIMESTAMPING_TX_HARDWARE |
 				 SOF_TIMESTAMPING_RX_HARDWARE |
 				 SOF_TIMESTAMPING_RAW_HARDWARE;
