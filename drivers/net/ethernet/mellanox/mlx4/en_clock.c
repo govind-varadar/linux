@@ -244,22 +244,6 @@ static const struct ptp_clock_info mlx4_en_ptp_clock_info = {
 	.enable		= mlx4_en_phc_enable,
 };
 
-
-/* This function calculates the max shift that enables the user range
- * of MLX4_EN_WRAP_AROUND_SEC values in the cycles register.
- */
-static u32 freq_to_shift(u16 freq)
-{
-	u32 freq_khz = freq * 1000;
-	u64 max_val_cycles = freq_khz * 1000 * MLX4_EN_WRAP_AROUND_SEC;
-	u64 max_val_cycles_rounded = 1ULL << fls64(max_val_cycles - 1);
-	/* calculate max possible multiplier in order to fit in 64bit */
-	u64 max_mul = div64_u64(ULLONG_MAX, max_val_cycles_rounded);
-
-	/* This comes from the reverse of clocksource_khz2mult */
-	return ilog2(div_u64(max_mul * freq_khz, 1000000));
-}
-
 void mlx4_en_init_timestamp(struct mlx4_en_dev *mdev)
 {
 	struct mlx4_dev *dev = mdev->dev;
@@ -277,7 +261,8 @@ void mlx4_en_init_timestamp(struct mlx4_en_dev *mdev)
 	memset(&mdev->cycles, 0, sizeof(mdev->cycles));
 	mdev->cycles.read = mlx4_en_read_clock;
 	mdev->cycles.mask = CLOCKSOURCE_MASK(48);
-	mdev->cycles.shift = freq_to_shift(dev->caps.hca_core_clock);
+	mdev->cycles.shift = freq_to_shift(dev->caps.hca_core_clock,
+					   MLX4_EN_WRAP_AROUND_SEC);
 	mdev->cycles.mult =
 		clocksource_khz2mult(1000 * dev->caps.hca_core_clock, mdev->cycles.shift);
 	mdev->nominal_c_mult = mdev->cycles.mult;

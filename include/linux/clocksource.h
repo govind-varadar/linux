@@ -236,6 +236,20 @@ static inline void __clocksource_update_freq_khz(struct clocksource *cs, u32 khz
 	__clocksource_update_freq_scale(cs, 1000, khz);
 }
 
+/* This function calculates the max shift that enables the user range
+ * of max_seconds values in the cycles register.
+ */
+static inline u32 freq_to_shift(u16 freq, u32 max_seconds)
+{
+	u32 freq_khz = freq * 1000;
+	u64 max_val_cycles = freq_khz * 1000ULL * max_seconds;
+	u64 max_val_cycles_rounded = 1ULL << fls64(max_val_cycles - 1);
+	/* calculate max possible multiplier in order to fit in 64bit */
+	u64 max_mul = div64_u64(ULLONG_MAX, max_val_cycles_rounded);
+
+	/* This comes from the reverse of clocksource_khz2mult */
+	return ilog2(div_u64(max_mul * freq_khz, 1000000));
+}
 
 extern int timekeeping_notify(struct clocksource *clock);
 
