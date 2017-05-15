@@ -859,13 +859,43 @@ static netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb,
 		netif_tx_stop_queue(txq);
 	if (unlikely(tstamp_needed)) {
 		u64 a0, a1;
+		ktime_t time;
+		u64 cycles;
 
+		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
+		goto ktime_adjfreq;
+ktime:
+		spin_lock_bh(&enic->tstamp.lock);
+		time = ktime_to_ns(ktime_get_real()) + enic->tstamp.adjtime;
+		spin_unlock_bh(&enic->tstamp.lock);
+		skb_hwtstamps(skb)->hwtstamp = ns_to_ktime(time);
+		goto out;
+ktime_adjfreq:
+		spin_lock_bh(&enic->tstamp.lock);
+		time = ktime_to_ns(ktime_get_real()) -
+			enic->tstamp.init_time;
+		cycles = time * enic->tstamp.freq / 1000;
+		netdev_info(netdev, "time delta = %llx, cycles delta = %llx",
+			time, cycles);
+		cycles += enic->tstamp.init_clock;
+		spin_unlock_bh(&enic->tstamp.lock);
+		enic_fill_hwstamp(&enic->tstamp, cycles, skb_hwtstamps(skb));
+		spin_lock_bh(&enic->devcmd_lock);
+		vnic_dev_cmd(enic->vdev, CMD_HW_TIMESTAMP_GET, &a0, &a1,
+			     1000);
+		spin_unlock_bh(&enic->devcmd_lock);
+		netdev_info(netdev, "cycles = 0x%llx, a0 = 0x%llx",
+			    cycles, a0);
+		goto out;
+devcmd:
 		spin_lock_bh(&enic->devcmd_lock);
 		vnic_dev_cmd(enic->vdev, CMD_HW_TIMESTAMP_GET, &a0, &a1,
 			     1000);
 		spin_unlock_bh(&enic->devcmd_lock);
 		enic_fill_hwstamp(&enic->tstamp, a0, skb_hwtstamps(skb));
-		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
+		goto out;
+
+out:
 		skb_tstamp_tx(skb, skb_hwtstamps(skb));
 	}
 

@@ -185,7 +185,7 @@ static const struct ptp_clock_info enic_ptp_clock_info = {
 void enic_tstamp_init(struct enic *enic)
 {
 	ktime_t time;
-	u64 dev_freq, a1;
+	u64 dev_freq, a0, a1;
 	struct enic_tstamp *tstamp = &enic->tstamp;
 
 	tstamp->hwtstamp_config.tx_type = HWTSTAMP_TX_OFF;
@@ -194,6 +194,10 @@ void enic_tstamp_init(struct enic *enic)
 	spin_lock_bh(&enic->devcmd_lock);
 	time = ktime_get_real();
 	vnic_dev_cmd(enic->vdev, CMD_HW_CLOCK_GET, &dev_freq, &a1, 1000);
+	spin_unlock_bh(&enic->devcmd_lock);
+	spin_lock_bh(&enic->devcmd_lock);
+	vnic_dev_cmd(enic->vdev, CMD_HW_TIMESTAMP_GET, &a0, &a1,
+		     1000);
 	spin_unlock_bh(&enic->devcmd_lock);
 
 	spin_lock_init(&tstamp->lock);
@@ -211,9 +215,12 @@ void enic_tstamp_init(struct enic *enic)
 	tstamp->cycles.mask = CLOCKSOURCE_MASK(48);
 	timecounter_init(&tstamp->clock, &tstamp->cycles,
 			 ktime_to_ns(time));
+	tstamp->init_time = ktime_to_ns(time);
+	tstamp->init_clock = a0;
 	tstamp->adjtime = 0;
-	netdev_info(enic->netdev, "init tstamp: clock: %d, shift: %d, mult: %u",
-		    (u32)dev_freq, tstamp->cycles.shift, tstamp->cycles.mult);
+	netdev_info(enic->netdev, "init tstamp: clock: %d, shift: %d, mult: %u, initial_clock = %llx",
+		    (u32)dev_freq, tstamp->cycles.shift, tstamp->cycles.mult,
+			tstamp->init_clock);
 	tstamp->overflow_period = ENIC_TSTAMP_OVERFLOW_PERIOD;
 
 	tstamp->ptp_info = enic_ptp_clock_info;

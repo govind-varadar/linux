@@ -160,6 +160,8 @@ struct enic_tstamp {
 	struct ptp_clock_info	ptp_info;
 	u32			freq;
 	s64			adjtime;
+	u64			init_time;
+	u64			init_clock;
 };
 
 /* Per-instance private data structure */
