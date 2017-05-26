@@ -769,17 +769,18 @@ static int adpt_device_reset(struct scsi_cmnd* cmd)
 
 #define I2O_HBA_BUS_RESET 0x87
 // This version of bus reset is called by the eh_error handler
-static int adpt_bus_reset(struct scsi_cmnd* cmd)
+static int adpt_bus_reset(struct Scsi_Host *shost, int channel)
 {
 	adpt_hba* pHba;
 	u32 msg[4];
 	u32 rcode;
 
-	pHba = (adpt_hba*)cmd->device->host->hostdata[0];
+	pHba = (adpt_hba*)shost->hostdata[0];
 	memset(msg, 0, sizeof(msg));
-	printk(KERN_WARNING"%s: Bus reset: SCSI Bus %d: tid: %d\n",pHba->name, cmd->device->channel,pHba->channel[cmd->device->channel].tid );
+	printk(KERN_WARNING"%s: Bus reset: SCSI Bus %d: tid: %d\n",
+	       pHba->name, channel, pHba->channel[channel].tid );
 	msg[0] = FOUR_WORD_MSG_SIZE|SGL_OFFSET_0;
-	msg[1] = (I2O_HBA_BUS_RESET<<24|HOST_TID<<12|pHba->channel[cmd->device->channel].tid);
+	msg[1] = (I2O_HBA_BUS_RESET<<24|HOST_TID<<12|pHba->channel[channel].tid);
 	msg[2] = 0;
 	msg[3] = 0;
 	if (pHba->host)

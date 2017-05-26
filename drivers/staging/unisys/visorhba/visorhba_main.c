@@ -413,15 +413,14 @@ static int visorhba_device_reset_handler(struct scsi_cmnd *scsicmd)
  *
  *	Returns SUCCESS
  */
-static int visorhba_bus_reset_handler(struct scsi_cmnd *scsicmd)
+static int visorhba_bus_reset_handler(struct Scsi_Host *scsihost, int channel)
 {
 	struct scsi_device *scsidev = NULL, *tmp;
-	struct Scsi_Host *scsihost = scsicmd->device->host;
 	struct visordisk_info *vdisk;
 	int rtn = SUCCESS;
 
 	shost_for_each_device(tmp, scsihost) {
-		if (tmp->channel != scsicmd->device->channel)
+		if (tmp->channel != channel)
 			continue;
 		vdisk = tmp->hostdata;
 		if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT)

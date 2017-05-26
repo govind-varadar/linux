@@ -3911,9 +3911,9 @@ static enum blk_eh_timer_return gdth_timed_out(struct scsi_cmnd *scp)
 }
 
 
-static int gdth_eh_bus_reset(Scsi_Cmnd *scp)
+static int gdth_eh_bus_reset(struct Scsi_Host *sh, int channel)
 {
-    gdth_ha_str *ha = shost_priv(scp->device->host);
+    gdth_ha_str *ha = shost_priv(sh);
     int i;
     unsigned long flags;
     Scsi_Cmnd *cmnd;
@@ -3921,7 +3921,7 @@ static int gdth_eh_bus_reset(Scsi_Cmnd *scp)
 
     TRACE2(("gdth_eh_bus_reset()\n"));
 
-    b = scp->device->channel;
+    b = channel;
 
     /* clear command tab */
     spin_lock_irqsave(&ha->smp_lock, flags);
@@ -4467,7 +4467,6 @@ free_fail:
 static int gdth_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 {
     gdth_ha_str *ha; 
-    Scsi_Cmnd *scp;
     unsigned long flags;
     char cmnd[MAX_COMMAND_SIZE];   
     void __user *argp = (void __user *)arg;
@@ -4588,15 +4587,8 @@ static int gdth_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
             (NULL == (ha = gdth_find_ha(res.ionode))))
             return -EFAULT;
 
-        scp  = kzalloc(sizeof(*scp), GFP_KERNEL);
-        if (!scp)
-            return -ENOMEM;
-        scp->device = ha->sdev;
-        scp->cmd_len = 12;
-        scp->device->channel = res.number;
-        rval = gdth_eh_bus_reset(scp);
+	rval = gdth_eh_bus_reset(ha->shost, res.number);
         res.status = (rval == SUCCESS ? S_OK : S_GENERR);
-        kfree(scp);
 
         if (copy_to_user(argp, &res, sizeof(gdth_ioctl_reset)))
             return -EFAULT;
