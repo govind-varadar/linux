@@ -101,6 +101,10 @@ struct visorhba_devices_open {
 	struct visorhba_devdata *devdata;
 };
 
+#define for_each_vbus_match(iter, list, match) \
+	for (iter = &list->head; iter->next; iter = iter->next) \
+		if ((iter->channel == match->channel))
+
 /*
  *	visor_thread_start - starts a thread for the device
  *	@threadfn: Function the thread starts
@@ -413,25 +417,23 @@ static int visorhba_device_reset_handler(struct scsi_cmnd *scsicmd)
  *
  *	Returns SUCCESS
  */
-static int visorhba_bus_reset_handler(struct scsi_cmnd *scsicmd)
+static int visorhba_bus_reset_handler(struct Scsi_Host *scsihost, int channel)
 {
-	struct scsi_device *scsidev;
+	struct scsi_device *scsidev = NULL, *tmp;
 	struct visordisk_info *vdisk;
-	int rtn;
+	int rtn = SUCCESS;
 
-	scsidev = scsicmd->device;
-	shost_for_each_device(scsidev, scsidev->host) {
-		vdisk = scsidev->hostdata;
+	shost_for_each_device(tmp, scsihost) {
+		vdisk = tmp->hostdata;
 		if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT)
 			atomic_inc(&vdisk->error_count);
 		else
 			atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
+		if (!scsidev)
+			scsidev = tmp;
 	}
-	rtn = forward_taskmgmt_command(TASK_MGMT_BUS_RESET, scsidev);
-	if (rtn == SUCCESS) {
-		scsicmd->result = DID_RESET << 16;
-		scsicmd->scsi_done(scsicmd);
-	}
+	if (scsidev)
+		rtn = forward_taskmgmt_command(TASK_MGMT_BUS_RESET, scsidev);
 	return rtn;
 }
 

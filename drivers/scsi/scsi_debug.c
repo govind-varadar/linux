@@ -3845,36 +3845,27 @@ lie:
 	return SUCCESS;
 }
 
-static int scsi_debug_bus_reset(struct scsi_cmnd * SCpnt)
+static int scsi_debug_bus_reset(struct Scsi_Host * hp, int channel)
 {
-	struct sdebug_host_info *sdbg_host;
+	struct sdebug_host_info *sdbg_host =
+		*(struct sdebug_host_info **)shost_priv(hp);
 	struct sdebug_dev_info *devip;
-        struct scsi_device * sdp;
-        struct Scsi_Host * hp;
 	int k = 0;
 
 	++num_bus_resets;
-	if (!(SCpnt && SCpnt->device))
-		goto lie;
-	sdp = SCpnt->device;
 	if (SDEBUG_OPT_ALL_NOISE & sdebug_opts)
-		sdev_printk(KERN_INFO, sdp, "%s\n", __func__);
-	hp = sdp->host;
-	if (hp) {
-		sdbg_host = *(struct sdebug_host_info **)shost_priv(hp);
-		if (sdbg_host) {
-			list_for_each_entry(devip,
-                                            &sdbg_host->dev_info_list,
-					    dev_list) {
-				set_bit(SDEBUG_UA_BUS_RESET, devip->uas_bm);
-				++k;
-			}
+		shost_printk(KERN_INFO, hp, "%s\n", __func__);
+	if (sdbg_host) {
+		list_for_each_entry(devip,
+				    &sdbg_host->dev_info_list,
+				    dev_list) {
+			set_bit(SDEBUG_UA_BUS_RESET, devip->uas_bm);
+			++k;
 		}
 	}
 	if (SDEBUG_OPT_RESET_NOISE & sdebug_opts)
-		sdev_printk(KERN_INFO, sdp,
+		shost_printk(KERN_INFO, hp,
 			    "%s: %d device(s) found in host\n", __func__, k);
-lie:
 	return SUCCESS;
 }
 
