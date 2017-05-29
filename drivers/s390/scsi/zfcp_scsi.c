@@ -312,9 +312,8 @@ static int zfcp_scsi_eh_device_reset_handler(struct scsi_cmnd *scpnt)
  * Note: We need to select a LUN as the storage array doesn't
  * necessarily supports LUN 0 and might refuse the target reset.
  */
-static int zfcp_scsi_eh_target_reset_handler(struct scsi_cmnd *scpnt)
+static int zfcp_scsi_eh_target_reset_handler(struct scsi_target *starget)
 {
-	struct scsi_target = scsi_target(scpnt->device);
 	struct fc_rport *rport = starget_to_rport(starget);
 	struct Scsi_Host *shost = rport_to_shost(rport);
 	struct scsi_device *sdev = NULL, *tmp_sdev;
