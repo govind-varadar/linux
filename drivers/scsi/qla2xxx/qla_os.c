@@ -259,7 +259,7 @@ static void qla2xxx_slave_destroy(struct scsi_device *);
 static int qla2xxx_queuecommand(struct Scsi_Host *h, struct scsi_cmnd *cmd);
 static int qla2xxx_eh_abort(struct scsi_cmnd *);
 static int qla2xxx_eh_device_reset(struct scsi_cmnd *);
-static int qla2xxx_eh_target_reset(struct scsi_cmnd *);
+static int qla2xxx_eh_target_reset(struct scsi_target *);
 static int qla2xxx_eh_bus_reset(struct Scsi_Host *, int);
 static int qla2xxx_eh_host_reset(struct Scsi_Host *);
 
@@ -1396,10 +1396,9 @@ eh_reset_failed:
 }
 
 static int
-qla2xxx_eh_target_reset(struct scsi_cmnd *cmd)
+qla2xxx_eh_target_reset(struct scsi_target *starget)
 {
-	struct scsi_device *sdev = cmd->device;
-	struct fc_rport *rport = starget_to_rport(scsi_target(sdev));
+	struct fc_rport *rport = starget_to_rport(starget);
 	scsi_qla_host_t *vha = shost_priv(rport_to_shost(rport));
 	struct qla_hw_data *ha = vha->hw;
 	fc_port_t *fcport = (struct fc_port *) rport->dd_data;
@@ -1423,7 +1422,7 @@ qla2xxx_eh_target_reset(struct scsi_cmnd *cmd)
 
 	ql_log(ql_log_info, vha, 0x8009,
 	    "TARGET RESET ISSUED nexus=%ld:%d:0.\n", vha->host_no,
-	    cmd->device->id);
+	    starget->id);
 
 	err = 0;
 	if (qla2x00_wait_for_hba_online(vha) != QLA_SUCCESS) {
@@ -1432,13 +1431,14 @@ qla2xxx_eh_target_reset(struct scsi_cmnd *cmd)
 		goto eh_reset_failed;
 	}
 	err = 2;
-	if (ha->isp_ops->target_reset(fcport, 0, smp_processor_id() + 1)
+	if (ha->isp_ops->target_reset(fcport, starget->id,
+				      smp_processor_id() + 1)
 	    != QLA_SUCCESS) {
 		ql_log(ql_log_warn, vha, 0x800c, "do_reset failed.\n");
 		goto eh_reset_failed;
 	}
 	err = 3;
-	if (qla2x00_eh_wait_for_pending_commands(vha, sdev->id,
+	if (qla2x00_eh_wait_for_pending_commands(vha, starget->id,
 		0, WAIT_TARGET) != QLA_SUCCESS) {
 		ql_log(ql_log_warn, vha, 0x800d,
 		       "wait for pending cmds failed.\n");
@@ -1447,14 +1447,14 @@ qla2xxx_eh_target_reset(struct scsi_cmnd *cmd)
 
 	ql_log(ql_log_info, vha, 0x800e,
 	    "TARGET RESET SUCCEEDED nexus:%ld:%d:0.\n",
-	    vha->host_no, sdev->id);
+	    vha->host_no, starget->id);
 
 	return SUCCESS;
 
 eh_reset_failed:
 	ql_log(ql_log_info, vha, 0x800f,
 	    "TARGET RESET FAILED: %s nexus=%ld:%d:0\n",
-	    reset_errors[err], vha->host_no, sdev->id);
+	    reset_errors[err], vha->host_no, starget->id);
 	return FAILED;
 }
 
