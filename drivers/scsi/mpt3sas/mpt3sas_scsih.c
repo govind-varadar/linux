@@ -2580,26 +2580,30 @@ scsih_dev_reset(struct scsi_cmnd *scmd)
  * Returns SUCCESS if command aborted else FAILED
  */
 static int
-scsih_target_reset(struct scsi_cmnd *scmd)
+scsih_target_reset(struct scsi_target *starget)
 {
-	struct MPT3SAS_ADAPTER *ioc = shost_priv(scmd->device->host);
+	struct Scsi_Host *shost = dev_to_shost(&starget->dev);
+	struct scsi_device *sdev = NULL, *tmp_sdev;
+	struct MPT3SAS_ADAPTER *ioc = shost_priv(shost);
 	struct MPT3SAS_DEVICE *sas_device_priv_data;
 	struct _sas_device *sas_device = NULL;
 	u16	handle;
 	int r;
-	struct scsi_target *starget = scmd->device->sdev_target;
 	struct MPT3SAS_TARGET *target_priv_data = starget->hostdata;
 
-	starget_printk(KERN_INFO, starget, "attempting target reset! scmd(%p)\n",
-		scmd);
-	_scsih_tm_display_info(ioc, scmd);
+	starget_printk(KERN_INFO, starget, "attempting target reset!\n");
 
-	sas_device_priv_data = scmd->device->hostdata;
+	shost_for_each_device(tmp_sdev, shost) {
+		if (scsi_target(tmp_sdev) == starget) {
+			if (!tmp_sdev->hostdata)
+				continue;
+			sdev = tmp_sdev;
+			break;
+		}
+	}
+	sas_device_priv_data = sdev->hostdata;
 	if (!sas_device_priv_data || !sas_device_priv_data->sas_target) {
-		starget_printk(KERN_INFO, starget, "target been deleted! scmd(%p)\n",
-			scmd);
-		scmd->result = DID_NO_CONNECT << 16;
-		scmd->scsi_done(scmd);
+		starget_printk(KERN_INFO, starget, "target been deleted!\n");
 		r = SUCCESS;
 		goto out;
 	}
@@ -2616,18 +2620,17 @@ scsih_target_reset(struct scsi_cmnd *scmd)
 		handle = sas_device_priv_data->sas_target->handle;
 
 	if (!handle) {
-		scmd->result = DID_RESET << 16;
 		r = FAILED;
 		goto out;
 	}
 
-	r = mpt3sas_scsih_issue_locked_tm(ioc, handle, scmd->device->channel,
-	    scmd->device->id, 0, MPI2_SCSITASKMGMT_TASKTYPE_TARGET_RESET, 0,
+	r = mpt3sas_scsih_issue_locked_tm(ioc, handle, starget->channel,
+	    starget->id, 0, MPI2_SCSITASKMGMT_TASKTYPE_TARGET_RESET, 0,
 	    30);
 
  out:
-	starget_printk(KERN_INFO, starget, "target reset: %s scmd(%p)\n",
-	    ((r == SUCCESS) ? "SUCCESS" : "FAILED"), scmd);
+	starget_printk(KERN_INFO, starget, "target reset: %s\n",
+	    ((r == SUCCESS) ? "SUCCESS" : "FAILED"));
 
 	if (sas_device)
 		sas_device_put(sas_device);
