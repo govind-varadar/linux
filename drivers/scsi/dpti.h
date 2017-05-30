@@ -40,7 +40,7 @@ static int adpt_bios_param(struct scsi_device * sdev, struct block_device *dev,
 		sector_t, int geom[]);
 
 static int adpt_bus_reset(struct Scsi_Host* shost, int channel);
-static int adpt_device_reset(struct scsi_cmnd* cmd);
+static int adpt_device_reset(struct scsi_device * sdev);
 
 
 /*
