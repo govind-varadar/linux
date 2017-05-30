@@ -5296,7 +5296,7 @@ static int ipr_sata_reset(struct ata_link *link, unsigned int *classes,
 
 /**
  * ipr_eh_dev_reset - Reset the device
- * @scsi_cmd:	scsi command struct
+ * @scsi_dev:	scsi device struct
  *
  * This function issues a device reset to the affected device.
  * A LUN reset will be sent to the device first. If that does
@@ -5305,7 +5305,7 @@ static int ipr_sata_reset(struct ata_link *link, unsigned int *classes,
  * Return value:
  *	SUCCESS / FAILED
  **/
-static int __ipr_eh_dev_reset(struct scsi_cmnd *scsi_cmd)
+static int __ipr_eh_dev_reset(struct scsi_device *scsi_dev)
 {
 	struct ipr_cmnd *ipr_cmd;
 	struct ipr_ioa_cfg *ioa_cfg;
@@ -5315,8 +5315,8 @@ static int __ipr_eh_dev_reset(struct scsi_cmnd *scsi_cmd)
 	struct ipr_hrr_queue *hrrq;
 
 	ENTER;
-	ioa_cfg = (struct ipr_ioa_cfg *) scsi_cmd->device->host->hostdata;
-	res = scsi_cmd->device->hostdata;
+	ioa_cfg = (struct ipr_ioa_cfg *) scsi_dev->host->hostdata;
+	res = scsi_dev->hostdata;
 
 	/*
 	 * If we are currently going through reset/reload, return failed. This will force the
@@ -5333,7 +5333,8 @@ static int __ipr_eh_dev_reset(struct scsi_cmnd *scsi_cmd)
 		for (i = hrrq->min_cmd_id; i <= hrrq->max_cmd_id; i++) {
 			ipr_cmd = ioa_cfg->ipr_cmnd_list[i];
 
-			if (ipr_cmd->ioarcb.res_handle == res->res_handle) {
+			if (ipr_cmd->scsi_cmd &&
+			    ipr_cmd->scsi_cmd->device == scsi_dev) {
 				if (!ipr_cmd->qc)
 					continue;
 				if (ipr_cmnd_is_free(ipr_cmd))
@@ -5349,13 +5350,13 @@ static int __ipr_eh_dev_reset(struct scsi_cmnd *scsi_cmd)
 		spin_unlock(&hrrq->_lock);
 	}
 	res->resetting_device = 1;
-	scmd_printk(KERN_ERR, scsi_cmd, "Resetting device\n");
+	sdev_printk(KERN_ERR, scsi_dev, "Resetting device\n");
 
 	if (ipr_is_gata(res) && res->sata_port) {
 		ap = res->sata_port->ap;
-		spin_unlock_irq(scsi_cmd->device->host->host_lock);
+		spin_unlock_irq(scsi_dev->host->host_lock);
 		ata_std_error_handler(ap);
-		spin_lock_irq(scsi_cmd->device->host->host_lock);
+		spin_lock_irq(scsi_dev->host->host_lock);
 	} else
 		rc = ipr_device_reset(ioa_cfg, res);
 	res->resetting_device = 0;
@@ -5365,27 +5366,27 @@ static int __ipr_eh_dev_reset(struct scsi_cmnd *scsi_cmd)
 	return rc ? FAILED : SUCCESS;
 }
 
-static int ipr_eh_dev_reset(struct scsi_cmnd *cmd)
+static int ipr_eh_dev_reset(struct scsi_device *sdev)
 {
 	int rc;
 	struct ipr_ioa_cfg *ioa_cfg;
 	struct ipr_resource_entry *res;
 
-	ioa_cfg = (struct ipr_ioa_cfg *) cmd->device->host->hostdata;
-	res = cmd->device->hostdata;
+	ioa_cfg = (struct ipr_ioa_cfg *) sdev->host->hostdata;
+	res = sdev->hostdata;
 
 	if (!res)
 		return FAILED;
 
-	spin_lock_irq(cmd->device->host->host_lock);
-	rc = __ipr_eh_dev_reset(cmd);
-	spin_unlock_irq(cmd->device->host->host_lock);
+	spin_lock_irq(sdev->host->host_lock);
+	rc = __ipr_eh_dev_reset(sdev);
+	spin_unlock_irq(sdev->host->host_lock);
 
 	if (rc == SUCCESS) {
 		if (ipr_is_gata(res) && res->sata_port)
 			rc = ipr_wait_for_ops(ioa_cfg, res, ipr_match_res);
 		else
-			rc = ipr_wait_for_ops(ioa_cfg, cmd->device, ipr_match_lun);
+			rc = ipr_wait_for_ops(ioa_cfg, sdev, ipr_match_lun);
 	}
 
 	return rc;

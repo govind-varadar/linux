@@ -725,18 +725,19 @@ static int adpt_abort(struct scsi_cmnd * cmd)
 // This is the same for BLK and SCSI devices
 // NOTE this is wrong in the i2o.h definitions
 // This is not currently supported by our adapter but we issue it anyway
-static int adpt_device_reset(struct scsi_cmnd* cmd)
+static int adpt_device_reset(struct scsi_device * sdev)
 {
 	adpt_hba* pHba;
 	u32 msg[4];
 	u32 rcode;
 	int old_state;
-	struct adpt_device* d = cmd->device->hostdata;
+	struct adpt_device* d = sdev->hostdata;
 
-	pHba = (void*) cmd->device->host->hostdata[0];
-	printk(KERN_INFO"%s: Trying to reset device\n",pHba->name);
+	pHba = (void*) sdev->host->hostdata[0];
+	printk(KERN_INFO "%s: Trying to reset device\n", pHba->name);
 	if (!d) {
-		printk(KERN_INFO"%s: Reset Device: Device Not found\n",pHba->name);
+		printk(KERN_INFO "%s: Reset Device: Device Not found\n",
+		       pHba->name);
 		return FAILED;
 	}
 	memset(msg, 0, sizeof(msg));
@@ -749,19 +750,20 @@ static int adpt_device_reset(struct scsi_cmnd* cmd)
 		spin_lock_irq(pHba->host->host_lock);
 	old_state = d->state;
 	d->state |= DPTI_DEV_RESET;
-	rcode = adpt_i2o_post_wait(pHba, msg,sizeof(msg), FOREVER);
+	rcode = adpt_i2o_post_wait(pHba, msg, sizeof(msg), FOREVER);
 	d->state = old_state;
 	if (pHba->host)
 		spin_unlock_irq(pHba->host->host_lock);
 	if (rcode != 0) {
 		if(rcode == -EOPNOTSUPP ){
-			printk(KERN_INFO"%s: Device reset not supported\n",pHba->name);
+			printk(KERN_INFO "%s: Device reset not supported\n",
+			       pHba->name);
 			return FAILED;
 		}
-		printk(KERN_INFO"%s: Device reset failed\n",pHba->name);
+		printk(KERN_INFO "%s: Device reset failed\n", pHba->name);
 		return FAILED;
 	} else {
-		printk(KERN_INFO"%s: Device reset successful\n",pHba->name);
+		printk(KERN_INFO "%s: Device reset successful\n", pHba->name);
 		return SUCCESS;
 	}
 }

@@ -2134,15 +2134,15 @@ snic_unlink_and_release_req(struct snic *snic, struct scsi_cmnd *sc, int flag)
  * command on the LUN.
  */
 int
-snic_device_reset(struct scsi_cmnd *sc)
+snic_device_reset(struct scsi_device *sdev)
 {
-	struct scsi_device *sdev = sc->device;
 	struct Scsi_Host *shost = sdev->host;
 	struct snic *snic = shost_priv(shost);
 	struct snic_req_info *rqi = NULL;
 	int start_time = jiffies;
 	int ret = FAILED;
 	int dr_supp = 0;
+	struct scsi_cmnd tmf_sc, *sc = &tmf_sc;
 
 	SNIC_SCSI_DBG(shost, "dev_reset\n");
 	dr_supp = snic_dev_reset_supported(sdev);

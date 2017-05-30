@@ -272,7 +272,7 @@ static void qla2xxx_scan_start(struct Scsi_Host *);
 static void qla2xxx_slave_destroy(struct scsi_device *);
 static int qla2xxx_queuecommand(struct Scsi_Host *h, struct scsi_cmnd *cmd);
 static int qla2xxx_eh_abort(struct scsi_cmnd *);
-static int qla2xxx_eh_device_reset(struct scsi_cmnd *);
+static int qla2xxx_eh_device_reset(struct scsi_device *);
 static int qla2xxx_eh_target_reset(struct scsi_target *);
 static int qla2xxx_eh_bus_reset(struct Scsi_Host *, int);
 static int qla2xxx_eh_host_reset(struct Scsi_Host *);
@@ -1384,9 +1384,8 @@ static char *reset_errors[] = {
 };
 
 static int
-qla2xxx_eh_device_reset(struct scsi_cmnd *cmd)
+qla2xxx_eh_device_reset(struct scsi_device *sdev)
 {
-	struct scsi_device *sdev = cmd->device;
 	scsi_qla_host_t *vha = shost_priv(sdev->host);
 	struct qla_hw_data *ha = vha->hw;
 	fc_port_t *fcport = (struct fc_port *) sdev->hostdata;

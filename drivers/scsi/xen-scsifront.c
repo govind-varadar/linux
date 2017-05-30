@@ -655,10 +655,10 @@ static int scsifront_eh_abort_handler(struct scsi_cmnd *sc)
 	return scsifront_action_handler(sc->device, sc);
 }
 
-static int scsifront_dev_reset_handler(struct scsi_cmnd *sc)
+static int scsifront_dev_reset_handler(struct scsi_device *sdev)
 {
 	pr_debug("%s\n", __func__);
-	return scsifront_action_handler(sc->device, NULL);
+	return scsifront_action_handler(sdev, NULL);
 }
 
 static int scsifront_sdev_configure(struct scsi_device *sdev)
