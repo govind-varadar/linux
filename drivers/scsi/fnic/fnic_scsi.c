@@ -2317,9 +2317,8 @@ fnic_scsi_host_end_tag(struct fnic *fnic, struct scsi_cmnd *sc)
  * fail to get aborted. It calls driver's eh_device_reset with a SCSI command
  * on the LUN.
  */
-int fnic_device_reset(struct scsi_cmnd *sc)
+int fnic_device_reset(struct scsi_device *sdev)
 {
-	struct scsi_device *sdev = sc->device;
 	struct fc_lport *lp;
 	struct fnic *fnic;
 	struct fnic_io_req *io_req = NULL;
@@ -2332,8 +2331,10 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 	struct scsi_lun fc_lun;
 	struct fnic_stats *fnic_stats;
 	struct reset_stats *reset_stats;
-	int tag = 0;
+	int tag;
+	u64 sc_state = 0;
 	DECLARE_COMPLETION_ONSTACK(tm_done);
+	struct scsi_cmnd *sc;
 
 	/* Wait for rport to unblock */
 	rport = starget_to_rport(scsi_target(sdev));
@@ -2348,7 +2349,7 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 	fnic = lport_priv(lp);
 	fnic_stats = &fnic->fnic_stats;
 	reset_stats = &fnic->fnic_stats.reset_stats;
-
+	tag = fnic->fnic_max_tag_id - 1;
 	atomic64_inc(&reset_stats->device_resets);
 
 	FNIC_SCSI_DBG(KERN_DEBUG, fnic->lport->host,
@@ -2364,10 +2365,10 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 		goto fnic_device_reset_end;
 	}
 	/* The last tag is reserved for device reset */
-	sc = scsi_host_find_tag(sdev->host, fnic->fnic_max_tag_id - 1);
+	sc = scsi_host_find_tag(sdev->host, tag);
 	io_lock = fnic_io_lock_hash(fnic, sc);
 	spin_lock_irqsave(io_lock, flags);
-	if (CMD_SP(sc)) {
+	if (!sc || CMD_SP(sc)) {
 		/*
 		 * Reset tag busy
 		 */
@@ -2528,13 +2529,12 @@ fnic_device_reset_clean:
 	}
 
 fnic_device_reset_end:
-	FNIC_TRACE(fnic_device_reset, sc->device->host->host_no,
-		  sc->request->tag, sc,
-		  jiffies_to_msecs(jiffies - start_time),
-		  0, ((u64)sc->cmnd[0] << 32 |
-		  (u64)sc->cmnd[2] << 24 | (u64)sc->cmnd[3] << 16 |
-		  (u64)sc->cmnd[4] << 8 | sc->cmnd[5]),
-		  (((u64)CMD_FLAGS(sc) << 32) | CMD_STATE(sc)));
+	if (sc)
+		sc_state = ((u64)CMD_FLAGS(sc) << 32) | CMD_STATE(sc);
+	FNIC_TRACE(fnic_device_reset, sdev->host->host_no,
+		   tag, sc,
+		   jiffies_to_msecs(jiffies - start_time),
+		   0, 0, sc_state);
 
 	FNIC_SCSI_DBG(KERN_DEBUG, fnic->lport->host,
 		      "Returning from device reset %s\n",

@@ -385,29 +385,21 @@ static int visorhba_abort_handler(struct scsi_cmnd *scsicmd)
 
 /*
  *	visorhba_device_reset_handler - Send TASK_MGMT_LUN_RESET
- *	@scsicmd: The scsicmd that needs aborted
+ *	@scsidev: The scsidev to be reset
  *
  *	Returns SUCCESS if inserted, failure otherwise
  */
-static int visorhba_device_reset_handler(struct scsi_cmnd *scsicmd)
+static int visorhba_device_reset_handler(struct scsi_device *scsidev)
 {
 	/* issue TASK_MGMT_LUN_RESET */
-	struct scsi_device *scsidev;
 	struct visordisk_info *vdisk;
-	int rtn;
 
-	scsidev = scsicmd->device;
 	vdisk = scsidev->hostdata;
 	if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT)
 		atomic_inc(&vdisk->error_count);
 	else
 		atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
-	rtn = forward_taskmgmt_command(TASK_MGMT_LUN_RESET, scsidev);
-	if (rtn == SUCCESS) {
-		scsicmd->result = DID_RESET << 16;
-		scsicmd->scsi_done(scsicmd);
-	}
-	return rtn;
+	return forward_taskmgmt_command(TASK_MGMT_LUN_RESET, scsidev);
 }
 
 /*

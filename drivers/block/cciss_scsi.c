@@ -62,7 +62,7 @@ static int cciss_scsi_show_info(struct seq_file *m,
 
 static int cciss_scsi_queue_command (struct Scsi_Host *h,
 				     struct scsi_cmnd *cmd);
-static int cciss_eh_device_reset_handler(struct scsi_cmnd *);
+static int cciss_eh_device_reset_handler(struct scsi_device *);
 static int cciss_eh_abort_handler(struct scsi_cmnd *);
 
 static struct cciss_scsi_hba_t ccissscsi[MAX_CTLR] = {
@@ -1591,23 +1591,21 @@ retry_tur:
  * as a boot device (embedded controller on HP/Compaq systems.)
 */
 
-static int cciss_eh_device_reset_handler(struct scsi_cmnd *scsicmd)
+static int cciss_eh_device_reset_handler(struct scsi_device *scsidev)
 {
 	int rc;
-	CommandList_struct *cmd_in_trouble;
 	unsigned char lunaddr[8];
 	ctlr_info_t *h;
 
 	/* find the controller to which the command to be aborted was sent */
-	h = (ctlr_info_t *) scsicmd->device->host->hostdata[0];
+	h = (ctlr_info_t *) scsidev->host->hostdata[0];
 	if (h == NULL) /* paranoia */
 		return FAILED;
 	dev_warn(&h->pdev->dev, "resetting tape drive or medium changer.\n");
-	/* find the command that's giving us trouble */
-	cmd_in_trouble = (CommandList_struct *) scsicmd->host_scribble;
-	if (cmd_in_trouble == NULL) /* paranoia */
+	rc = lookup_scsi3addr(h, scsidev->channel, scsidev->id,
+			      scsidev->lun, lunaddr);
+	if (rc != 0)
 		return FAILED;
-	memcpy(lunaddr, &cmd_in_trouble->Header.LUN.LunAddrBytes[0], 8);
 	/* send a reset to the SCSI LUN which the command was sent to */
 	rc = sendcmd_withirq(h, CCISS_RESET_MSG, NULL, 0, 0, lunaddr,
 		TYPE_MSG);
