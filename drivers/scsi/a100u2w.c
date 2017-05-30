@@ -585,8 +585,7 @@ static int orc_reset_scsi_bus(struct orc_host * host)
 /**
  *	orc_device_reset	-	device reset handler
  *	@host: host to reset
- *	@cmd: command causing the reset
- *	@target; target device
+ *	@sdev: device to be reset
  *
  *	Reset registers, reset a hanging bus and kill active and disconnected
  *	commands for target w/o soft reset
@@ -951,12 +950,11 @@ static int inia100_bus_reset(struct Scsi_Host * shost, int channel)
  Output         : None.
  Return         : pSRB  -       Pointer to SCSI request block.
 *****************************************************************************/
-static int inia100_device_reset(struct scsi_cmnd * cmd)
+static int inia100_device_reset(struct scsi_device * dev)
 {				/* I need Host Control Block Information */
 	struct orc_host *host;
-	host = (struct orc_host *) cmd->device->host->hostdata;
-	return orc_device_reset(host, cmd->device);
-
+	host = (struct orc_host *) dev->host->hostdata;
+	return orc_device_reset(host, dev);
 }
 
 /**

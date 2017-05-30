@@ -206,7 +206,7 @@ hostt EH callbacks.  Callbacks may be omitted and omitted ones are
 considered to fail always.
 
 int (* eh_abort_handler)(struct scsi_cmnd *);
-int (* eh_device_reset_handler)(struct scsi_cmnd *);
+int (* eh_device_reset_handler)(struct scsi_device *);
 int (* eh_bus_reset_handler)(struct Scsi_Host *, int);
 int (* eh_host_reset_handler)(struct Scsi_Host *);
 

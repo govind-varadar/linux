@@ -3043,7 +3043,7 @@ static int pmcraid_eh_abort_handler(struct scsi_cmnd *scsi_cmd)
 /**
  * pmcraid_eh_xxxx_reset_handler - bus/target/device reset handler callbacks
  *
- * @scmd: pointer to scsi_cmd that was sent to the resource to be reset.
+ * @sdev: pointer to scsi_device to be reset.
  *
  * All these routines invokve pmcraid_reset_device with appropriate parameters.
  * Since these are called from mid-layer EH thread, no other IO will be queued
@@ -3054,11 +3054,11 @@ static int pmcraid_eh_abort_handler(struct scsi_cmnd *scsi_cmd)
  * Return value
  *	SUCCESS or FAILED
  */
-static int pmcraid_eh_device_reset_handler(struct scsi_cmnd *scmd)
+static int pmcraid_eh_device_reset_handler(struct scsi_device *sdev)
 {
-	scmd_printk(KERN_INFO, scmd,
+	sdev_printk(KERN_INFO, sdev,
 		    "resetting device due to an I/O command timeout.\n");
-	return pmcraid_reset_device(scmd->device,
+	return pmcraid_reset_device(sdev,
 				    PMCRAID_INTERNAL_TIMEOUT,
 				    RESET_DEVICE_LUN);
 }
