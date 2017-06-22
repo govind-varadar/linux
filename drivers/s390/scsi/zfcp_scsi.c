@@ -311,13 +311,32 @@ static int zfcp_scsi_eh_target_reset_handler(struct scsi_cmnd *scpnt)
 
 static int zfcp_scsi_eh_host_reset_handler(struct scsi_cmnd *scpnt)
 {
-	struct zfcp_scsi_dev *zfcp_sdev = sdev_to_zfcp(scpnt->device);
-	struct zfcp_adapter *adapter = zfcp_sdev->port->adapter;
-	int ret;
+	struct Scsi_Host *host = scpnt->device->host;
+	struct zfcp_adapter *adapter = (struct zfcp_adapter *)host->hostdata[0];
+	int ret = 0;
+	unsigned long flags;
+	struct zfcp_port *port;
 
 	zfcp_erp_adapter_reopen(adapter, 0, "schrh_1");
 	zfcp_erp_wait(adapter);
-	ret = fc_block_scsi_eh(scpnt);
+retry_rport_blocked:
+	spin_lock_irqsave(host->host_lock, flags);
+	list_for_each_entry(port, &adapter->port_list, list) {
+		struct fc_rport *rport = port->rport;
+
+		if (rport->port_state == FC_PORTSTATE_BLOCKED) {
+			if (rport->flags & FC_RPORT_FAST_FAIL_TIMEDOUT)
+				ret = FAST_IO_FAIL;
+			else
+				ret = NEEDS_RETRY;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(host->host_lock, flags);
+	if (ret == NEEDS_RETRY) {
+		msleep(1000);
+		goto retry_rport_blocked;
+	}
 	if (ret)
 		return ret;
 
