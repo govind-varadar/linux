@@ -535,11 +535,10 @@ void zfcp_dbf_san_in_els(char *tag, struct zfcp_fsf_req *fsf)
  * @sc: pointer to struct scsi_cmnd
  * @fsf: pointer to struct zfcp_fsf_req
  */
-void zfcp_dbf_scsi(char *tag, int level, struct scsi_cmnd *sc,
-		   struct zfcp_fsf_req *fsf)
+void zfcp_dbf_scsi(struct zfcp_adapter *adapter, char *tag, int level,
+		   int scsi_id, u64 scsi_lun,
+		   struct scsi_cmnd *sc, struct zfcp_fsf_req *fsf)
 {
-	struct zfcp_adapter *adapter =
-		(struct zfcp_adapter *) sc->device->host->hostdata[0];
 	struct zfcp_dbf *dbf = adapter->dbf;
 	struct zfcp_dbf_scsi *rec = &dbf->scsi_buf;
 	struct fcp_resp_with_ext *fcp_rsp;
@@ -551,17 +550,18 @@ void zfcp_dbf_scsi(char *tag, int level, struct scsi_cmnd *sc,
 
 	memcpy(rec->tag, tag, ZFCP_DBF_TAG_LEN);
 	rec->id = ZFCP_DBF_SCSI_CMND;
-	rec->scsi_result = sc->result;
-	rec->scsi_retries = sc->retries;
-	rec->scsi_allowed = sc->allowed;
-	rec->scsi_id = sc->device->id;
+	rec->scsi_id = scsi_id;
 	/* struct zfcp_dbf_scsi needs to be updated to handle 64bit LUNs */
-	rec->scsi_lun = (u32)sc->device->lun;
-	rec->host_scribble = (unsigned long)sc->host_scribble;
+	rec->scsi_lun = (u32)scsi_lun;
+	if (sc) {
+		rec->scsi_result = sc->result;
+		rec->scsi_retries = sc->retries;
+		rec->scsi_allowed = sc->allowed;
+		rec->host_scribble = (unsigned long)sc->host_scribble;
 
-	memcpy(rec->scsi_opcode, sc->cmnd,
-	       min((int)sc->cmd_len, ZFCP_DBF_SCSI_OPCODE));
-
+		memcpy(rec->scsi_opcode, sc->cmnd,
+		       min((int)sc->cmd_len, ZFCP_DBF_SCSI_OPCODE));
+	}
 	if (fsf) {
 		rec->fsf_req_id = fsf->req_id;
 		fcp_rsp = (struct fcp_resp_with_ext *)

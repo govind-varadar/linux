@@ -352,7 +352,8 @@ void _zfcp_dbf_scsi(char *tag, int level, struct scsi_cmnd *scmd,
 					scmd->device->host->hostdata[0];
 
 	if (debug_level_enabled(adapter->dbf->scsi, level))
-		zfcp_dbf_scsi(tag, level, scmd, req);
+		zfcp_dbf_scsi(adapter, tag, level, scmd->device->id,
+			      scmd->device->lun, scmd, req);
 }
 
 /**
@@ -401,17 +402,20 @@ void zfcp_dbf_scsi_abort(char *tag, struct scsi_cmnd *scmd,
  * @flag: indicates type of reset (Target Reset, Logical Unit Reset)
  */
 static inline
-void zfcp_dbf_scsi_devreset(char *tag, struct scsi_cmnd *scmnd, u8 flag)
+void zfcp_dbf_scsi_devreset(struct zfcp_adapter *adapter, char *tag,
+			    int id, u64 lun, u8 flag)
 {
 	char tmp_tag[ZFCP_DBF_TAG_LEN];
 
+	if (!debug_level_enabled(adapter->dbf->scsi, 1))
+		return;
 	if (flag == FCP_TMF_TGT_RESET)
 		memcpy(tmp_tag, "tr_", 3);
 	else
 		memcpy(tmp_tag, "lr_", 3);
 
 	memcpy(&tmp_tag[3], tag, 4);
-	_zfcp_dbf_scsi(tmp_tag, 1, scmnd, NULL);
+	zfcp_dbf_scsi(adapter, tmp_tag, 1, id, lun, NULL, NULL);
 }
 
 /**
