@@ -280,7 +280,8 @@ static int zfcp_task_mgmt_function(struct scsi_cmnd *scpnt, u8 tm_flags)
 
 		if (!(atomic_read(&adapter->status) &
 		      ZFCP_STATUS_COMMON_RUNNING)) {
-			zfcp_dbf_scsi_devreset("nres", scpnt, tm_flags);
+			zfcp_dbf_scsi_devreset(adapter, "nres", sdev->id,
+					       sdev->lun, tm_flags);
 			return SUCCESS;
 		}
 	}
@@ -290,10 +291,12 @@ static int zfcp_task_mgmt_function(struct scsi_cmnd *scpnt, u8 tm_flags)
 	wait_for_completion(&fsf_req->completion);
 
 	if (fsf_req->status & ZFCP_STATUS_FSFREQ_TMFUNCFAILED) {
-		zfcp_dbf_scsi_devreset("fail", scpnt, tm_flags);
+		zfcp_dbf_scsi_devreset(adapter, "fail", sdev->id,
+				       sdev->lun, tm_flags);
 		retval = FAILED;
 	} else {
-		zfcp_dbf_scsi_devreset("okay", scpnt, tm_flags);
+		zfcp_dbf_scsi_devreset(adapter, "okay", sdev->id,
+				       sdev->lun, tm_flags);
 		zfcp_scsi_forget_cmnds(zfcp_sdev, tm_flags);
 	}
 
