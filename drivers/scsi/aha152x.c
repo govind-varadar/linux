@@ -1165,15 +1165,6 @@ static int aha152x_bus_reset_host(struct Scsi_Host *shpnt)
 }
 
 /*
- * Reset the bus
- *
- */
-static int aha152x_bus_reset(Scsi_Cmnd *SCpnt)
-{
-	return aha152x_bus_reset_host(SCpnt->device->host);
-}
-
-/*
  *  Restore default values to the AIC-6260 registers and reset the fifos
  *
  */
@@ -2916,7 +2907,6 @@ static struct scsi_host_template aha152x_driver_template = {
 	.queuecommand			= aha152x_queue,
 	.eh_abort_handler		= aha152x_abort,
 	.eh_device_reset_handler	= aha152x_device_reset,
-	.eh_bus_reset_handler		= aha152x_bus_reset,
 	.eh_host_reset_handler		= aha152x_host_reset,
 	.bios_param			= aha152x_biosparam,
 	.can_queue			= 1,
