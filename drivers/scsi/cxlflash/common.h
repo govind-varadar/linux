@@ -54,7 +54,8 @@ extern const struct file_operations cxlflash_cxl_fops;
 
 /* Command management definitions */
 #define CXLFLASH_MAX_CMDS               256
-#define CXLFLASH_MAX_CMDS_PER_LUN       CXLFLASH_MAX_CMDS
+#define CXLFLASH_MAX_CMDS_PER_LUN       CXLFLASH_MAX_CMDS - 1
+#define CXLFLASH_RESET_CMD              255
 
 /* RRQ for master issued cmds */
 #define NUM_RRQ_ENTRY                   CXLFLASH_MAX_CMDS
