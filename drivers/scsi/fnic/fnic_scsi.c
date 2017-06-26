@@ -2093,9 +2093,7 @@ lr_io_req_end:
  * successfully aborted, 1 otherwise
  */
 static int fnic_clean_pending_aborts(struct fnic *fnic,
-				     struct scsi_cmnd *lr_sc,
-					 bool new_sc)
-
+				     struct scsi_cmnd *lr_sc)
 {
 	int tag, abt_tag;
 	struct fnic_io_req *io_req;
@@ -2116,7 +2114,7 @@ static int fnic_clean_pending_aborts(struct fnic *fnic,
 		 * ignore this lun reset cmd if issued using new SC
 		 * or cmds that do not belong to this lun
 		 */
-		if (!sc || ((sc == lr_sc) && new_sc) || sc->device != lun_dev) {
+		if (!sc || sc == lr_sc || sc->device != lun_dev) {
 			spin_unlock_irqrestore(io_lock, flags);
 			continue;
 		}
@@ -2321,6 +2319,7 @@ fnic_scsi_host_end_tag(struct fnic *fnic, struct scsi_cmnd *sc)
  */
 int fnic_device_reset(struct scsi_cmnd *sc)
 {
+	struct scsi_device *sdev = sc->device;
 	struct fc_lport *lp;
 	struct fnic *fnic;
 	struct fnic_io_req *io_req = NULL;
@@ -2335,18 +2334,16 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 	struct reset_stats *reset_stats;
 	int tag = 0;
 	DECLARE_COMPLETION_ONSTACK(tm_done);
-	int tag_gen_flag = 0;   /*to track tags allocated by fnic driver*/
-	bool new_sc = 0;
 
 	/* Wait for rport to unblock */
-	rport = starget_to_rport(scsi_target(sc->device));
+	rport = starget_to_rport(scsi_target(sdev));
 	ret = fc_block_scsi_eh(rport);
 	if (ret)
 		return ret;
 
 	ret = FAILED;
 	/* Get local-port, check ready and link up */
-	lp = shost_priv(sc->device->host);
+	lp = shost_priv(sdev->host);
 
 	fnic = lport_priv(lp);
 	fnic_stats = &fnic->fnic_stats;
@@ -2355,8 +2352,8 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 	atomic64_inc(&reset_stats->device_resets);
 
 	FNIC_SCSI_DBG(KERN_DEBUG, fnic->lport->host,
-		      "Device reset called FCID 0x%x, LUN 0x%llx sc 0x%p\n",
-		      rport->port_id, sc->device->lun, sc);
+		      "Device reset called FCID 0x%x, LUN 0x%llx\n",
+		      rport->port_id, sdev->lun);
 
 	if (lp->state != LPORT_ST_READY || !(lp->link_up))
 		goto fnic_device_reset_end;
@@ -2366,51 +2363,28 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 		atomic64_inc(&fnic_stats->misc_stats.rport_not_ready);
 		goto fnic_device_reset_end;
 	}
-
-	CMD_FLAGS(sc) = FNIC_DEVICE_RESET;
-	/* Allocate tag if not present */
-
-	tag = sc->request->tag;
-	if (unlikely(tag < 0)) {
-		/*
-		 * XXX(hch): current the midlayer fakes up a struct
-		 * request for the explicit reset ioctls, and those
-		 * don't have a tag allocated to them.  The below
-		 * code pokes into midlayer structures to paper over
-		 * this design issue, but that won't work for blk-mq.
-		 *
-		 * Either someone who can actually test the hardware
-		 * will have to come up with a similar hack for the
-		 * blk-mq case, or we'll have to bite the bullet and
-		 * fix the way the EH ioctls work for real, but until
-		 * that happens we fail these explicit requests here.
-		 */
-
-		tag = fnic_scsi_host_start_tag(fnic, sc);
-		if (unlikely(tag == SCSI_NO_TAG))
-			goto fnic_device_reset_end;
-		tag_gen_flag = 1;
-		new_sc = 1;
-	}
+	/* The last tag is reserved for device reset */
+	sc = scsi_host_find_tag(sdev->host, fnic->fnic_max_tag_id - 1);
 	io_lock = fnic_io_lock_hash(fnic, sc);
 	spin_lock_irqsave(io_lock, flags);
-	io_req = (struct fnic_io_req *)CMD_SP(sc);
-
-	/*
-	 * If there is a io_req attached to this command, then use it,
-	 * else allocate a new one.
-	 */
-	if (!io_req) {
-		io_req = mempool_alloc(fnic->io_req_pool, GFP_ATOMIC);
-		if (!io_req) {
-			spin_unlock_irqrestore(io_lock, flags);
-			goto fnic_device_reset_end;
-		}
-		memset(io_req, 0, sizeof(*io_req));
-		io_req->port_id = rport->port_id;
-		CMD_SP(sc) = (char *)io_req;
+	if (CMD_SP(sc)) {
+		/*
+		 * Reset tag busy
+		 */
+		spin_unlock_irqrestore(io_lock, flags);
+		goto fnic_device_reset_end;
 	}
+	io_req = mempool_alloc(fnic->io_req_pool, GFP_ATOMIC);
+	if (!io_req) {
+		spin_unlock_irqrestore(io_lock, flags);
+		goto fnic_device_reset_end;
+	}
+	memset(io_req, 0, sizeof(*io_req));
+	io_req->port_id = rport->port_id;
+	CMD_SP(sc) = (char *)io_req;
 	io_req->dr_done = &tm_done;
+
+	CMD_FLAGS(sc) = FNIC_DEVICE_RESET;
 	CMD_STATE(sc) = FNIC_IOREQ_CMD_PENDING;
 	CMD_LR_STATUS(sc) = FCPIO_INVALID_CODE;
 	spin_unlock_irqrestore(io_lock, flags);
@@ -2525,7 +2499,7 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 	 * the lun reset cmd. If all cmds get cleaned, the lun reset
 	 * succeeds
 	 */
-	if (fnic_clean_pending_aborts(fnic, sc, new_sc)) {
+	if (fnic_clean_pending_aborts(fnic, sc)) {
 		spin_lock_irqsave(io_lock, flags);
 		io_req = (struct fnic_io_req *)CMD_SP(sc);
 		FNIC_SCSI_DBG(KERN_DEBUG, fnic->lport->host,
@@ -2561,10 +2535,6 @@ fnic_device_reset_end:
 		  (u64)sc->cmnd[2] << 24 | (u64)sc->cmnd[3] << 16 |
 		  (u64)sc->cmnd[4] << 8 | sc->cmnd[5]),
 		  (((u64)CMD_FLAGS(sc) << 32) | CMD_STATE(sc)));
-
-	/* free tag if it is allocated */
-	if (unlikely(tag_gen_flag))
-		fnic_scsi_host_end_tag(fnic, sc);
 
 	FNIC_SCSI_DBG(KERN_DEBUG, fnic->lport->host,
 		      "Returning from device reset %s\n",

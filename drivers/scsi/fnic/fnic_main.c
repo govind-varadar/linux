@@ -696,6 +696,8 @@ static int fnic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 					fnic->config.io_throttle_count));
 	}
 	fnic->fnic_max_tag_id = host->can_queue;
+	/* Reserve the last tag for device reset */
+	host->can_queue--;
 
 	host->max_lun = fnic->config.luns_per_tgt;
 	host->max_id = FNIC_MAX_FCP_TARGET;
