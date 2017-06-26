@@ -168,7 +168,6 @@ MODULE_LICENSE("GPL");
 
 STATIC int NCR_700_queuecommand(struct Scsi_Host *h, struct scsi_cmnd *);
 STATIC int NCR_700_abort(struct scsi_cmnd * SCpnt);
-STATIC int NCR_700_bus_reset(struct scsi_cmnd * SCpnt);
 STATIC int NCR_700_host_reset(struct Scsi_Host *host);
 STATIC void NCR_700_chip_setup(struct Scsi_Host *host);
 STATIC void NCR_700_chip_reset(struct Scsi_Host *host);
@@ -315,7 +314,6 @@ NCR_700_detect(struct scsi_host_template *tpnt,
 	/* Fill in the missing routines from the host template */
 	tpnt->queuecommand = NCR_700_queuecommand;
 	tpnt->eh_abort_handler = NCR_700_abort;
-	tpnt->eh_bus_reset_handler = NCR_700_bus_reset;
 	tpnt->eh_host_reset_handler = NCR_700_host_reset;
 	tpnt->can_queue = NCR_700_COMMAND_SLOTS_PER_HOST;
 	tpnt->sg_tablesize = NCR_700_SG_SEGMENTS;
@@ -1935,43 +1933,6 @@ NCR_700_abort(struct scsi_cmnd * SCp)
 	}
 	return FAILED;
 
-}
-
-STATIC int
-NCR_700_bus_reset(struct scsi_cmnd * SCp)
-{
-	DECLARE_COMPLETION_ONSTACK(complete);
-	struct NCR_700_Host_Parameters *hostdata = 
-		(struct NCR_700_Host_Parameters *)SCp->device->host->hostdata[0];
-
-	scmd_printk(KERN_INFO, SCp,
-		"New error handler wants BUS reset, cmd %p\n\t", SCp);
-	scsi_print_command(SCp);
-
-	/* In theory, eh_complete should always be null because the
-	 * eh is single threaded, but just in case we're handling a
-	 * reset via sg or something */
-	spin_lock_irq(SCp->device->host->host_lock);
-	while (hostdata->eh_complete != NULL) {
-		spin_unlock_irq(SCp->device->host->host_lock);
-		msleep_interruptible(100);
-		spin_lock_irq(SCp->device->host->host_lock);
-	}
-
-	hostdata->eh_complete = &complete;
-	NCR_700_internal_bus_reset(SCp->device->host);
-
-	spin_unlock_irq(SCp->device->host->host_lock);
-	wait_for_completion(&complete);
-	spin_lock_irq(SCp->device->host->host_lock);
-
-	hostdata->eh_complete = NULL;
-	/* Revalidate the transport parameters of the failing device */
-	if(hostdata->fast)
-		spi_schedule_dv_device(SCp->device);
-
-	spin_unlock_irq(SCp->device->host->host_lock);
-	return SUCCESS;
 }
 
 STATIC int
