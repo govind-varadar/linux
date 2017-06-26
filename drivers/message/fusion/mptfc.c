@@ -226,7 +226,7 @@ mptfc_abort(struct scsi_cmnd *SCpnt)
 {
 	struct Scsi_Host *shost = SCpnt->device->host;
 	struct fc_rport *rport = starget_to_rport(scsi_target(SCpnt->device));
-	MPT_SCSI_HOST *hd = shost_priv(shost);
+	MPT_SCSI_HOST __maybe_unused *hd = shost_priv(shost);
 	int rtn;
 
 	rtn = mptfc_block_error_handler(rport);
@@ -245,7 +245,7 @@ mptfc_dev_reset(struct scsi_cmnd *SCpnt)
 {
 	struct Scsi_Host *shost = SCpnt->device->host;
 	struct fc_rport *rport = starget_to_rport(scsi_target(SCpnt->device));
-	MPT_SCSI_HOST *hd = shost_priv(shost);
+	MPT_SCSI_HOST __maybe_unused *hd = shost_priv(shost);
 	int rtn;
 
 	rtn = mptfc_block_error_handler(rport);
