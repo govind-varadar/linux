@@ -54,6 +54,8 @@ u32 bfad_im_supported_speeds(struct bfa_s *bfa);
 
 struct bfad_itnim_data_s {
 	struct bfad_itnim_s *itnim;
+	wait_queue_head_t *tmf_wq;
+	unsigned long tmf_status;
 };
 
 struct bfad_im_port_s {
