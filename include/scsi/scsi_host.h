@@ -679,6 +679,8 @@ struct Scsi_Host {
 	 */
 	struct workqueue_struct *tmf_work_q;
 
+	struct completion *tmf_quiesce_done;
+
 	/* The transport requires the LUN bits NOT to be stored in CDB[1] */
 	unsigned no_scsi2_lun_in_cdb:1;
 
