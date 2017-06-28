@@ -66,9 +66,14 @@ void scsi_eh_wakeup(struct Scsi_Host *shost)
 {
 	if (atomic_read(&shost->host_busy) == shost->host_failed) {
 		trace_scsi_eh_wakeup(shost);
-		wake_up_process(shost->ehandler);
-		SCSI_LOG_ERROR_RECOVERY(5, shost_printk(KERN_INFO, shost,
-			"Waking error handler thread\n"));
+		if (shost->tmf_quiesce_done)
+			complete(shost->tmf_quiesce_done);
+		else {
+			wake_up_process(shost->ehandler);
+			SCSI_LOG_ERROR_RECOVERY(5,
+				shost_printk(KERN_INFO, shost,
+					     "Waking error handler thread\n"));
+		}
 	}
 }
 
@@ -2292,6 +2297,7 @@ scsi_ioctl_reset(struct scsi_device *dev, int __user *arg)
 	struct Scsi_Host *shost = dev->host;
 	unsigned long flags;
 	int error = 0, rtn, val;
+	DECLARE_COMPLETION_ONSTACK(done);
 
 	if (!capable(CAP_SYS_ADMIN) || !capable(CAP_SYS_RAWIO))
 		return -EACCES;
@@ -2306,6 +2312,13 @@ scsi_ioctl_reset(struct scsi_device *dev, int __user *arg)
 	error = -EIO;
 	spin_lock_irqsave(shost->host_lock, flags);
 	shost->tmf_in_progress = 1;
+	shost->tmf_quiesce_done = &done;
+	spin_unlock_irqrestore(shost->host_lock, flags);
+
+	wait_for_completion(&done);
+
+	spin_lock_irqsave(shost->host_lock, flags);
+	shost->tmf_quiesce_done = NULL;
 	spin_unlock_irqrestore(shost->host_lock, flags);
 
 	switch (val & ~SG_SCSI_RESET_NO_ESCALATE) {
