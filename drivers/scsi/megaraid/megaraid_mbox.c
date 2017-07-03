@@ -273,6 +273,12 @@ static struct pci_device_id pci_id_table_g[] =  {
 		PCI_ANY_ID,
 	},
 	{
+		PCI_VENDOR_ID_INTEL,
+		PCI_DEVICE_ID_AMI_MEGARAID3,
+		PCI_ANY_ID,
+		PCI_ANY_ID,
+	},
+	{
 		PCI_VENDOR_ID_LSI_LOGIC,
 		PCI_DEVICE_ID_AMI_MEGARAID3,
 		PCI_ANY_ID,
@@ -423,6 +429,25 @@ megaraid_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	// Enable bus-mastering on this controller
 	pci_set_master(pdev);
+
+	/*
+	 * Older MegaRAID3 HBAs share the PCI ID with generic i960
+	 * devices.
+	 */
+	if (pdev->vendor == PCI_VENDOR_ID_INTEL) {
+		u16 magic;
+		/*
+		 * Don't fall over the Compaq management cards using the same
+		 * PCI identifier
+		 */
+		if (pdev->subsystem_vendor == PCI_VENDOR_ID_COMPAQ &&
+		    pdev->subsystem_device == 0xC000)
+			return -ENODEV;
+		/* Now check the magic signature byte */
+		pci_read_config_word(pdev, PCI_CONF_AMISIG, &magic);
+		if (magic != HBA_SIGNATURE_471 && magic != HBA_SIGNATURE)
+			return -ENODEV;
+	}
 
 	// Allocate the per driver initialization structure
 	adapter = kzalloc(sizeof(adapter_t), GFP_KERNEL);
