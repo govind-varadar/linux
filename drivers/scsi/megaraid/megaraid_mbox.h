@@ -107,6 +107,27 @@
  */
 #define MBOX_IBUF_SIZE		4096
 
+/* I/O Port offsets */
+#define CMD_PORT	 	0x00
+#define ACK_PORT	 	0x00
+#define TOGGLE_PORT		0x01
+#define INTR_PORT	  	0x0a
+
+#define MBOX_BUSY_PORT     	0x00
+#define MBOX_PORT0	 	0x04
+#define MBOX_PORT1	 	0x05
+#define MBOX_PORT2	 	0x06
+#define MBOX_PORT3	 	0x07
+#define ENABLE_MBOX_REGION 	0x0B
+
+/* I/O Port Values */
+#define ISSUE_BYTE	 	0x10
+#define ACK_BYTE	   	0x08
+#define ENABLE_INTR_BYTE   	0xc0
+#define DISABLE_INTR_BYTE  	0x00
+#define VALID_INTR_BYTE    	0x40
+#define MBOX_BUSY_BYTE     	0x10
+#define ENABLE_MBOX_BYTE   	0x00
 
 /**
  * mbox_ccb_t - command control block specific to mailbox based controllers
@@ -228,6 +249,23 @@ typedef struct {
 #define RDOUTDOOR(rdev)		readl((rdev)->baseaddr + 0x2C)
 #define WRINDOOR(rdev, value)	writel(value, (rdev)->baseaddr + 0x20)
 #define WROUTDOOR(rdev, value)	writel(value, (rdev)->baseaddr + 0x2C)
+
+#define issue_command(adapter)	\
+		outb_p(ISSUE_BYTE, (adapter)->baseport + CMD_PORT)
+
+#define irq_state(adapter)	inb_p((adapter)->baseport + INTR_PORT)
+
+#define set_irq_state(adapter, value)	\
+		outb_p((value), (adapter)->baseport + INTR_PORT)
+
+#define irq_ack(adapter)	\
+		outb_p(ACK_BYTE, (adapter)->baseport + ACK_PORT)
+
+#define irq_enable(adapter)	\
+	outb_p(ENABLE_INTR_BYTE, (adapter)->baseport + TOGGLE_PORT)
+
+#define irq_disable(adapter)	\
+	outb_p(DISABLE_INTR_BYTE, (adapter)->baseport + TOGGLE_PORT)
 
 #endif // _MEGARAID_H_
 

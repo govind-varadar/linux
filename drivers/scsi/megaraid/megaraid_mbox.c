@@ -755,17 +755,19 @@ megaraid_init_mbox(adapter_t *adapter)
 
 		goto out_free_raid_dev;
 	}
+	if (pci_resource_flags(pdev, 0) & IORESOURCE_MEM) {
+		raid_dev->baseaddr = ioremap_nocache(raid_dev->baseport, 128);
 
-	raid_dev->baseaddr = ioremap(raid_dev->baseport, 128);
+		if (!raid_dev->baseaddr) {
+			con_log(CL_ANN, (KERN_WARNING
+				"megaraid: could not map hba memory\n") );
 
-	if (!raid_dev->baseaddr) {
-
-		con_log(CL_ANN, (KERN_WARNING
-			"megaraid: could not map hba memory\n") );
-
-		goto out_release_regions;
+			goto out_release_regions;
+		}
+	} else {
+		raid_dev->baseport += 0x10;
+		raid_dev->baseaddr = NULL;
 	}
-
 	/* initialize the mutual exclusion lock for the mailbox */
 	spin_lock_init(&raid_dev->mailbox_lock);
 
@@ -778,8 +780,9 @@ megaraid_init_mbox(adapter_t *adapter)
 	 * and initialize its internal state
 	 */
 
-	if (megaraid_mbox_fire_sync_cmd(adapter))
-		con_log(CL_ANN, ("megaraid: sync cmd failed\n"));
+	if (raid_dev->baseaddr)
+		if (megaraid_mbox_fire_sync_cmd(adapter))
+			con_log(CL_ANN, ("megaraid: sync cmd failed\n"));
 
 	/*
 	 * Setup the rest of the soft state using the library of
@@ -918,7 +921,8 @@ out_free_irq:
 out_alloc_cmds:
 	megaraid_free_cmd_packets(adapter);
 out_iounmap:
-	iounmap(raid_dev->baseaddr);
+	if (raid_dev->baseaddr)
+		iounmap(raid_dev->baseaddr);
 out_release_regions:
 	pci_release_regions(pdev);
 out_free_raid_dev:
@@ -948,7 +952,8 @@ megaraid_fini_mbox(adapter_t *adapter)
 
 	free_irq(adapter->irq, adapter);
 
-	iounmap(raid_dev->baseaddr);
+	if (raid_dev->baseaddr)
+		iounmap(raid_dev->baseaddr);
 
 	pci_release_regions(adapter->pdev);
 
@@ -1439,12 +1444,17 @@ mbox_post_cmd(adapter_t *adapter, scb_t *scb)
 	adapter->outstanding_cmds++;
 
 	mbox->busy	= 1;	// Set busy
-	mbox->poll	= 0;
-	mbox->ack	= 0;
-	wmb();
 
-	WRINDOOR(raid_dev, raid_dev->mbox_dma | 0x1);
+	if (raid_dev->baseaddr) {
+		mbox->poll	= 0;
+		mbox->ack	= 0;
+		wmb();
 
+		WRINDOOR(raid_dev, raid_dev->mbox_dma | 0x1);
+	} else {
+		irq_enable(adapter);
+		issue_command(adapter);
+	}
 	spin_unlock_irqrestore(MAILBOX_LOCK(raid_dev), flags);
 
 	return 0;
@@ -2082,12 +2092,19 @@ megaraid_ack_sequence(adapter_t *adapter)
 		 * Check if a valid interrupt is pending. If found, force the
 		 * interrupt line low.
 		 */
-		dword = RDOUTDOOR(raid_dev);
-		if (dword != 0x10001234) break;
-
-		handled = 1;
-
-		WROUTDOOR(raid_dev, 0x10001234);
+		if (raid_dev->baseaddr) {
+			dword = RDOUTDOOR(raid_dev);
+			if (dword != 0x10001234)
+				break;
+			handled = 1;
+			WROUTDOOR(raid_dev, 0x10001234);
+		} else {
+			byte = irq_state(adapter);
+			if ( (byte & VALID_INTR_BYTE) == 0)
+				break;
+			handled = 1;
+			set_irq_state(adapter, byte);
+		}
 
 		nstatus = 0;
 		// wait for valid numstatus to post
@@ -2135,9 +2152,11 @@ megaraid_ack_sequence(adapter_t *adapter)
 			list_add_tail(&scb->list, &clist);
 		}
 
-		// Acknowledge interrupt
-		WRINDOOR(raid_dev, 0x02);
-
+		/* Acknowledge interrupt */
+		if (raid_dev->baseaddr)
+			WRINDOOR(raid_dev, 0x02);
+		else
+			irq_ack(adapter);
 	} while(1);
 
 	spin_unlock_irqrestore(MAILBOX_LOCK(raid_dev), flags);
@@ -2716,6 +2735,19 @@ mbox_post_sync_cmd(adapter_t *adapter, uint8_t raw_mbox[])
 	memcpy((caddr_t)mbox, (caddr_t)raw_mbox, 16);
 	mbox->cmdid		= 0xFE;
 	mbox->busy		= 1;
+	if (!raid_dev->baseaddr) {
+		irq_disable(adapter);
+		issue_command(adapter);
+
+		while (!((byte = irq_state(adapter)) & INTR_VALID))
+			cpu_relax();
+
+		set_irq_state(adapter, byte);
+		irq_enable(adapter);
+		irq_ack(adapter);
+
+		return mbox->status;
+	}
 	mbox->poll		= 0;
 	mbox->ack		= 0;
 	mbox->numstatus		= 0xFF;
@@ -2724,10 +2756,14 @@ mbox_post_sync_cmd(adapter_t *adapter, uint8_t raw_mbox[])
 	wmb();
 	WRINDOOR(raid_dev, raid_dev->mbox_dma | 0x1);
 
-	// wait for maximum 1 second for status to post. If the status is not
-	// available within 1 second, assume FW is initializing and wait
-	// for an extended amount of time
-	if (mbox->numstatus == 0xFF) {	// status not yet available
+	/*
+	 * wait for maximum 1 second for status to post.
+	 * If the status is not available within 1 second,
+	 * assume FW is initializing and wait for an extended
+	 * amount of time.
+	 */
+	if (mbox->numstatus == 0xFF) {
+		/* status not yet available */
 		udelay(25);
 
 		for (i = 0; mbox->numstatus == 0xFF && i < 1000; i++) {
@@ -2741,10 +2777,10 @@ mbox_post_sync_cmd(adapter_t *adapter, uint8_t raw_mbox[])
 				"megaraid mailbox: wait for FW to boot      "));
 
 			for (i = 0; (mbox->numstatus == 0xFF) &&
-					(i < MBOX_RESET_WAIT); i++) {
+				     (i < MBOX_RESET_WAIT); i++) {
 				rmb();
 				con_log(CL_ANN, ("\b\b\b\b\b[%03d]",
-							MBOX_RESET_WAIT - i));
+						 MBOX_RESET_WAIT - i));
 				msleep(1000);
 			}
 
