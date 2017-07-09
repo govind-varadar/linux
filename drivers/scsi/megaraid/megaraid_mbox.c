@@ -285,6 +285,18 @@ static struct pci_device_id pci_id_table_g[] =  {
 		PCI_ANY_ID,
 	},
 	{
+		PCI_VENDOR_ID_AMI,
+		PCI_DEVICE_ID_AMI_MEGARAID2,
+		PCI_ANY_ID,
+		PCI_ANY_ID,
+	},
+	{
+		PCI_VENDOR_ID_AMI,
+		PCI_DEVICE_ID_AMI_MEGARAID,
+		PCI_ANY_ID,
+		PCI_ANY_ID,
+	},
+	{
 		PCI_VENDOR_ID_LSI_LOGIC,
 		PCI_DEVICE_ID_LINDSAY,
 		PCI_ANY_ID,
