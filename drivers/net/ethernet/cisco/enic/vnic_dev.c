@@ -518,6 +518,7 @@ int vnic_dev_cmd(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd,
 	u64 *a0, u64 *a1, int wait)
 {
 	memset(vdev->args, 0, sizeof(vdev->args));
+	wait = 100000;
 
 	switch (vdev->proxy) {
 	case PROXY_BY_INDEX:
