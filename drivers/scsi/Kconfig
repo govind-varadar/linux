@@ -556,6 +556,18 @@ config SCSI_FLASHPOINT
 	  substantial, so users of MultiMaster Host Adapters may not
 	  wish to include it.
 
+config SCSI_MYLEX
+	tristate "Mylex DAC960/DAC1100 PCI RAID Controller support"
+	depends on PCI
+	help
+	  This driver adds support for the Mylex DAC960, AcceleRAID, and
+	  eXtremeRAID PCI RAID controllers.  See the file
+	  <file:Documentation/blockdev/README.DAC960> for further information
+	  about this driver.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called mylex.
+
 config VMWARE_PVSCSI
 	tristate "VMware PVSCSI driver support"
 	depends on PCI && SCSI && X86
