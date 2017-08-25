@@ -4069,11 +4069,11 @@ int megasas_reset_target_fusion(struct scsi_cmnd *scmd)
 {
 
 	struct megasas_instance *instance;
+	struct scsi_device *sdev;
 	int ret = FAILED;
-	u16 devhandle;
+	u16 devhandle = (u16)ULONG_MAX;
 	struct fusion_context *fusion;
-	struct MR_PRIV_DEVICE *mr_device_priv_data;
-	mr_device_priv_data = scmd->device->hostdata;
+	struct MR_PRIV_DEVICE *mr_device_priv_data = NULL;
 
 	instance = (struct megasas_instance *)scmd->device->host->hostdata;
 	fusion = instance->ctrl_context;
@@ -4088,23 +4088,27 @@ int megasas_reset_target_fusion(struct scsi_cmnd *scmd)
 		return ret;
 	}
 
-	if (!mr_device_priv_data) {
-		sdev_printk(KERN_INFO, scmd->device, "device been deleted! "
-			"scmd(%p)\n", scmd);
-		scmd->result = DID_NO_CONNECT << 16;
-		ret = SUCCESS;
-		goto out;
+	shost_for_each_device(sdev, shost) {
+		if (!sdev->hostdata)
+			continue;
+		if (sdev->id != scmd->device->id)
+			continue;
+		mr_device_priv_data = sdev->hostdata;
+		if (mr_device_priv_data->is_tm_capable) {
+			devhandle = megasas_get_tm_devhandle(sdev);
+			break;
+		}
 	}
 
-
-	if (!mr_device_priv_data->is_tm_capable) {
+	if (!mr_device_priv_data) {
+		ret = SUCCESS;
+		goto out;
+	} else if (!mr_device_priv_data->is_tm_capable) {
 		ret = FAILED;
 		goto out;
 	}
 
 	mutex_lock(&instance->reset_mutex);
-	devhandle = megasas_get_tm_devhandle(scmd->device);
-
 	if (devhandle == (u16)ULONG_MAX) {
 		ret = SUCCESS;
 		sdev_printk(KERN_INFO, scmd->device,
