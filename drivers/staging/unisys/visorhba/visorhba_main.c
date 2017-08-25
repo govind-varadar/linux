@@ -415,23 +415,24 @@ static int visorhba_device_reset_handler(struct scsi_cmnd *scsicmd)
  */
 static int visorhba_bus_reset_handler(struct scsi_cmnd *scsicmd)
 {
-	struct scsi_device *scsidev;
+	struct scsi_device *scsidev = NULL, *tmp;
+	struct Scsi_Host *scsihost = scsicmd->device->host;
 	struct visordisk_info *vdisk;
-	int rtn;
+	int rtn = SUCCESS;
 
-	scsidev = scsicmd->device;
-	shost_for_each_device(scsidev, scsidev->host) {
-		vdisk = scsidev->hostdata;
+	shost_for_each_device(tmp, scsihost) {
+		if (tmp->channel != scsicmd->device->channel)
+			continue;
+		vdisk = tmp->hostdata;
 		if (atomic_read(&vdisk->error_count) < VISORHBA_ERROR_COUNT)
 			atomic_inc(&vdisk->error_count);
 		else
 			atomic_set(&vdisk->ios_threshold, IOS_ERROR_THRESHOLD);
+		if (!scsidev)
+			scsidev = tmp;
 	}
-	rtn = forward_taskmgmt_command(TASK_MGMT_BUS_RESET, scsidev);
-	if (rtn == SUCCESS) {
-		scsicmd->result = DID_RESET << 16;
-		scsicmd->scsi_done(scsicmd);
-	}
+	if (scsidev)
+		rtn = forward_taskmgmt_command(TASK_MGMT_BUS_RESET, scsidev);
 	return rtn;
 }
 
