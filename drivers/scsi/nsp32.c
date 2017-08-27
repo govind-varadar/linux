@@ -201,7 +201,7 @@ static int         nsp32_release     (struct Scsi_Host *);
 
 /* SCSI error handler */
 static int         nsp32_eh_abort     (struct scsi_cmnd *);
-static int         nsp32_eh_host_reset(struct scsi_cmnd *);
+static int         nsp32_eh_host_reset(struct Scsi_Host *);
 
 /* generate SCSI message */
 static void nsp32_build_identify(struct scsi_cmnd *);
