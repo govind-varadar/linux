@@ -4073,7 +4073,7 @@ int megasas_reset_target_fusion(struct Scsi_Host *shost,
 	struct megasas_instance *instance;
 	struct scsi_device *sdev;
 	int ret = FAILED;
-	u16 devhandle;
+	u16 devhandle = (u16)ULONG_MAX;
 	struct fusion_context *fusion;
 	struct MR_PRIV_DEVICE *mr_device_priv_data = NULL;
 
