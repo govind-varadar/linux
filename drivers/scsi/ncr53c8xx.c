@@ -4559,61 +4559,31 @@ static void ncr_start_reset(struct ncb *np)
 **
 **==========================================================
 */
-static int ncr_reset_bus (struct ncb *np, struct scsi_cmnd *cmd, int sync_reset)
+static int ncr_reset_bus (struct ncb *np)
 {
-/*	struct scsi_device        *device    = cmd->device; */
 	struct ccb *cp;
-	int found;
 
-/*
- * Return immediately if reset is in progress.
- */
+	/*
+	 * Return immediately if reset is in progress.
+	 */
 	if (np->settle_time) {
 		return FAILED;
 	}
-/*
- * Start the reset process.
- * The script processor is then assumed to be stopped.
- * Commands will now be queued in the waiting list until a settle 
- * delay of 2 seconds will be completed.
- */
+	/*
+	 * Start the reset process.
+	 * The script processor is then assumed to be stopped.
+	 * Commands will now be queued in the waiting list until a settle
+	 * delay of 2 seconds will be completed.
+	 */
 	ncr_start_reset(np);
-/*
- * First, look in the wakeup list
- */
-	for (found=0, cp=np->ccb; cp; cp=cp->link_ccb) {
-		/*
-		**	look for the ccb of this command.
-		*/
-		if (cp->host_status == HS_IDLE) continue;
-		if (cp->cmd == cmd) {
-			found = 1;
-			break;
-		}
-	}
-/*
- * Then, look in the waiting list
- */
-	if (!found && retrieve_from_waiting_list(0, np, cmd))
-		found = 1;
-/*
- * Wake-up all awaiting commands with DID_RESET.
- */
+	/*
+	 * Wake-up all awaiting commands with DID_RESET.
+	 */
 	reset_waiting_list(np);
-/*
- * Wake-up all pending commands with HS_RESET -> DID_RESET.
- */
+	/*
+	 * Wake-up all pending commands with HS_RESET -> DID_RESET.
+	 */
 	ncr_wakeup(np, HS_RESET);
-/*
- * If the involved command was not in a driver queue, and the 
- * scsi driver told us reset is synchronous, and the command is not 
- * currently in the waiting list, complete it with DID_RESET status,
- * in order to keep it alive.
- */
-	if (!found && sync_reset && !retrieve_from_waiting_list(0, np, cmd)) {
-		cmd->result = ScsiResult(DID_RESET, 0);
-		ncr_queue_done_cmd(np, cmd);
-	}
 
 	return SUCCESS;
 }
@@ -8116,15 +8086,8 @@ static int ncr53c8xx_bus_reset(struct scsi_cmnd *cmd)
 	unsigned long flags;
 	struct scsi_cmnd *done_list;
 
-	/*
-	 * If the mid-level driver told us reset is synchronous, it seems 
-	 * that we must call the done() callback for the involved command, 
-	 * even if this command was not queued to the low-level driver, 
-	 * before returning SUCCESS.
-	 */
-
 	spin_lock_irqsave(&np->smp_lock, flags);
-	sts = ncr_reset_bus(np, cmd, 1);
+	sts = ncr_reset_bus(np);
 
 	done_list     = np->done_list;
 	np->done_list = NULL;
