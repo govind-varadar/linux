@@ -2437,12 +2437,13 @@ static int ibmvfc_eh_abort_handler(struct scsi_cmnd *cmd)
  **/
 static int ibmvfc_eh_device_reset_handler(struct scsi_device *sdev)
 {
+	struct fc_rport *rport = starget_to_rport(scsi_target(sdev));
 	struct ibmvfc_host *vhost = shost_priv(sdev->host);
 	int cancel_rc, block_rc, reset_rc = 0;
 	int rc = FAILED;
 
 	ENTER;
-	block_rc = fc_block_scsi_eh(cmd);
+	block_rc = fc_block_rport(rport);
 	ibmvfc_wait_while_resetting(vhost);
 	if (block_rc != FAST_IO_FAIL) {
 		cancel_rc = ibmvfc_cancel_all(sdev, IBMVFC_TMF_LUN_RESET);
@@ -2491,7 +2492,7 @@ static int ibmvfc_eh_target_reset_handler(struct scsi_target *starget)
 	bool tgt_reset = false;
 
 	ENTER;
-	block_rc = fc_block_scsi_eh(cmd);
+	block_rc = fc_block_rport(rport);
 	ibmvfc_wait_while_resetting(vhost);
 	if (block_rc != FAST_IO_FAIL) {
 		struct scsi_device *sdev;
