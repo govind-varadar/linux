@@ -1030,7 +1030,7 @@ qla1280_eh_device_reset(struct scsi_device *sdev)
 static int
 qla1280_eh_bus_reset(struct Scsi_Host *shost, int bus)
 {
-	int rc;
+	int rc = FAILED;
 	struct scsi_qla_host *ha = (struct scsi_qla_host *)shost->hostdata;
 
 	spin_lock_irq(shost->host_lock);
@@ -1048,7 +1048,7 @@ qla1280_eh_bus_reset(struct Scsi_Host *shost, int bus)
 static int
 qla1280_eh_adapter_reset(struct Scsi_Host *shost)
 {
-	int rc;
+	int rc = SUCCESS;
 	struct scsi_qla_host *ha = (struct scsi_qla_host *)shost->hostdata;
 
 	spin_lock_irq(shost->host_lock);
