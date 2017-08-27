@@ -843,7 +843,7 @@ static int aha1542_dev_reset(struct scsi_device *sdev)
 	aha1542_outb(sh->io_port, CMD_START_SCSI);
 	spin_unlock_irqrestore(sh->host_lock, flags);
 
-	scmd_printk(KERN_WARNING, cmd,
+	sdev_printk(KERN_WARNING, sdev,
 		"Trying device reset for target\n");
 
 	return SUCCESS;
@@ -883,7 +883,8 @@ static int aha1542_reset(struct Scsi_Host *sh, u8 reset_cmd)
 	 * out.  We do not try and restart any commands or anything - 
 	 * the strategy handler takes care of that crap.
 	 */
-	shost_printk(KERN_WARNING, sh, "Sent BUS RESET to scsi host %d\n", cmd->device->host->host_no);
+	shost_printk(KERN_WARNING, sh, "Sent BUS RESET to scsi host %d\n",
+		     sh->host_no);
 
 	for (i = 0; i < AHA1542_MAILBOXES; i++) {
 		if (aha1542->int_cmds[i] != NULL) {
