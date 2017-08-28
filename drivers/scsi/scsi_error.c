@@ -2040,8 +2040,16 @@ void scsi_eh_flush_done_q(struct list_head *done_q)
 			 * set, do not set DRIVER_TIMEOUT.
 			 */
 			if (!scmd->result) {
-				set_host_byte(scmd, DID_RESET);
-				set_driver_byte(scmd, DRIVER_TIMEOUT);
+				/*
+				 * If the device is gone we should always return
+				 * DID_NO_CONNECT.
+				 */
+				if (scmd->device->sdev_state == SDEV_DEL)
+					set_host_byte(scmd, DID_NO_CONNECT);
+				else {
+					set_host_byte(scmd, DID_RESET);
+					set_driver_byte(scmd, DRIVER_TIMEOUT);
+				}
 			}
 			SCSI_LOG_ERROR_RECOVERY(3,
 				scmd_printk(KERN_INFO, scmd,
