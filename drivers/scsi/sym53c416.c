@@ -720,7 +720,6 @@ int __init sym53c416_detect(struct scsi_host_template *tpnt)
 
 const char *sym53c416_info(struct Scsi_Host *SChost)
 {
-	int i;
 	int base = SChost->io_port;
 	int irq = SChost->irq;
 	int scsi_id = SChost->this_id;
