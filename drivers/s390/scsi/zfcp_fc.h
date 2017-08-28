@@ -209,17 +209,11 @@ struct zfcp_fc_wka_ports {
  * @tm: task management flags to setup task management command
  */
 static inline
-void zfcp_fc_scsi_to_fcp(struct fcp_cmnd *fcp, struct scsi_cmnd *scsi,
-			 u8 tm_flags)
+void zfcp_fc_scsi_to_fcp(struct fcp_cmnd *fcp, struct scsi_cmnd *scsi)
 {
 	u32 datalen;
 
 	int_to_scsilun(scsi->device->lun, (struct scsi_lun *) &fcp->fc_lun);
-
-	if (unlikely(tm_flags)) {
-		fcp->fc_tm_flags = tm_flags;
-		return;
-	}
 
 	fcp->fc_pri_ta = FCP_PTA_SIMPLE;
 
