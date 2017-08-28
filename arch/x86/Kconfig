@@ -2548,7 +2548,7 @@ config ISA_DMA_API
 	  Enables ISA-style DMA support for devices requiring such controllers.
 	  If unsure, say Y.
 
-if X86_32
+if X86_32 || COMPILE_TEST
 
 config ISA
 	bool "ISA support"
@@ -2600,7 +2600,7 @@ config SCx200HR_TIMER
 
 config OLPC
 	bool "One Laptop Per Child support"
-	depends on !X86_PAE
+	depends on !X86_PAE && X86_32
 	select GPIOLIB
 	select OF
 	select OF_PROMTREE

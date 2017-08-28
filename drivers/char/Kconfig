@@ -453,7 +453,7 @@ config MWAVE
 
 config SCx200_GPIO
 	tristate "NatSemi SCx200 GPIO Support"
-	depends on SCx200
+	depends on SCx200 && X86_32
 	select NSC_GPIO
 	help
 	  Give userspace access to the GPIO pins on the National
