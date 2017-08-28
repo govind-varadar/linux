@@ -52,6 +52,8 @@ MODULE_PARM_DESC(dma_speed, "DMA speed [MB/s] (5,6,7,8,10, default=-1 [by jumper
 #define BIOS_TRANSLATION_6432 1	/* Default case these days */
 #define BIOS_TRANSLATION_25563 2	/* Big disk case */
 
+static struct scsi_cmnd aha1542_reset_cmd;
+
 struct aha1542_hostdata {
 	/* This will effectively start both of them at the first mailbox */
 	int bios_translation;	/* Mapping bios uses - for compatibility */
@@ -323,6 +325,11 @@ static irqreturn_t aha1542_interrupt(int irq, void *dev_id)
 
 		tmp_cmd = aha1542->int_cmds[mbo];
 
+		if (tmp_cmd && tmp_cmd == &aha1542_reset_cmd) {
+			aha1542->int_cmds[mbo] = NULL;
+			number_serviced++;
+			continue;
+		}
 		if (!tmp_cmd || !tmp_cmd->scsi_done) {
 			spin_unlock_irqrestore(sh->host_lock, flags);
 			shost_printk(KERN_WARNING, sh, "Unexpected interrupt\n");
@@ -819,7 +826,7 @@ static int aha1542_dev_reset(struct scsi_cmnd *cmd)
 	if (mb[mbo].status || aha1542->int_cmds[mbo])
 		panic("Unable to find empty mailbox for aha1542.\n");
 
-	aha1542->int_cmds[mbo] = cmd;	/* This will effectively
+	aha1542->int_cmds[mbo] = &aha1542_reset_cmd;	/* This will effectively
 					   prevent someone else from
 					   screwing with this cdb. */
 
@@ -843,7 +850,7 @@ static int aha1542_dev_reset(struct scsi_cmnd *cmd)
 	aha1542_outb(sh->io_port, CMD_START_SCSI);
 	spin_unlock_irqrestore(sh->host_lock, flags);
 
-	scmd_printk(KERN_WARNING, cmd,
+	sdev_printk(KERN_WARNING, sdev,
 		"Trying device reset for target\n");
 
 	return SUCCESS;
@@ -891,7 +898,8 @@ static int aha1542_reset(struct Scsi_Host *sh, u8 reset_cmd)
 			struct scsi_cmnd *tmp_cmd;
 			tmp_cmd = aha1542->int_cmds[i];
 
-			if (tmp_cmd->device->soft_reset) {
+			if (tmp_cmd != &aha1542_reset_cmd &&
+			    tmp_cmd->device->soft_reset) {
 				/*
 				 * If this device implements the soft reset option,
 				 * then it is still holding onto the command, and
@@ -900,8 +908,10 @@ static int aha1542_reset(struct Scsi_Host *sh, u8 reset_cmd)
 				 */
 				continue;
 			}
-			kfree(tmp_cmd->host_scribble);
-			tmp_cmd->host_scribble = NULL;
+			if (tmp_cmd != &aha1542_reset_cmd) {
+				kfree(tmp_cmd->host_scribble);
+				tmp_cmd->host_scribble = NULL;
+			}
 			aha1542->int_cmds[i] = NULL;
 			aha1542->mb[i].status = 0;
 		}
