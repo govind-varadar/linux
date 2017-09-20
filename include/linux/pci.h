@@ -1515,6 +1515,22 @@ void pci_cfg_access_lock(struct pci_dev *dev);
 bool pci_cfg_access_trylock(struct pci_dev *dev);
 void pci_cfg_access_unlock(struct pci_dev *dev);
 
+void __pci_bus_unlock(struct pci_bus *bus,
+		      void (*unlock)(struct pci_dev *dev));
+int __pci_bus_trylock(struct pci_bus *bus,
+		      int (*lock)(struct pci_dev *dev),
+		      void (*unlock)(struct pci_dev *dev));
+static inline int pci_device_trylock(struct pci_dev *dev)
+{
+	return device_trylock(&dev->dev);
+}
+
+static inline void pci_device_unlock(struct pci_dev *dev)
+{
+	device_unlock(&dev->dev);
+}
+
+
 /*
  * PCI domain support.  Sometimes called PCI segment (eg by ACPI),
  * a PCI domain is defined to be a set of PCI buses which share

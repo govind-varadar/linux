@@ -4377,29 +4377,38 @@ static void pci_bus_lock(struct pci_bus *bus)
 	}
 }
 
-/* Unlock devices from the bottom of the tree up */
-static void pci_bus_unlock(struct pci_bus *bus)
+void __pci_bus_unlock(struct pci_bus *bus,
+		      void (*unlock)(struct pci_dev *dev))
 {
 	struct pci_dev *dev;
 
 	list_for_each_entry(dev, &bus->devices, bus_list) {
 		if (dev->subordinate)
-			pci_bus_unlock(dev->subordinate);
-		pci_dev_unlock(dev);
+			__pci_bus_unlock(dev->subordinate, unlock);
+		unlock(dev);
 	}
 }
+EXPORT_SYMBOL_GPL(__pci_bus_unlock);
 
-/* Return 1 on successful lock, 0 on contention */
-static int pci_bus_trylock(struct pci_bus *bus)
+/* Unlock devices from the bottom of the tree up */
+static void pci_bus_unlock(struct pci_bus *bus)
+{
+	__pci_bus_unlock(bus, pci_dev_unlock);
+}
+
+int __pci_bus_trylock(struct pci_bus *bus,
+		      int (*lock)(struct pci_dev *dev),
+		      void (*unlock)(struct pci_dev *dev))
 {
 	struct pci_dev *dev;
 
 	list_for_each_entry(dev, &bus->devices, bus_list) {
-		if (!pci_dev_trylock(dev))
+		if (!lock(dev))
 			goto unlock;
 		if (dev->subordinate) {
-			if (!pci_bus_trylock(dev->subordinate)) {
-				pci_dev_unlock(dev);
+			if (!__pci_bus_trylock(dev->subordinate, lock,
+					       unlock)) {
+				unlock(dev);
 				goto unlock;
 			}
 		}
@@ -4409,10 +4418,17 @@ static int pci_bus_trylock(struct pci_bus *bus)
 unlock:
 	list_for_each_entry_continue_reverse(dev, &bus->devices, bus_list) {
 		if (dev->subordinate)
-			pci_bus_unlock(dev->subordinate);
-		pci_dev_unlock(dev);
+			__pci_bus_unlock(dev->subordinate, unlock);
+		unlock(dev);
 	}
 	return 0;
+}
+EXPORT_SYMBOL_GPL(__pci_bus_trylock);
+
+/* Return 1 on successful lock, 0 on contention */
+static int pci_bus_trylock(struct pci_bus *bus)
+{
+	return __pci_bus_trylock(bus, pci_dev_trylock, pci_dev_unlock);
 }
 
 /* Do any devices on or below this slot prevent a bus reset? */
