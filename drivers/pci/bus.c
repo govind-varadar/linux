@@ -376,8 +376,10 @@ EXPORT_SYMBOL(pci_bus_add_devices);
  *  We check the return of @cb each time. If it returns anything
  *  other than 0, we break out.
  *
+ *  Should be called with read pci_bus_sem held.
+ *
  */
-void pci_walk_bus(struct pci_bus *top, int (*cb)(struct pci_dev *, void *),
+void __pci_walk_bus(struct pci_bus *top, int (*cb)(struct pci_dev *, void *),
 		  void *userdata)
 {
 	struct pci_dev *dev;
@@ -386,7 +388,6 @@ void pci_walk_bus(struct pci_bus *top, int (*cb)(struct pci_dev *, void *),
 	int retval;
 
 	bus = top;
-	down_read(&pci_bus_sem);
 	next = top->devices.next;
 	for (;;) {
 		if (next == &bus->devices) {
@@ -409,6 +410,14 @@ void pci_walk_bus(struct pci_bus *top, int (*cb)(struct pci_dev *, void *),
 		if (retval)
 			break;
 	}
+}
+EXPORT_SYMBOL_GPL(__pci_walk_bus);
+
+void pci_walk_bus(struct pci_bus *top, int (*cb)(struct pci_dev *, void *),
+		  void *userdata)
+{
+	down_read(&pci_bus_sem);
+	__pci_walk_bus(top, cb, userdata);
 	up_read(&pci_bus_sem);
 }
 EXPORT_SYMBOL_GPL(pci_walk_bus);
