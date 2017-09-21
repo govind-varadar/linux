@@ -1187,6 +1187,16 @@ config DEBUG_LOCKDEP
 	  additional runtime checks to debug itself, at the price
 	  of more runtime overhead.
 
+config MAX_LOCK_DEPTH
+	int "Maximum held_locks depth"
+	depends on DEBUG_LOCKDEP
+	default 48
+	range 1 63
+	help
+	  This is maximum held_lock depth in task_struct for debugging.
+	  Increment if you think a task can hold more than default(48) locks.
+	  If unsure, set to default value, 48.
+
 config DEBUG_ATOMIC_SLEEP
 	bool "Sleep inside atomic section checking"
 	select PREEMPT_COUNT

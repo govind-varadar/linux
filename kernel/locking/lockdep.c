@@ -3404,7 +3404,7 @@ static int __lock_acquire(struct lockdep_map *lock, unsigned int subclass,
 	/*
 	 * Ran out of static storage for our per-task lock stack again have we?
 	 */
-	if (DEBUG_LOCKS_WARN_ON(depth >= MAX_LOCK_DEPTH))
+	if (DEBUG_LOCKS_WARN_ON(depth >= CONFIG_MAX_LOCK_DEPTH))
 		return 0;
 
 	class_idx = class - lock_classes + 1;
@@ -3513,11 +3513,11 @@ static int __lock_acquire(struct lockdep_map *lock, unsigned int subclass,
 	if (unlikely(!debug_locks))
 		return 0;
 #endif
-	if (unlikely(curr->lockdep_depth >= MAX_LOCK_DEPTH)) {
+	if (unlikely(curr->lockdep_depth >= CONFIG_MAX_LOCK_DEPTH)) {
 		debug_locks_off();
 		print_lockdep_off("BUG: MAX_LOCK_DEPTH too low!");
 		printk(KERN_DEBUG "depth: %i  max: %lu!\n",
-		       curr->lockdep_depth, MAX_LOCK_DEPTH);
+		       curr->lockdep_depth, CONFIG_MAX_LOCK_DEPTH);
 
 		lockdep_print_held_locks(current);
 		debug_show_all_locks();
@@ -4276,7 +4276,8 @@ void lockdep_reset(void)
 	current->curr_chain_key = 0;
 	current->lockdep_depth = 0;
 	current->lockdep_recursion = 0;
-	memset(current->held_locks, 0, MAX_LOCK_DEPTH*sizeof(struct held_lock));
+	memset(current->held_locks, 0,
+	       CONFIG_MAX_LOCK_DEPTH * sizeof(struct held_lock));
 	nr_hardirq_chains = 0;
 	nr_softirq_chains = 0;
 	nr_process_chains = 0;
@@ -4421,7 +4422,7 @@ void __init lockdep_info(void)
 	printk("Lock dependency validator: Copyright (c) 2006 Red Hat, Inc., Ingo Molnar\n");
 
 	printk("... MAX_LOCKDEP_SUBCLASSES:  %lu\n", MAX_LOCKDEP_SUBCLASSES);
-	printk("... MAX_LOCK_DEPTH:          %lu\n", MAX_LOCK_DEPTH);
+	printk("... MAX_LOCK_DEPTH:          %lu\n", CONFIG_MAX_LOCK_DEPTH);
 	printk("... MAX_LOCKDEP_KEYS:        %lu\n", MAX_LOCKDEP_KEYS);
 	printk("... CLASSHASH_SIZE:          %lu\n", CLASSHASH_SIZE);
 	printk("... MAX_LOCKDEP_ENTRIES:     %lu\n", MAX_LOCKDEP_ENTRIES);
@@ -4441,7 +4442,7 @@ void __init lockdep_info(void)
 		);
 
 	printk(" per task-struct memory footprint: %lu bytes\n",
-		sizeof(struct held_lock) * MAX_LOCK_DEPTH);
+		sizeof(struct held_lock) * CONFIG_MAX_LOCK_DEPTH);
 }
 
 static void

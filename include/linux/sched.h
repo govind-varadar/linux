@@ -841,11 +841,10 @@ struct task_struct {
 #endif
 
 #ifdef CONFIG_LOCKDEP
-# define MAX_LOCK_DEPTH			48UL
 	u64				curr_chain_key;
 	int				lockdep_depth;
 	unsigned int			lockdep_recursion;
-	struct held_lock		held_locks[MAX_LOCK_DEPTH];
+	struct held_lock		held_locks[CONFIG_MAX_LOCK_DEPTH];
 #endif
 
 #ifdef CONFIG_LOCKDEP_CROSSRELEASE

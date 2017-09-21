@@ -41,7 +41,7 @@
 #include "configfs_internal.h"
 
 #ifdef CONFIG_LOCKDEP
-static struct lock_class_key default_group_class[MAX_LOCK_DEPTH];
+static struct lock_class_key default_group_class[CONFIG_MAX_LOCK_DEPTH];
 #endif
 
 static const struct address_space_operations configfs_aops = {
