@@ -26,6 +26,7 @@
 #include <linux/slab.h>
 #include <linux/kfifo.h>
 #include "aerdrv.h"
+#include "../../pci.h"
 
 #define	PCI_EXP_AER_FLAGS	(PCI_EXP_DEVCTL_CERE | PCI_EXP_DEVCTL_NFERE | \
 				 PCI_EXP_DEVCTL_FERE | PCI_EXP_DEVCTL_URRE)
@@ -241,7 +242,6 @@ static int report_error_detected(struct pci_dev *dev, void *data)
 	struct aer_broadcast_data *result_data;
 	result_data = (struct aer_broadcast_data *) data;
 
-	device_lock(&dev->dev);
 	dev->error_state = result_data->state;
 
 	if (!dev->driver ||
@@ -281,7 +281,6 @@ static int report_error_detected(struct pci_dev *dev, void *data)
 	}
 
 	result_data->result = merge_result(result_data->result, vote);
-	device_unlock(&dev->dev);
 	return 0;
 }
 
@@ -292,7 +291,6 @@ static int report_mmio_enabled(struct pci_dev *dev, void *data)
 	struct aer_broadcast_data *result_data;
 	result_data = (struct aer_broadcast_data *) data;
 
-	device_lock(&dev->dev);
 	if (!dev->driver ||
 		!dev->driver->err_handler ||
 		!dev->driver->err_handler->mmio_enabled)
@@ -302,7 +300,6 @@ static int report_mmio_enabled(struct pci_dev *dev, void *data)
 	vote = err_handler->mmio_enabled(dev);
 	result_data->result = merge_result(result_data->result, vote);
 out:
-	device_unlock(&dev->dev);
 	return 0;
 }
 
@@ -313,7 +310,6 @@ static int report_slot_reset(struct pci_dev *dev, void *data)
 	struct aer_broadcast_data *result_data;
 	result_data = (struct aer_broadcast_data *) data;
 
-	device_lock(&dev->dev);
 	if (!dev->driver ||
 		!dev->driver->err_handler ||
 		!dev->driver->err_handler->slot_reset)
@@ -323,7 +319,6 @@ static int report_slot_reset(struct pci_dev *dev, void *data)
 	vote = err_handler->slot_reset(dev);
 	result_data->result = merge_result(result_data->result, vote);
 out:
-	device_unlock(&dev->dev);
 	return 0;
 }
 
@@ -331,7 +326,6 @@ static int report_resume(struct pci_dev *dev, void *data)
 {
 	const struct pci_error_handlers *err_handler;
 
-	device_lock(&dev->dev);
 	dev->error_state = pci_channel_io_normal;
 
 	if (!dev->driver ||
@@ -342,8 +336,44 @@ static int report_resume(struct pci_dev *dev, void *data)
 	err_handler = dev->driver->err_handler;
 	err_handler->resume(dev);
 out:
-	device_unlock(&dev->dev);
 	return 0;
+}
+
+static void aer_pci_walk_bus(struct pci_bus *bus,
+			     int (*cb)(struct pci_dev *, void *),
+			     struct aer_broadcast_data *res)
+{
+	bool locked;
+	uint8_t i;
+
+	for (i = 1; i; i++) {
+		/* PCI driver could hold device->mutex lock and call driver
+		 * cb functions which may try to aquire pci_bus_sem.
+		 * Trying to aquiring device->mutex lock holding pci_bus_sem
+		 * could lead to deadlock.
+		 *
+		 * Holding pci_bus_sem lets try to aquire device->mutex lock.
+		 * If trylock(device->mutex) fails, unlock pci_bus_sem and
+		 * try again.
+		 */
+		down_read(&pci_bus_sem);
+		locked = __pci_bus_trylock(bus, pci_device_trylock,
+					   pci_device_unlock);
+		if (locked)
+			goto out;
+		up_read(&pci_bus_sem);
+		dev_info(&bus->self->dev, "Could not aquire device lock on all subordinates, trying again.");
+		msleep(25);
+	};
+
+	res->result = PCI_ERS_RESULT_NONE;
+	dev_err(&bus->self->dev, "Could not aquire lock. No aer recovery done.");
+	return;
+out:
+	/* all devices under this subordinate is locked */
+	__pci_walk_bus(bus, cb, res);
+	__pci_bus_unlock(bus, pci_device_unlock);
+	up_read(&pci_bus_sem);
 }
 
 /**
@@ -380,7 +410,7 @@ static pci_ers_result_t broadcast_error_message(struct pci_dev *dev,
 		 */
 		if (cb == report_error_detected)
 			dev->error_state = state;
-		pci_walk_bus(dev->subordinate, cb, &result_data);
+		aer_pci_walk_bus(dev->subordinate, cb, &result_data);
 		if (cb == report_resume) {
 			pci_cleanup_aer_uncorrect_error_status(dev);
 			dev->error_state = pci_channel_io_normal;
@@ -390,7 +420,7 @@ static pci_ers_result_t broadcast_error_message(struct pci_dev *dev,
 		 * If the error is reported by an end point, we think this
 		 * error is related to the upstream link of the end point.
 		 */
-		pci_walk_bus(dev->bus, cb, &result_data);
+		aer_pci_walk_bus(dev->bus, cb, &result_data);
 	}
 
 	return result_data.result;
