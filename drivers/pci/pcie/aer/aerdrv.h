@@ -105,6 +105,11 @@ static inline pci_ers_result_t merge_result(enum pci_ers_result orig,
 	return orig;
 }
 
+struct aer_device_list {
+	struct device *dev;
+	struct hlist_node node;
+};
+
 extern struct bus_type pcie_port_bus_type;
 void aer_isr(struct work_struct *work);
 void aer_print_error(struct pci_dev *dev, struct aer_err_info *info);

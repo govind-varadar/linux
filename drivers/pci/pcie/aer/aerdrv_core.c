@@ -346,6 +346,47 @@ out:
 	return 0;
 }
 
+int aer_get_pci_dev(struct pci_dev *pdev, void *data)
+{
+	struct hlist_head *hhead = (struct hlist_head *)data;
+	struct device *dev = &pdev->dev;
+	struct aer_device_list *entry;
+
+	entry = kmalloc(sizeof(*entry), GFP_KERNEL);
+	if (!entry)
+		/* continue with other devices, lets not return error */
+		return 0;
+
+	entry->dev = get_device(dev);
+	hlist_add_head(&entry->node, hhead);
+
+	return 0;
+}
+
+static void aer_pci_walk_bus(struct pci_bus *top,
+			     int (*cb)(struct pci_dev *, void *),
+			     struct aer_broadcast_data *result)
+{
+	HLIST_HEAD(dev_hlist);
+	struct hlist_node *tmp;
+	struct aer_device_list *entry;
+
+	pci_walk_bus(top, aer_get_pci_dev, &dev_hlist);
+	hlist_for_each_entry_safe(entry, tmp, &dev_hlist, node) {
+		struct pci_dev *pdev = container_of(entry->dev, struct pci_dev,
+						    dev);
+		int err;
+
+		err = cb(pdev, result);
+		if (err)
+			dev_err(entry->dev, "AER: recovery handler failed: %d",
+				err);
+		put_device(entry->dev);
+		hlist_del(&entry->node);
+		kfree(entry);
+	}
+}
+
 /**
  * broadcast_error_message - handle message broadcast to downstream drivers
  * @dev: pointer to from where in a hierarchy message is broadcasted down
@@ -380,7 +421,7 @@ static pci_ers_result_t broadcast_error_message(struct pci_dev *dev,
 		 */
 		if (cb == report_error_detected)
 			dev->error_state = state;
-		pci_walk_bus(dev->subordinate, cb, &result_data);
+		aer_pci_walk_bus(dev->subordinate, cb, &result_data);
 		if (cb == report_resume) {
 			pci_cleanup_aer_uncorrect_error_status(dev);
 			dev->error_state = pci_channel_io_normal;
@@ -390,7 +431,7 @@ static pci_ers_result_t broadcast_error_message(struct pci_dev *dev,
 		 * If the error is reported by an end point, we think this
 		 * error is related to the upstream link of the end point.
 		 */
-		pci_walk_bus(dev->bus, cb, &result_data);
+		aer_pci_walk_bus(dev->bus, cb, &result_data);
 	}
 
 	return result_data.result;
