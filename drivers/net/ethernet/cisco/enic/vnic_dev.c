@@ -210,7 +210,7 @@ int vnic_dev_alloc_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring,
 
 	vnic_dev_clear_desc_ring(ring);
 
-	ring->desc_avail = ring->desc_count - 1;
+	atomic_set(&ring->desc_avail, ring->desc_count - 1);
 
 	return 0;
 }

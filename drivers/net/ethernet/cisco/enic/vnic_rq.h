@@ -97,13 +97,13 @@ struct vnic_rq {
 static inline unsigned int vnic_rq_desc_avail(struct vnic_rq *rq)
 {
 	/* how many does SW own? */
-	return rq->ring.desc_avail;
+	return atomic_read(&rq->ring.desc_avail);
 }
 
 static inline unsigned int vnic_rq_desc_used(struct vnic_rq *rq)
 {
 	/* how many does HW own? */
-	return rq->ring.desc_count - rq->ring.desc_avail - 1;
+	return rq->ring.desc_count - vnic_rq_desc_avail(rq) - 1;
 }
 
 static inline void *vnic_rq_next_desc(struct vnic_rq *rq)
@@ -131,7 +131,7 @@ static inline void vnic_rq_post(struct vnic_rq *rq,
 
 	buf = buf->next;
 	rq->to_use = buf;
-	rq->ring.desc_avail--;
+	atomic_dec(&rq->ring.desc_avail);
 
 	/* Move the posted_index every nth descriptor
 	 */
@@ -153,7 +153,7 @@ static inline void vnic_rq_post(struct vnic_rq *rq,
 
 static inline void vnic_rq_return_descs(struct vnic_rq *rq, unsigned int count)
 {
-	rq->ring.desc_avail += count;
+	atomic_add(count, &rq->ring.desc_avail);
 }
 
 enum desc_return_options {
@@ -178,7 +178,7 @@ static inline void vnic_rq_service(struct vnic_rq *rq,
 		(*buf_service)(rq, cq_desc, buf, skipped, opaque);
 
 		if (desc_return == VNIC_RQ_RETURN_DESC)
-			rq->ring.desc_avail++;
+			atomic_inc(&rq->ring.desc_avail);
 
 		rq->to_clean = buf->next;
 

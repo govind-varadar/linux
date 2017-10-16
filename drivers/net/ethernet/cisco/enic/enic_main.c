@@ -355,8 +355,6 @@ static int enic_wq_service(struct vnic_dev *vdev, struct cq_desc *cq_desc,
 {
 	struct enic *enic = vnic_dev_priv(vdev);
 
-	spin_lock(&enic->wq_lock[q_number]);
-
 	vnic_wq_service(&enic->wq[q_number], cq_desc,
 		completed_index, enic_wq_free_buf,
 		opaque);
@@ -365,8 +363,6 @@ static int enic_wq_service(struct vnic_dev *vdev, struct cq_desc *cq_desc,
 	    vnic_wq_desc_avail(&enic->wq[q_number]) >=
 	    (MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS))
 		netif_wake_subqueue(enic->netdev, q_number);
-
-	spin_unlock(&enic->wq_lock[q_number]);
 
 	return 0;
 }
@@ -803,7 +799,7 @@ static inline void enic_queue_wq_skb(struct enic *enic,
 		 */
 		while (!buf->os_buf && (buf->next != wq->to_clean)) {
 			enic_free_wq_buf(wq, buf);
-			wq->ring.desc_avail++;
+			atomic_inc(&wq->ring.desc_avail);
 			buf = buf->prev;
 		}
 		wq->to_use = buf->next;
@@ -841,14 +837,11 @@ static netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	spin_lock(&enic->wq_lock[txq_map]);
-
 	if (vnic_wq_desc_avail(wq) <
 	    skb_shinfo(skb)->nr_frags + ENIC_DESC_MAX_SPLITS) {
 		netif_tx_stop_queue(txq);
 		/* This is a hard error, log it */
 		netdev_err(netdev, "BUG! Tx ring full when queue awake!\n");
-		spin_unlock(&enic->wq_lock[txq_map]);
 		return NETDEV_TX_BUSY;
 	}
 
@@ -859,8 +852,6 @@ static netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb,
 	skb_tx_timestamp(skb);
 	if (!skb->xmit_more || netif_xmit_stopped(txq))
 		vnic_wq_doorbell(wq);
-
-	spin_unlock(&enic->wq_lock[txq_map]);
 
 	return NETDEV_TX_OK;
 }
@@ -2853,9 +2844,6 @@ static int enic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	INIT_WORK(&enic->reset, enic_reset);
 	INIT_WORK(&enic->tx_hang_reset, enic_tx_hang_reset);
 	INIT_WORK(&enic->change_mtu_work, enic_change_mtu_work);
-
-	for (i = 0; i < enic->wq_count; i++)
-		spin_lock_init(&enic->wq_lock[i]);
 
 	/* Register net device
 	 */

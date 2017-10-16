@@ -204,7 +204,7 @@ void vnic_wq_clean(struct vnic_wq *wq,
 		(*buf_clean)(wq, buf);
 
 		buf = wq->to_clean = buf->next;
-		wq->ring.desc_avail++;
+		atomic_inc(&wq->ring.desc_avail);
 	}
 
 	wq->to_use = wq->to_clean = wq->bufs[0];

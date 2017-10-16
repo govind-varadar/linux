@@ -103,13 +103,13 @@ struct devcmd2_controller {
 static inline unsigned int vnic_wq_desc_avail(struct vnic_wq *wq)
 {
 	/* how many does SW own? */
-	return wq->ring.desc_avail;
+	return atomic_read(&wq->ring.desc_avail);
 }
 
 static inline unsigned int vnic_wq_desc_used(struct vnic_wq *wq)
 {
 	/* how many does HW own? */
-	return wq->ring.desc_count - wq->ring.desc_avail - 1;
+	return wq->ring.desc_count - vnic_wq_desc_avail(wq) - 1;
 }
 
 static inline void *vnic_wq_next_desc(struct vnic_wq *wq)
@@ -148,7 +148,7 @@ static inline void vnic_wq_post(struct vnic_wq *wq,
 	buf = buf->next;
 	wq->to_use = buf;
 
-	wq->ring.desc_avail -= desc_skip_cnt;
+	atomic_sub(desc_skip_cnt, &wq->ring.desc_avail);
 }
 
 static inline void vnic_wq_service(struct vnic_wq *wq,
@@ -164,7 +164,7 @@ static inline void vnic_wq_service(struct vnic_wq *wq,
 
 		(*buf_service)(wq, cq_desc, buf, opaque);
 
-		wq->ring.desc_avail++;
+		atomic_inc(&wq->ring.desc_avail);
 
 		wq->to_clean = buf->next;
 
