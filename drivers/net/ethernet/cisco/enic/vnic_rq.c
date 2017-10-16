@@ -195,7 +195,7 @@ void vnic_rq_clean(struct vnic_rq *rq,
 		(*buf_clean)(rq, buf);
 		buf = buf->next;
 	}
-	rq->ring.desc_avail = rq->ring.desc_count - 1;
+	atomic_set(&rq->ring.desc_avail, rq->ring.desc_count - 1);
 
 	/* Use current fetch_index as the ring starting point */
 	fetch_index = ioread32(&rq->ctrl->fetch_index);

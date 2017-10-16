@@ -67,7 +67,7 @@ struct vnic_dev_ring {
 	dma_addr_t base_addr_unaligned;
 	unsigned int desc_size;
 	unsigned int desc_count;
-	unsigned int desc_avail;
+	atomic_t desc_avail;
 };
 
 enum vnic_proxy_type {
