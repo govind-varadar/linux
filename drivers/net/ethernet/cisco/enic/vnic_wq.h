@@ -57,10 +57,6 @@ struct vnic_wq_buf {
 	unsigned int len;
 	unsigned int index;
 	void *desc;
-	uint64_t wr_id; /* Cookie */
-	uint8_t cq_entry; /* Gets completion event from hw */
-	uint8_t desc_skip_cnt; /* Num descs to occupy */
-	uint8_t compressed_send; /* Both hdr and payload in one desc */
 	bool sop;
 	struct vnic_wq_buf *prev;
 };
@@ -85,7 +81,6 @@ struct vnic_wq {
 	struct vnic_wq_buf *bufs[VNIC_WQ_BUF_BLKS_MAX];
 	struct vnic_wq_buf *to_use;
 	struct vnic_wq_buf *to_clean;
-	unsigned int pkts_outstanding;
 };
 
 struct devcmd2_controller {
@@ -130,25 +125,19 @@ static inline void vnic_wq_doorbell(struct vnic_wq *wq)
 
 static inline void vnic_wq_post(struct vnic_wq *wq,
 	void *os_buf, dma_addr_t dma_addr,
-	unsigned int len, bool sop, bool eop,
-	uint8_t desc_skip_cnt, uint8_t cq_entry,
-	uint8_t compressed_send, uint64_t wrid)
+	unsigned int len, bool sop, bool eop)
 {
 	struct vnic_wq_buf *buf = wq->to_use;
 
 	buf->sop = sop;
-	buf->cq_entry = cq_entry;
-	buf->compressed_send = compressed_send;
-	buf->desc_skip_cnt = desc_skip_cnt;
 	buf->os_buf = eop ? os_buf : NULL;
 	buf->dma_addr = dma_addr;
 	buf->len = len;
-	buf->wr_id = wrid;
 
 	buf = buf->next;
 	wq->to_use = buf;
 
-	atomic_sub(desc_skip_cnt, &wq->ring.desc_avail);
+	atomic_dec(&wq->ring.desc_avail);
 }
 
 static inline void vnic_wq_service(struct vnic_wq *wq,

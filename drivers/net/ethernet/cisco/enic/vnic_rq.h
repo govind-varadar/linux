@@ -90,8 +90,6 @@ struct vnic_rq {
 	struct vnic_rq_buf *bufs[VNIC_RQ_BUF_BLKS_MAX];
 	struct vnic_rq_buf *to_use;
 	struct vnic_rq_buf *to_clean;
-	void *os_buf_head;
-	unsigned int pkts_outstanding;
 };
 
 static inline unsigned int vnic_rq_desc_avail(struct vnic_rq *rq)
