@@ -165,10 +165,10 @@ static inline void vnic_rq_service(struct vnic_rq *rq,
 	struct cq_desc *cq_desc, u16 completed_index,
 	int desc_return, void (*buf_service)(struct vnic_rq *rq,
 	struct cq_desc *cq_desc, struct vnic_rq_buf *buf,
-	int skipped, void *opaque), void *opaque)
+	bool skipped, void *opaque), void *opaque)
 {
 	struct vnic_rq_buf *buf;
-	int skipped;
+	bool skipped;
 
 	buf = rq->to_clean;
 	while (1) {

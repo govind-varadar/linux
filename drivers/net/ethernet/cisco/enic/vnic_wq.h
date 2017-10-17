@@ -56,12 +56,12 @@ struct vnic_wq_buf {
 	void *os_buf;
 	unsigned int len;
 	unsigned int index;
-	int sop;
 	void *desc;
 	uint64_t wr_id; /* Cookie */
 	uint8_t cq_entry; /* Gets completion event from hw */
 	uint8_t desc_skip_cnt; /* Num descs to occupy */
 	uint8_t compressed_send; /* Both hdr and payload in one desc */
+	bool sop;
 	struct vnic_wq_buf *prev;
 };
 
@@ -130,7 +130,7 @@ static inline void vnic_wq_doorbell(struct vnic_wq *wq)
 
 static inline void vnic_wq_post(struct vnic_wq *wq,
 	void *os_buf, dma_addr_t dma_addr,
-	unsigned int len, int sop, int eop,
+	unsigned int len, bool sop, bool eop,
 	uint8_t desc_skip_cnt, uint8_t cq_entry,
 	uint8_t compressed_send, uint64_t wrid)
 {

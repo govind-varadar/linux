@@ -52,45 +52,45 @@ struct wq_enet_desc {
 
 static inline void wq_enet_desc_enc(struct wq_enet_desc *desc,
 	u64 address, u16 length, u16 mss, u16 header_length,
-	u8 offload_mode, u8 eop, u8 cq_entry, u8 fcoe_encap,
-	u8 vlan_tag_insert, u16 vlan_tag, u8 loopback)
+	u8 offload_mode, bool eop, bool cq_entry, bool fcoe_encap,
+	bool vlan_tag_insert, u16 vlan_tag, bool loopback)
 {
 	desc->address = cpu_to_le64(address);
 	desc->length = cpu_to_le16(length & WQ_ENET_LEN_MASK);
 	desc->mss_loopback = cpu_to_le16((mss & WQ_ENET_MSS_MASK) <<
-		WQ_ENET_MSS_SHIFT | (loopback & 1) << WQ_ENET_LOOPBACK_SHIFT);
+		WQ_ENET_MSS_SHIFT | (loopback << WQ_ENET_LOOPBACK_SHIFT));
 	desc->header_length_flags = cpu_to_le16(
 		(header_length & WQ_ENET_HDRLEN_MASK) |
 		(offload_mode & WQ_ENET_FLAGS_OM_MASK) << WQ_ENET_HDRLEN_BITS |
-		(eop & 1) << WQ_ENET_FLAGS_EOP_SHIFT |
-		(cq_entry & 1) << WQ_ENET_FLAGS_CQ_ENTRY_SHIFT |
-		(fcoe_encap & 1) << WQ_ENET_FLAGS_FCOE_ENCAP_SHIFT |
-		(vlan_tag_insert & 1) << WQ_ENET_FLAGS_VLAN_TAG_INSERT_SHIFT);
+		(eop << WQ_ENET_FLAGS_EOP_SHIFT) |
+		(cq_entry << WQ_ENET_FLAGS_CQ_ENTRY_SHIFT) |
+		(fcoe_encap << WQ_ENET_FLAGS_FCOE_ENCAP_SHIFT) |
+		(vlan_tag_insert << WQ_ENET_FLAGS_VLAN_TAG_INSERT_SHIFT));
 	desc->vlan_tag = cpu_to_le16(vlan_tag);
 }
 
 static inline void wq_enet_desc_dec(struct wq_enet_desc *desc,
 	u64 *address, u16 *length, u16 *mss, u16 *header_length,
-	u8 *offload_mode, u8 *eop, u8 *cq_entry, u8 *fcoe_encap,
-	u8 *vlan_tag_insert, u16 *vlan_tag, u8 *loopback)
+	u8 *offload_mode, bool *eop, bool *cq_entry, bool *fcoe_encap,
+	bool *vlan_tag_insert, u16 *vlan_tag, bool *loopback)
 {
 	*address = le64_to_cpu(desc->address);
 	*length = le16_to_cpu(desc->length) & WQ_ENET_LEN_MASK;
 	*mss = (le16_to_cpu(desc->mss_loopback) >> WQ_ENET_MSS_SHIFT) &
 		WQ_ENET_MSS_MASK;
-	*loopback = (u8)((le16_to_cpu(desc->mss_loopback) >>
+	*loopback = ((le16_to_cpu(desc->mss_loopback) >>
 		WQ_ENET_LOOPBACK_SHIFT) & 1);
 	*header_length = le16_to_cpu(desc->header_length_flags) &
 		WQ_ENET_HDRLEN_MASK;
 	*offload_mode = (u8)((le16_to_cpu(desc->header_length_flags) >>
 		WQ_ENET_HDRLEN_BITS) & WQ_ENET_FLAGS_OM_MASK);
-	*eop = (u8)((le16_to_cpu(desc->header_length_flags) >>
+	*eop = ((le16_to_cpu(desc->header_length_flags) >>
 		WQ_ENET_FLAGS_EOP_SHIFT) & 1);
-	*cq_entry = (u8)((le16_to_cpu(desc->header_length_flags) >>
+	*cq_entry = ((le16_to_cpu(desc->header_length_flags) >>
 		WQ_ENET_FLAGS_CQ_ENTRY_SHIFT) & 1);
-	*fcoe_encap = (u8)((le16_to_cpu(desc->header_length_flags) >>
+	*fcoe_encap = ((le16_to_cpu(desc->header_length_flags) >>
 		WQ_ENET_FLAGS_FCOE_ENCAP_SHIFT) & 1);
-	*vlan_tag_insert = (u8)((le16_to_cpu(desc->header_length_flags) >>
+	*vlan_tag_insert = ((le16_to_cpu(desc->header_length_flags) >>
 		WQ_ENET_FLAGS_VLAN_TAG_INSERT_SHIFT) & 1);
 	*vlan_tag = le16_to_cpu(desc->vlan_tag);
 }

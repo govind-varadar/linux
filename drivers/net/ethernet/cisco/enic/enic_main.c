@@ -547,7 +547,7 @@ static irqreturn_t enic_isr_msix_notify(int irq, void *data)
 
 static int enic_queue_wq_skb_cont(struct enic *enic, struct vnic_wq *wq,
 				  struct sk_buff *skb, unsigned int len_left,
-				  int loopback)
+				  bool loopback)
 {
 	const skb_frag_t *frag;
 	dma_addr_t dma_addr;
@@ -569,12 +569,12 @@ static int enic_queue_wq_skb_cont(struct enic *enic, struct vnic_wq *wq,
 }
 
 static int enic_queue_wq_skb_vlan(struct enic *enic, struct vnic_wq *wq,
-				  struct sk_buff *skb, int vlan_tag_insert,
-				  unsigned int vlan_tag, int loopback)
+				  struct sk_buff *skb, bool vlan_tag_insert,
+				  unsigned int vlan_tag, bool loopback)
 {
 	unsigned int head_len = skb_headlen(skb);
 	unsigned int len_left = skb->len - head_len;
-	int eop = (len_left == 0);
+	bool eop = (len_left == 0);
 	dma_addr_t dma_addr;
 	int err = 0;
 
@@ -598,14 +598,14 @@ static int enic_queue_wq_skb_vlan(struct enic *enic, struct vnic_wq *wq,
 }
 
 static int enic_queue_wq_skb_csum_l4(struct enic *enic, struct vnic_wq *wq,
-				     struct sk_buff *skb, int vlan_tag_insert,
-				     unsigned int vlan_tag, int loopback)
+				     struct sk_buff *skb, bool vlan_tag_insert,
+				     unsigned int vlan_tag, bool loopback)
 {
 	unsigned int head_len = skb_headlen(skb);
 	unsigned int len_left = skb->len - head_len;
 	unsigned int hdr_len = skb_checksum_start_offset(skb);
 	unsigned int csum_offset = hdr_len + skb->csum_offset;
-	int eop = (len_left == 0);
+	bool eop = (len_left == 0);
 	dma_addr_t dma_addr;
 	int err = 0;
 
@@ -659,12 +659,12 @@ static void enic_preload_tcp_csum(struct sk_buff *skb)
 
 static int enic_queue_wq_skb_tso(struct enic *enic, struct vnic_wq *wq,
 				 struct sk_buff *skb, unsigned int mss,
-				 int vlan_tag_insert, unsigned int vlan_tag,
-				 int loopback)
+				 bool vlan_tag_insert, unsigned int vlan_tag,
+				 bool loopback)
 {
 	unsigned int frag_len_left = skb_headlen(skb);
 	unsigned int len_left = skb->len - frag_len_left;
-	int eop = (len_left == 0);
+	bool eop = (len_left == 0);
 	unsigned int offset = 0;
 	unsigned int hdr_len;
 	dma_addr_t dma_addr;
@@ -729,8 +729,8 @@ static int enic_queue_wq_skb_tso(struct enic *enic, struct vnic_wq *wq,
 
 static inline int enic_queue_wq_skb_encap(struct enic *enic, struct vnic_wq *wq,
 					  struct sk_buff *skb,
-					  int vlan_tag_insert,
-					  unsigned int vlan_tag, int loopback)
+					  bool vlan_tag_insert,
+					  unsigned int vlan_tag, bool loopback)
 {
 	unsigned int head_len = skb_headlen(skb);
 	unsigned int len_left = skb->len - head_len;
@@ -740,7 +740,7 @@ static inline int enic_queue_wq_skb_encap(struct enic *enic, struct vnic_wq *wq,
 	 * mss[2], mss[1], mss[0] bits are set
 	 */
 	unsigned int mss_or_csum = 7;
-	int eop = (len_left == 0);
+	bool eop = (len_left == 0);
 	dma_addr_t dma_addr;
 	int err = 0;
 
@@ -764,17 +764,17 @@ static inline void enic_queue_wq_skb(struct enic *enic,
 {
 	unsigned int mss = skb_shinfo(skb)->gso_size;
 	unsigned int vlan_tag = 0;
-	int vlan_tag_insert = 0;
-	int loopback = 0;
+	bool vlan_tag_insert = false;
+	bool loopback = false;
 	int err;
 
 	if (skb_vlan_tag_present(skb)) {
 		/* VLAN tag from trunking driver */
-		vlan_tag_insert = 1;
+		vlan_tag_insert = true;
 		vlan_tag = skb_vlan_tag_get(skb);
 	} else if (enic->loop_enable) {
 		vlan_tag = enic->loop_tag;
-		loopback = 1;
+		loopback = true;
 	}
 
 	if (mss)
@@ -1278,21 +1278,20 @@ static bool enic_rxcopybreak(struct net_device *netdev, struct sk_buff **skb,
 
 static void enic_rq_indicate_buf(struct vnic_rq *rq,
 	struct cq_desc *cq_desc, struct vnic_rq_buf *buf,
-	int skipped, void *opaque)
+	bool skipped, void *opaque)
 {
 	struct enic *enic = vnic_dev_priv(rq->vdev);
 	struct net_device *netdev = enic->netdev;
 	struct sk_buff *skb;
 	struct vnic_cq *cq = &enic->cq[enic_cq_rq(enic, rq->index)];
 
-	u8 type, color, eop, sop, ingress_port, vlan_stripped;
-	u8 fcoe, fcoe_sof, fcoe_fc_crc_ok, fcoe_enc_error, fcoe_eof;
-	u8 tcp_udp_csum_ok, udp, tcp, ipv4_csum_ok;
-	u8 ipv6, ipv4, ipv4_fragment, fcs_ok, rss_type, csum_not_calc;
-	u8 packet_error;
+	u8 type, color, fcoe_sof, fcoe_eof, rss_type;
+	bool sop, eop, ingress_port, fcoe, csum_not_calc, packet_error;
+	bool vlan_stripped, fcoe_fc_crc_ok, fcoe_enc_error;
+	bool tcp_udp_csum_ok, udp, tcp, ipv4_csum_ok, ipv6, ipv4;
+	bool ipv4_fragment, fcs_ok, outer_csum_ok = true, encap = false;
 	u16 q_number, completed_index, bytes_written, vlan_tci, checksum;
 	u32 rss_hash;
-	bool outer_csum_ok = true, encap = false;
 
 	if (skipped)
 		return;

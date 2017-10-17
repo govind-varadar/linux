@@ -43,8 +43,8 @@
 static inline void enic_queue_wq_desc_ex(struct vnic_wq *wq,
 	void *os_buf, dma_addr_t dma_addr, unsigned int len,
 	unsigned int mss_or_csum_offset, unsigned int hdr_len,
-	int vlan_tag_insert, unsigned int vlan_tag,
-	int offload_mode, int cq_entry, int sop, int eop, int loopback)
+	bool vlan_tag_insert, unsigned int vlan_tag,
+	int offload_mode, bool cq_entry, bool sop, bool eop, bool loopback)
 {
 	struct wq_enet_desc *desc = vnic_wq_next_desc(wq);
 	u8 desc_skip_cnt = 1;
@@ -56,11 +56,11 @@ static inline void enic_queue_wq_desc_ex(struct vnic_wq *wq,
 		(u16)len,
 		(u16)mss_or_csum_offset,
 		(u16)hdr_len, (u8)offload_mode,
-		(u8)eop, (u8)cq_entry,
+		eop, cq_entry,
 		0, /* fcoe_encap */
-		(u8)vlan_tag_insert,
+		vlan_tag_insert,
 		(u16)vlan_tag,
-		(u8)loopback);
+		loopback);
 
 	vnic_wq_post(wq, os_buf, dma_addr, len, sop, eop, desc_skip_cnt,
 			(u8)cq_entry, compressed_send, wrid);
@@ -68,7 +68,7 @@ static inline void enic_queue_wq_desc_ex(struct vnic_wq *wq,
 
 static inline void enic_queue_wq_desc_cont(struct vnic_wq *wq,
 	void *os_buf, dma_addr_t dma_addr, unsigned int len,
-	int eop, int loopback)
+	bool eop, bool loopback)
 {
 	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
 		0, 0, 0, 0, 0,
@@ -76,8 +76,8 @@ static inline void enic_queue_wq_desc_cont(struct vnic_wq *wq,
 }
 
 static inline void enic_queue_wq_desc(struct vnic_wq *wq, void *os_buf,
-	dma_addr_t dma_addr, unsigned int len, int vlan_tag_insert,
-	unsigned int vlan_tag, int eop, int loopback)
+	dma_addr_t dma_addr, unsigned int len, bool vlan_tag_insert,
+	unsigned int vlan_tag, bool eop, bool loopback)
 {
 	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
 		0, 0, vlan_tag_insert, vlan_tag,
@@ -87,8 +87,8 @@ static inline void enic_queue_wq_desc(struct vnic_wq *wq, void *os_buf,
 
 static inline void enic_queue_wq_desc_csum(struct vnic_wq *wq,
 	void *os_buf, dma_addr_t dma_addr, unsigned int len,
-	int ip_csum, int tcpudp_csum, int vlan_tag_insert,
-	unsigned int vlan_tag, int eop, int loopback)
+	int ip_csum, int tcpudp_csum, bool vlan_tag_insert,
+	unsigned int vlan_tag, bool eop, bool loopback)
 {
 	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
 		(ip_csum ? 1 : 0) + (tcpudp_csum ? 2 : 0),
@@ -100,7 +100,7 @@ static inline void enic_queue_wq_desc_csum(struct vnic_wq *wq,
 static inline void enic_queue_wq_desc_csum_l4(struct vnic_wq *wq,
 	void *os_buf, dma_addr_t dma_addr, unsigned int len,
 	unsigned int csum_offset, unsigned int hdr_len,
-	int vlan_tag_insert, unsigned int vlan_tag, int eop, int loopback)
+	bool vlan_tag_insert, unsigned int vlan_tag, bool eop, bool loopback)
 {
 	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
 		csum_offset, hdr_len, vlan_tag_insert, vlan_tag,
@@ -110,8 +110,8 @@ static inline void enic_queue_wq_desc_csum_l4(struct vnic_wq *wq,
 
 static inline void enic_queue_wq_desc_tso(struct vnic_wq *wq,
 	void *os_buf, dma_addr_t dma_addr, unsigned int len,
-	unsigned int mss, unsigned int hdr_len, int vlan_tag_insert,
-	unsigned int vlan_tag, int eop, int loopback)
+	unsigned int mss, unsigned int hdr_len, bool vlan_tag_insert,
+	unsigned int vlan_tag, bool eop, bool loopback)
 {
 	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
 		mss, hdr_len, vlan_tag_insert, vlan_tag,
