@@ -193,7 +193,7 @@ int vnic_dev_alloc_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring,
 {
 	vnic_dev_desc_ring_size(ring, desc_count, desc_size);
 
-	ring->descs_unaligned = pci_alloc_consistent(vdev->pdev,
+	ring->descs_unaligned = pci_zalloc_consistent(vdev->pdev,
 		ring->size_unaligned,
 		&ring->base_addr_unaligned);
 
@@ -207,8 +207,6 @@ int vnic_dev_alloc_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring,
 		ring->base_align);
 	ring->descs = (u8 *)ring->descs_unaligned +
 		(ring->base_addr - ring->base_addr_unaligned);
-
-	vnic_dev_clear_desc_ring(ring);
 
 	atomic_set(&ring->desc_avail, ring->desc_count - 1);
 
@@ -1218,13 +1216,12 @@ int vnic_dev_classifier(struct vnic_dev *vdev, u8 cmd, u16 *entry,
 		tlv_size = sizeof(struct filter) +
 			   sizeof(struct filter_action) +
 			   2 * sizeof(struct filter_tlv);
-		tlv_va = pci_alloc_consistent(vdev->pdev, tlv_size, &tlv_pa);
+		tlv_va = pci_zalloc_consistent(vdev->pdev, tlv_size, &tlv_pa);
 		if (!tlv_va)
 			return -ENOMEM;
 		tlv = tlv_va;
 		a0 = tlv_pa;
 		a1 = tlv_size;
-		memset(tlv, 0, tlv_size);
 		tlv->type = CLSF_TLV_FILTER;
 		tlv->length = sizeof(struct filter);
 		*(struct filter *)&tlv->val = *data;
