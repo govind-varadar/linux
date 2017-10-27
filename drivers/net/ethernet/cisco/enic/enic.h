@@ -25,6 +25,7 @@
 #include "vnic_wq.h"
 #include "vnic_rq.h"
 #include "vnic_cq.h"
+#include "vnic_qp.h"
 #include "vnic_intr.h"
 #include "vnic_stats.h"
 #include "vnic_nic.h"
@@ -40,6 +41,7 @@
 
 #define ENIC_WQ_MAX		8
 #define ENIC_RQ_MAX		8
+#define ENIC_QP_MAX		8
 #define ENIC_CQ_MAX		(ENIC_WQ_MAX + ENIC_RQ_MAX)
 #define ENIC_INTR_MAX		(ENIC_CQ_MAX + 2)
 
@@ -172,8 +174,8 @@ struct enic {
 	spinlock_t enic_api_lock;
 	struct enic_port_profile *pp;
 
-	/* work queue cache line section */
-	____cacheline_aligned struct vnic_wq wq[ENIC_WQ_MAX];
+	/* QP cache line section */
+	____cacheline_aligned struct vnic_qp qp[ENIC_QP_MAX];
 	unsigned int wq_count;
 	u16 loop_enable;
 	u16 loop_tag;

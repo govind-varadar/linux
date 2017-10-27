@@ -184,7 +184,7 @@ void enic_free_vnic_resources(struct enic *enic)
 	unsigned int i;
 
 	for (i = 0; i < enic->wq_count; i++)
-		vnic_wq_free(&enic->wq[i]);
+		vnic_wq_free(&enic->qp[i].wq);
 	for (i = 0; i < enic->rq_count; i++)
 		vnic_rq_free(&enic->rq[i]);
 	for (i = 0; i < enic->cq_count; i++)
@@ -249,7 +249,7 @@ void enic_init_vnic_resources(struct enic *enic)
 
 	for (i = 0; i < enic->wq_count; i++) {
 		cq_index = enic->rq_count + i;
-		vnic_wq_init(&enic->wq[i],
+		vnic_wq_init(&enic->qp[i].wq,
 			cq_index,
 			error_interrupt_enable,
 			error_interrupt_offset);
@@ -330,7 +330,7 @@ int enic_alloc_vnic_resources(struct enic *enic)
 	 */
 
 	for (i = 0; i < enic->wq_count; i++) {
-		err = vnic_wq_alloc(enic->vdev, &enic->wq[i], i,
+		err = vnic_wq_alloc(enic->vdev, &enic->qp[i].wq, i,
 			enic->config.wq_desc_count,
 			sizeof(struct wq_enet_desc));
 		if (err)
