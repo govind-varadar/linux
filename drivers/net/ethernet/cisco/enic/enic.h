@@ -191,8 +191,6 @@ struct enic {
 	unsigned int intr_count;
 	u32 __iomem *legacy_pba;		/* memory-mapped */
 
-	/* completion queue cache line section */
-	____cacheline_aligned struct vnic_cq cq[ENIC_CQ_MAX];
 	unsigned int cq_count;
 	struct enic_rfs_flw_tbl rfs_h;
 	u32 rx_copybreak;
@@ -256,13 +254,13 @@ static inline unsigned int enic_legacy_notify_intr(void)
 static inline unsigned int enic_msix_rq_intr(struct enic *enic,
 	unsigned int rq)
 {
-	return enic->cq[enic_cq_rq(enic, rq)].interrupt_offset;
+	return enic->qp[rq].cqr.interrupt_offset;
 }
 
 static inline unsigned int enic_msix_wq_intr(struct enic *enic,
 	unsigned int wq)
 {
-	return enic->cq[enic_cq_wq(enic, wq)].interrupt_offset;
+	return enic->qp[wq].cqw.interrupt_offset;
 }
 
 static inline unsigned int enic_msix_err_intr(struct enic *enic)

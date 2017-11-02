@@ -1283,7 +1283,7 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 	struct enic *enic = vnic_dev_priv(rq->vdev);
 	struct net_device *netdev = enic->netdev;
 	struct sk_buff *skb;
-	struct vnic_cq *cq = &enic->cq[enic_cq_rq(enic, rq->index)];
+	struct vnic_cq *cq = &enic->qp[rq->index].cqr;
 
 	u8 type, color, fcoe_sof, fcoe_eof, rss_type;
 	bool sop, eop, ingress_port, fcoe, csum_not_calc, packet_error;
@@ -1427,7 +1427,7 @@ static int enic_rq_service(struct vnic_dev *vdev, struct cq_desc *cq_desc,
 static void enic_set_int_moderation(struct enic *enic, struct vnic_rq *rq)
 {
 	unsigned int intr = enic_msix_rq_intr(enic, rq->index);
-	struct vnic_cq *cq = &enic->cq[enic_cq_rq(enic, rq->index)];
+	struct vnic_cq *cq = &enic->qp[rq->index].cqr;
 	u32 timer = cq->tobe_rx_coal_timeval;
 
 	if (cq->tobe_rx_coal_timeval != cq->cur_rx_coal_timeval) {
@@ -1439,7 +1439,7 @@ static void enic_set_int_moderation(struct enic *enic, struct vnic_rq *rq)
 static void enic_calc_int_moderation(struct enic *enic, struct vnic_rq *rq)
 {
 	struct enic_rx_coal *rx_coal = &enic->rx_coalesce_setting;
-	struct vnic_cq *cq = &enic->cq[enic_cq_rq(enic, rq->index)];
+	struct vnic_cq *cq = &enic->qp[rq->index].cqr;
 	struct vnic_rx_bytes_counter *pkt_size_counter = &cq->pkt_size_counter;
 	int index;
 	u32 timer;
@@ -1486,19 +1486,17 @@ static int enic_poll(struct napi_struct *napi, int budget)
 {
 	struct net_device *netdev = napi->dev;
 	struct enic *enic = netdev_priv(netdev);
-	unsigned int cq_rq = enic_cq_rq(enic, 0);
-	unsigned int cq_wq = enic_cq_wq(enic, 0);
 	unsigned int intr = enic_legacy_io_intr();
 	unsigned int rq_work_to_do = budget;
 	unsigned int wq_work_to_do = ENIC_WQ_NAPI_BUDGET;
 	unsigned int  work_done, rq_work_done = 0, wq_work_done;
 	int err;
 
-	wq_work_done = vnic_cq_service(&enic->cq[cq_wq], wq_work_to_do,
+	wq_work_done = vnic_cq_service(&enic->qp[0].cqw, wq_work_to_do,
 				       enic_wq_service, NULL);
 
 	if (budget > 0)
-		rq_work_done = vnic_cq_service(&enic->cq[cq_rq],
+		rq_work_done = vnic_cq_service(&enic->qp[0].cqr,
 			rq_work_to_do, enic_rq_service, NULL);
 
 	/* Accumulate intr event credits for this polling
@@ -1586,16 +1584,14 @@ static int enic_poll_msix_wq(struct napi_struct *napi, int budget)
 	struct enic *enic = netdev_priv(netdev);
 	unsigned int wq_index = (napi - &enic->napi[0]) - enic->rq_count;
 	struct vnic_wq *wq = &enic->qp[wq_index].wq;
-	unsigned int cq;
 	unsigned int intr;
 	unsigned int wq_work_to_do = ENIC_WQ_NAPI_BUDGET;
 	unsigned int wq_work_done;
 	unsigned int wq_irq;
 
 	wq_irq = wq->index;
-	cq = enic_cq_wq(enic, wq_irq);
 	intr = enic_msix_wq_intr(enic, wq_irq);
-	wq_work_done = vnic_cq_service(&enic->cq[cq], wq_work_to_do,
+	wq_work_done = vnic_cq_service(&enic->qp[wq_index].cqw, wq_work_to_do,
 				       enic_wq_service, NULL);
 
 	vnic_intr_return_credits(&enic->intr[intr], wq_work_done,
@@ -1615,7 +1611,6 @@ static int enic_poll_msix_rq(struct napi_struct *napi, int budget)
 	struct net_device *netdev = napi->dev;
 	struct enic *enic = netdev_priv(netdev);
 	unsigned int rq = (napi - &enic->napi[0]);
-	unsigned int cq = enic_cq_rq(enic, rq);
 	unsigned int intr = enic_msix_rq_intr(enic, rq);
 	unsigned int work_to_do = budget;
 	unsigned int work_done = 0;
@@ -1625,7 +1620,7 @@ static int enic_poll_msix_rq(struct napi_struct *napi, int budget)
 	 */
 
 	if (budget > 0)
-		work_done = vnic_cq_service(&enic->cq[cq],
+		work_done = vnic_cq_service(&enic->qp[rq].cqr,
 			work_to_do, enic_rq_service, NULL);
 
 	/* Return intr event credits for this polling
@@ -1824,7 +1819,7 @@ static void enic_set_rx_coal_setting(struct enic *enic)
 
 	/* Start with the value provided by UCSM */
 	for (index = 0; index < enic->rq_count; index++)
-		enic->cq[index].cur_rx_coal_timeval =
+		enic->qp[index].cqr.cur_rx_coal_timeval =
 				enic->config.intr_timer_usec;
 
 	rx_coal->use_adaptive_rx_coalesce = 1;
@@ -1982,12 +1977,14 @@ static int enic_stop(struct net_device *netdev)
 	enic_unset_affinity_hint(enic);
 	enic_free_intr(enic);
 
-	for (i = 0; i < enic->wq_count; i++)
+	for (i = 0; i < enic->wq_count; i++) {
 		vnic_wq_clean(&enic->qp[i].wq, enic_free_wq_buf);
-	for (i = 0; i < enic->rq_count; i++)
+		vnic_cq_clean(&enic->qp[i].cqw);
+	}
+	for (i = 0; i < enic->rq_count; i++) {
 		vnic_rq_clean(&enic->qp[i].rq, enic_free_rq_buf);
-	for (i = 0; i < enic->cq_count; i++)
-		vnic_cq_clean(&enic->cq[i]);
+		vnic_cq_clean(&enic->qp[i].cqr);
+	}
 	for (i = 0; i < enic->intr_count; i++)
 		vnic_intr_clean(&enic->intr[i]);
 
@@ -2045,7 +2042,7 @@ static void enic_change_mtu_work(struct work_struct *work)
 		return;
 	}
 	vnic_rq_clean(&enic->qp[0].rq, enic_free_rq_buf);
-	vnic_cq_clean(&enic->cq[0]);
+	vnic_cq_clean(&enic->qp[0].cqr);
 	vnic_intr_clean(&enic->intr[0]);
 
 	/* Fill RQ with new_mtu-sized buffers */

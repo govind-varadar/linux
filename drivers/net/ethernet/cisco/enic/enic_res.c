@@ -183,12 +183,14 @@ void enic_free_vnic_resources(struct enic *enic)
 {
 	unsigned int i;
 
-	for (i = 0; i < enic->wq_count; i++)
+	for (i = 0; i < enic->wq_count; i++) {
 		vnic_wq_free(&enic->qp[i].wq);
-	for (i = 0; i < enic->rq_count; i++)
+		vnic_cq_free(&enic->qp[i].cqw);
+	}
+	for (i = 0; i < enic->rq_count; i++) {
 		vnic_rq_free(&enic->qp[i].rq);
-	for (i = 0; i < enic->cq_count; i++)
-		vnic_cq_free(&enic->cq[i]);
+		vnic_cq_free(&enic->qp[i].cqr);
+	}
 	for (i = 0; i < enic->intr_count; i++)
 		vnic_intr_free(&enic->intr[i]);
 }
@@ -261,8 +263,7 @@ void enic_init_vnic_resources(struct enic *enic)
 	 * CQ[0 - n+m-1] point to INTR[0 - n+m-1] for MSI-X
 	 */
 
-	for (i = 0; i < enic->cq_count; i++) {
-
+	for (i = 0; i < enic->rq_count; i++) {
 		switch (intr_mode) {
 		case VNIC_DEV_INTR_MODE_MSIX:
 			interrupt_offset = i;
@@ -272,7 +273,7 @@ void enic_init_vnic_resources(struct enic *enic)
 			break;
 		}
 
-		vnic_cq_init(&enic->cq[i],
+		vnic_cq_init(&enic->qp[i].cqr,
 			0 /* flow_control_enable */,
 			1 /* color_enable */,
 			0 /* cq_head */,
@@ -283,6 +284,30 @@ void enic_init_vnic_resources(struct enic *enic)
 			0 /* cq_message_enable */,
 			interrupt_offset,
 			0 /* cq_message_addr */);
+
+	}
+	for (i = 0; i < enic->wq_count; i++) {
+		switch (intr_mode) {
+		case VNIC_DEV_INTR_MODE_MSIX:
+			interrupt_offset = i;
+			break;
+		default:
+			interrupt_offset = 0;
+			break;
+		}
+
+		vnic_cq_init(&enic->qp[i].cqw,
+			0 /* flow_control_enable */,
+			1 /* color_enable */,
+			0 /* cq_head */,
+			0 /* cq_tail */,
+			1 /* cq_tail_color */,
+			1 /* interrupt_enable */,
+			1 /* cq_entry_enable */,
+			0 /* cq_message_enable */,
+			interrupt_offset + enic->rq_count,
+			0 /* cq_message_addr */);
+
 	}
 
 	/* Init INTR resources
@@ -345,15 +370,19 @@ int enic_alloc_vnic_resources(struct enic *enic)
 			goto err_out_cleanup;
 	}
 
-	for (i = 0; i < enic->cq_count; i++) {
-		if (i < enic->rq_count)
-			err = vnic_cq_alloc(enic->vdev, &enic->cq[i], i,
-				enic->config.rq_desc_count,
-				sizeof(struct cq_enet_rq_desc));
-		else
-			err = vnic_cq_alloc(enic->vdev, &enic->cq[i], i,
-				enic->config.wq_desc_count,
-				sizeof(struct cq_enet_wq_desc));
+	for (i = 0; i < enic->rq_count; i++) {
+		err = vnic_cq_alloc(enic->vdev, &enic->qp[i].cqr, i,
+				    enic->config.rq_desc_count,
+				    sizeof(struct cq_enet_rq_desc));
+		if (err)
+			goto err_out_cleanup;
+	}
+
+	for (i = 0; i < enic->wq_count; i++) {
+		err = vnic_cq_alloc(enic->vdev, &enic->qp[i].cqw,
+				    i + enic->rq_count,
+				    enic->config.rq_desc_count,
+				    sizeof(struct cq_enet_rq_desc));
 		if (err)
 			goto err_out_cleanup;
 	}

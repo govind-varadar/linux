@@ -6,8 +6,10 @@
 
 struct vnic_qp {
 	struct vnic_rq rq;
+	struct vnic_cq cqr;
 
 	struct vnic_wq wq;
+	struct vnic_cq cqw;
 
 	u32 index;
 } ____cacheline_aligned_in_smp;
