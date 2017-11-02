@@ -873,6 +873,9 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
 	      __UNIQUE_ID(min1_), __UNIQUE_ID(min2_),	\
 	      x, y)
 
+#define min3_t(type, x, y, z)				\
+	min_t(type, x, min_t(type, y, z))
+
 /**
  * max_t - return maximum of two values, using the specified type
  * @type: data type to use
