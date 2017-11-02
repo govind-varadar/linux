@@ -1486,18 +1486,19 @@ static int enic_poll(struct napi_struct *napi, int budget)
 {
 	struct net_device *netdev = napi->dev;
 	struct enic *enic = netdev_priv(netdev);
-	unsigned int intr = enic_legacy_io_intr();
-	unsigned int rq_work_to_do = budget;
+	u16 index = (napi - &enic->napi[0]);
+	struct vnic_qp *qp = &enic->qp[index];
+	u16 intr = enic_msix_rq_intr(enic, index);
 	unsigned int wq_work_to_do = ENIC_WQ_NAPI_BUDGET;
 	unsigned int  work_done, rq_work_done = 0, wq_work_done;
 	int err;
 
-	wq_work_done = vnic_cq_service(&enic->qp[0].cqw, wq_work_to_do,
+	wq_work_done = vnic_cq_service(&qp->cqw, wq_work_to_do,
 				       enic_wq_service, NULL);
 
 	if (budget > 0)
-		rq_work_done = vnic_cq_service(&enic->qp[0].cqr,
-			rq_work_to_do, enic_rq_service, NULL);
+		rq_work_done = vnic_cq_service(&qp->cqr, budget,
+					       enic_rq_service, NULL);
 
 	/* Accumulate intr event credits for this polling
 	 * cycle.  An intr event is the completion of a
@@ -1512,19 +1513,19 @@ static int enic_poll(struct napi_struct *napi, int budget)
 			0 /* don't unmask intr */,
 			0 /* don't reset intr timer */);
 
-	err = vnic_rq_fill(&enic->qp[0].rq, enic_rq_alloc_buf);
+	err = vnic_rq_fill(&qp->rq, enic_rq_alloc_buf);
 
 	/* Buffer allocation failed. Stay in polling
 	 * mode so we can try to fill the ring again.
 	 */
 
 	if (err)
-		rq_work_done = rq_work_to_do;
+		rq_work_done = budget;
 	if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
 		/* Call the function which refreshes the intr coalescing timer
 		 * value based on the traffic.
 		 */
-		enic_calc_int_moderation(enic, &enic->qp[0].rq);
+		enic_calc_int_moderation(enic, &qp->rq);
 
 	if ((rq_work_done < budget) && napi_complete_done(napi, rq_work_done)) {
 
@@ -1533,7 +1534,7 @@ static int enic_poll(struct napi_struct *napi, int budget)
 		 */
 
 		if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
-			enic_set_int_moderation(enic, &enic->qp[0].rq);
+			enic_set_int_moderation(enic, &qp->rq);
 		vnic_intr_unmask(&enic->intr[intr]);
 	}
 
