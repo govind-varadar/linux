@@ -5,6 +5,8 @@
 #include "vnic_cq.h"
 
 struct vnic_qp {
+	struct vnic_rq rq;
+
 	struct vnic_wq wq;
 
 	u32 index;
