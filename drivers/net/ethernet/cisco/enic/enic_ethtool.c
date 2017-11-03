@@ -98,7 +98,7 @@ static void enic_intr_coal_set_rx(struct enic *enic, u32 timer)
 	int i;
 	int intr;
 
-	for (i = 0; i < enic->rq_count; i++) {
+	for (i = 0; i < enic->qp_count; i++) {
 		intr = enic_msix_rq_intr(enic, i);
 		vnic_intr_coalescing_timer_set(&enic->intr[intr], timer);
 	}
@@ -390,7 +390,7 @@ static int enic_set_coalesce(struct net_device *netdev,
 				       coalesce_usecs_max);
 
 	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX) {
-		for (i = 0; i < enic->wq_count; i++) {
+		for (i = 0; i < enic->qp_count; i++) {
 			intr = enic_msix_wq_intr(enic, i);
 			vnic_intr_coalescing_timer_set(&enic->intr[intr],
 						       tx_coalesce_usecs);
@@ -482,7 +482,7 @@ static int enic_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
 
 	switch (cmd->cmd) {
 	case ETHTOOL_GRXRINGS:
-		cmd->data = enic->rq_count;
+		cmd->data = enic->qp_count;
 		break;
 	case ETHTOOL_GRXCLSRLCNT:
 		spin_lock_bh(&enic->rfs_h.lock);

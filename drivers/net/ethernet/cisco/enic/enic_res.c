@@ -183,11 +183,9 @@ void enic_free_vnic_resources(struct enic *enic)
 {
 	unsigned int i;
 
-	for (i = 0; i < enic->wq_count; i++) {
+	for (i = 0; i < enic->qp_count; i++) {
 		vnic_wq_free(&enic->qp[i].wq);
 		vnic_cq_free(&enic->qp[i].cqw);
-	}
-	for (i = 0; i < enic->rq_count; i++) {
 		vnic_rq_free(&enic->qp[i].rq);
 		vnic_cq_free(&enic->qp[i].cqr);
 	}
@@ -197,15 +195,17 @@ void enic_free_vnic_resources(struct enic *enic)
 
 void enic_get_res_counts(struct enic *enic)
 {
-	enic->wq_count = vnic_dev_get_res_count(enic->vdev, RES_TYPE_WQ);
-	enic->rq_count = vnic_dev_get_res_count(enic->vdev, RES_TYPE_RQ);
+	u16 wq_count = vnic_dev_get_res_count(enic->vdev, RES_TYPE_WQ);
+	u16 rq_count = vnic_dev_get_res_count(enic->vdev, RES_TYPE_RQ);
+
+	enic->qp_count = min(wq_count, rq_count);
 	enic->cq_count = vnic_dev_get_res_count(enic->vdev, RES_TYPE_CQ);
 	enic->intr_count = vnic_dev_get_res_count(enic->vdev,
 		RES_TYPE_INTR_CTRL);
 
 	dev_info(enic_get_dev(enic),
 		"vNIC resources avail: wq %d rq %d cq %d intr %d\n",
-		enic->wq_count, enic->rq_count,
+		wq_count, rq_count,
 		enic->cq_count, enic->intr_count);
 }
 
@@ -241,16 +241,13 @@ void enic_init_vnic_resources(struct enic *enic)
 		break;
 	}
 
-	for (i = 0; i < enic->rq_count; i++) {
+	for (i = 0; i < enic->qp_count; i++) {
 		cq_index = i;
 		vnic_rq_init(&enic->qp[i].rq,
 			cq_index,
 			error_interrupt_enable,
 			error_interrupt_offset);
-	}
-
-	for (i = 0; i < enic->wq_count; i++) {
-		cq_index = enic->rq_count + i;
+		cq_index = enic->qp_count + i;
 		vnic_wq_init(&enic->qp[i].wq,
 			cq_index,
 			error_interrupt_enable,
@@ -263,7 +260,7 @@ void enic_init_vnic_resources(struct enic *enic)
 	 * CQ[0 - n+m-1] point to INTR[0 - n+m-1] for MSI-X
 	 */
 
-	for (i = 0; i < enic->rq_count; i++) {
+	for (i = 0; i < enic->qp_count; i++) {
 		switch (intr_mode) {
 		case VNIC_DEV_INTR_MODE_MSIX:
 			interrupt_offset = i;
@@ -284,18 +281,6 @@ void enic_init_vnic_resources(struct enic *enic)
 			0 /* cq_message_enable */,
 			interrupt_offset,
 			0 /* cq_message_addr */);
-
-	}
-	for (i = 0; i < enic->wq_count; i++) {
-		switch (intr_mode) {
-		case VNIC_DEV_INTR_MODE_MSIX:
-			interrupt_offset = i;
-			break;
-		default:
-			interrupt_offset = 0;
-			break;
-		}
-
 		vnic_cq_init(&enic->qp[i].cqw,
 			0 /* flow_control_enable */,
 			1 /* color_enable */,
@@ -305,7 +290,7 @@ void enic_init_vnic_resources(struct enic *enic)
 			1 /* interrupt_enable */,
 			1 /* cq_entry_enable */,
 			0 /* cq_message_enable */,
-			interrupt_offset + enic->rq_count,
+			interrupt_offset,
 			0 /* cq_message_addr */);
 
 	}
@@ -344,7 +329,7 @@ int enic_alloc_vnic_resources(struct enic *enic)
 
 	dev_info(enic_get_dev(enic), "vNIC resources used:  "
 		"wq %d rq %d cq %d intr %d intr mode %s\n",
-		enic->wq_count, enic->rq_count,
+		enic->qp_count, enic->qp_count,
 		enic->cq_count, enic->intr_count,
 		intr_mode == VNIC_DEV_INTR_MODE_INTX ? "legacy PCI INTx" :
 		intr_mode == VNIC_DEV_INTR_MODE_MSI ? "MSI" :
@@ -354,15 +339,13 @@ int enic_alloc_vnic_resources(struct enic *enic)
 	/* Allocate queue resources
 	 */
 
-	for (i = 0; i < enic->wq_count; i++) {
+	for (i = 0; i < enic->qp_count; i++) {
 		err = vnic_wq_alloc(enic->vdev, &enic->qp[i].wq, i,
 			enic->config.wq_desc_count,
 			sizeof(struct wq_enet_desc));
 		if (err)
 			goto err_out_cleanup;
-	}
 
-	for (i = 0; i < enic->rq_count; i++) {
 		err = vnic_rq_alloc(enic->vdev, &enic->qp[i].rq, i,
 			enic->config.rq_desc_count,
 			sizeof(struct rq_enet_desc));
@@ -370,17 +353,14 @@ int enic_alloc_vnic_resources(struct enic *enic)
 			goto err_out_cleanup;
 	}
 
-	for (i = 0; i < enic->rq_count; i++) {
+	for (i = 0; i < enic->qp_count; i++) {
 		err = vnic_cq_alloc(enic->vdev, &enic->qp[i].cqr, i,
 				    enic->config.rq_desc_count,
 				    sizeof(struct cq_enet_rq_desc));
 		if (err)
 			goto err_out_cleanup;
-	}
-
-	for (i = 0; i < enic->wq_count; i++) {
 		err = vnic_cq_alloc(enic->vdev, &enic->qp[i].cqw,
-				    i + enic->rq_count,
+				    i + enic->qp_count,
 				    enic->config.rq_desc_count,
 				    sizeof(struct cq_enet_rq_desc));
 		if (err)

@@ -41,9 +41,9 @@
 
 #define ENIC_WQ_MAX		8
 #define ENIC_RQ_MAX		8
-#define ENIC_QP_MAX		8
-#define ENIC_CQ_MAX		(ENIC_WQ_MAX + ENIC_RQ_MAX)
-#define ENIC_INTR_MAX		(ENIC_CQ_MAX + 2)
+#define ENIC_QP_MAX		256
+#define ENIC_CQ_MAX		(ENIC_QP_MAX << 1)
+#define ENIC_INTR_MAX		(ENIC_QP_MAX + 2)
 
 #define ENIC_WQ_NAPI_BUDGET	256
 
@@ -174,17 +174,16 @@ struct enic {
 	spinlock_t enic_api_lock;
 	struct enic_port_profile *pp;
 
+	u16 qp_count;
 	/* QP cache line section */
 	____cacheline_aligned struct vnic_qp qp[ENIC_QP_MAX];
-	unsigned int wq_count;
 	u16 loop_enable;
 	u16 loop_tag;
 
-	unsigned int rq_count;
 	struct vxlan_offload vxlan;
 	u64 rq_truncated_pkts;
 	u64 rq_bad_fcs;
-	struct napi_struct napi[ENIC_RQ_MAX + ENIC_WQ_MAX];
+	struct napi_struct napi[ENIC_QP_MAX];
 
 	/* interrupt resource cache line section */
 	____cacheline_aligned struct vnic_intr intr[ENIC_INTR_MAX];
@@ -226,15 +225,6 @@ static inline struct device *enic_get_dev(struct enic *enic)
 	return &(enic->pdev->dev);
 }
 
-static inline unsigned int enic_cq_rq(struct enic *enic, unsigned int rq)
-{
-	return rq;
-}
-
-static inline unsigned int enic_cq_wq(struct enic *enic, unsigned int wq)
-{
-	return enic->rq_count + wq;
-}
 
 static inline unsigned int enic_legacy_io_intr(void)
 {
@@ -265,12 +255,12 @@ static inline unsigned int enic_msix_wq_intr(struct enic *enic,
 
 static inline unsigned int enic_msix_err_intr(struct enic *enic)
 {
-	return enic->rq_count + enic->wq_count;
+	return enic->qp_count;
 }
 
 static inline unsigned int enic_msix_notify_intr(struct enic *enic)
 {
-	return enic->rq_count + enic->wq_count + 1;
+	return enic_msix_err_intr(enic) + 1;
 }
 
 static inline bool enic_is_err_intr(struct enic *enic, int intr)
