@@ -476,7 +476,7 @@ static irqreturn_t enic_isr_legacy(int irq, void *data)
 	}
 
 	if (ENIC_TEST_INTR(pba, io_intr))
-		napi_schedule_irqoff(&enic->napi[0]);
+		napi_schedule_irqoff(&enic->qp[0].napi);
 	else
 		vnic_intr_unmask(&enic->intr[io_intr]);
 
@@ -503,7 +503,7 @@ static irqreturn_t enic_isr_msi(int irq, void *data)
 	 * writes).
 	 */
 
-	napi_schedule_irqoff(&enic->napi[0]);
+	napi_schedule_irqoff(&enic->qp[0].napi);
 
 	return IRQ_HANDLED;
 }
@@ -1280,7 +1280,8 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 	struct enic *enic = vnic_dev_priv(rq->vdev);
 	struct net_device *netdev = enic->netdev;
 	struct sk_buff *skb;
-	struct vnic_cq *cq = &enic->qp[rq->index].cqr;
+	struct vnic_qp *qp = &enic->qp[rq->index];
+	struct vnic_cq *cq = &qp->cqr;
 
 	u8 type, color, fcoe_sof, fcoe_eof, rss_type;
 	bool sop, eop, ingress_port, fcoe, csum_not_calc, packet_error;
@@ -1389,11 +1390,11 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 		if (vlan_stripped)
 			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vlan_tci);
 
-		skb_mark_napi_id(skb, &enic->napi[rq->index]);
+		skb_mark_napi_id(skb, &qp->napi);
 		if (!(netdev->features & NETIF_F_GRO))
 			netif_receive_skb(skb);
 		else
-			napi_gro_receive(&enic->napi[q_number], skb);
+			napi_gro_receive(&qp->napi, skb);
 		if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
 			enic_intr_update_pkt_size(&cq->pkt_size_counter,
 						  bytes_written);
@@ -1483,8 +1484,8 @@ static int enic_poll(struct napi_struct *napi, int budget)
 {
 	struct net_device *netdev = napi->dev;
 	struct enic *enic = netdev_priv(netdev);
-	u16 index = (napi - &enic->napi[0]);
-	struct vnic_qp *qp = &enic->qp[index];
+	struct vnic_qp *qp = container_of(napi, struct vnic_qp, napi);
+	u16 index = qp->rq.index;
 	u16 intr = enic_msix_rq_intr(enic, index);
 	unsigned int wq_work_to_do = ENIC_WQ_NAPI_BUDGET;
 	unsigned int  work_done, rq_work_done = 0, wq_work_done;
@@ -1638,7 +1639,7 @@ static int enic_request_intr(struct enic *enic)
 				sizeof(enic->msix[i].devname),
 				"%s-qp-%u", netdev->name, i);
 			enic->msix[i].isr = enic_isr_msix;
-			enic->msix[i].devid = &enic->napi[i];
+			enic->msix[i].devid = &enic->qp[i].napi;
 		}
 
 		intr = enic_msix_err_intr(enic);
@@ -1807,7 +1808,7 @@ static int enic_open(struct net_device *netdev)
 	netif_tx_wake_all_queues(netdev);
 
 	for (i = 0; i < enic->qp_count; i++)
-		napi_enable(&enic->napi[i]);
+		napi_enable(&enic->qp[i].napi);
 
 	enic_dev_enable(enic);
 
@@ -1850,7 +1851,7 @@ static int enic_stop(struct net_device *netdev)
 	enic_dev_disable(enic);
 
 	for (i = 0; i < enic->qp_count; i++)
-		napi_disable(&enic->napi[i]);
+		napi_disable(&enic->qp[i].napi);
 
 	netif_carrier_off(netdev);
 	netif_tx_disable(netdev);
@@ -1923,7 +1924,7 @@ static void enic_change_mtu_work(struct work_struct *work)
 	del_timer_sync(&enic->notify_timer);
 
 	for (i = 0; i < enic->qp_count; i++)
-		napi_disable(&enic->napi[i]);
+		napi_disable(&enic->qp[i].napi);
 
 	vnic_intr_mask(&enic->intr[0]);
 	enic_synchronize_irqs(enic);
@@ -1949,7 +1950,7 @@ static void enic_change_mtu_work(struct work_struct *work)
 
 	/* Start RQ */
 	vnic_rq_enable(&enic->qp[0].rq);
-	napi_enable(&enic->napi[0]);
+	napi_enable(&enic->qp[0].napi);
 	vnic_intr_unmask(&enic->intr[0]);
 	enic_notify_timer_start(enic);
 
@@ -1969,7 +1970,7 @@ static void enic_poll_controller(struct net_device *netdev)
 	case VNIC_DEV_INTR_MODE_MSIX:
 		for (i = 0; i < enic->qp_count; i++) {
 			enic_isr_msix(enic->msix_entry[i].vector,
-				      &enic->napi[i]);
+				      &enic->qp[i].napi);
 		}
 
 		break;
@@ -2379,8 +2380,8 @@ static void enic_dev_deinit(struct enic *enic)
 	unsigned int i;
 
 	for (i = 0; i < enic->qp_count; i++) {
-		napi_hash_del(&enic->napi[i]);
-		netif_napi_del(&enic->napi[i]);
+		napi_hash_del(&enic->qp[i].napi);
+		netif_napi_del(&enic->qp[i].napi);
 	}
 
 	enic_free_vnic_resources(enic);
@@ -2462,11 +2463,11 @@ static int enic_dev_init(struct enic *enic)
 
 	switch (vnic_dev_get_intr_mode(enic->vdev)) {
 	default:
-		netif_napi_add(netdev, &enic->napi[0], enic_poll, 64);
+		netif_napi_add(netdev, &enic->qp[0].napi, enic_poll, 64);
 		break;
 	case VNIC_DEV_INTR_MODE_MSIX:
 		for (i = 0; i < enic->qp_count; i++) {
-			netif_napi_add(netdev, &enic->napi[i],
+			netif_napi_add(netdev, &enic->qp[i].napi,
 				enic_poll, NAPI_POLL_WEIGHT);
 		}
 		break;

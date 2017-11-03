@@ -11,6 +11,7 @@ struct vnic_qp {
 	struct vnic_wq wq;
 	struct vnic_cq cqw;
 
+	struct napi_struct napi;
 	u32 index;
 } ____cacheline_aligned_in_smp;
 
