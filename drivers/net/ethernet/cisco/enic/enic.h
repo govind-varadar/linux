@@ -49,14 +49,6 @@
 
 #define ENIC_AIC_LARGE_PKT_DIFF	3
 
-struct enic_msix_entry {
-	int requested;
-	char devname[IFNAMSIZ + 8];
-	irqreturn_t (*isr)(int, void *);
-	void *devid;
-	cpumask_var_t affinity_mask;
-};
-
 /* Store only the lower range.  Higher range is given by fw. */
 struct enic_intr_mod_range {
 	u32 small_pkt_range_start;
@@ -156,7 +148,6 @@ struct enic {
 	struct work_struct tx_hang_reset;
 	struct work_struct change_mtu_work;
 	struct msix_entry msix_entry[ENIC_INTR_MAX];
-	struct enic_msix_entry msix[ENIC_INTR_MAX];
 	u32 msg_enable;
 	spinlock_t devcmd_lock;
 	u8 mac_addr[ETH_ALEN];
@@ -176,7 +167,7 @@ struct enic {
 
 	u16 qp_count;
 	/* QP cache line section */
-	____cacheline_aligned struct vnic_qp qp[ENIC_QP_MAX];
+	____cacheline_aligned struct vnic_qp qp[ENIC_INTR_MAX];
 	u16 loop_enable;
 	u16 loop_tag;
 
@@ -185,7 +176,6 @@ struct enic {
 	u64 rq_bad_fcs;
 
 	/* interrupt resource cache line section */
-	____cacheline_aligned struct vnic_intr intr[ENIC_INTR_MAX];
 	unsigned int intr_count;
 	u32 __iomem *legacy_pba;		/* memory-mapped */
 

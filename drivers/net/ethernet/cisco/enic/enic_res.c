@@ -190,7 +190,7 @@ void enic_free_vnic_resources(struct enic *enic)
 		vnic_cq_free(&enic->qp[i].cqr);
 	}
 	for (i = 0; i < enic->intr_count; i++)
-		vnic_intr_free(&enic->intr[i]);
+		enic->qp[i].intr_ctrl = NULL;
 }
 
 void enic_get_res_counts(struct enic *enic)
@@ -311,8 +311,8 @@ void enic_init_vnic_resources(struct enic *enic)
 		break;
 	}
 
-	for (i = 0; i < enic->intr_count; i++) {
-		vnic_intr_init(&enic->intr[i],
+	for (i = 0; i < (enic->qp_count + 2); i++) {
+		vnic_intr_init(enic->vdev, enic->qp[i].intr_ctrl,
 			enic->config.intr_timer_usec,
 			enic->config.intr_timer_type,
 			mask_on_assertion);
@@ -368,7 +368,7 @@ int enic_alloc_vnic_resources(struct enic *enic)
 	}
 
 	for (i = 0; i < enic->intr_count; i++) {
-		err = vnic_intr_alloc(enic->vdev, &enic->intr[i], i);
+		err = vnic_intr_alloc(enic->vdev, &enic->qp[i].intr_ctrl, i);
 		if (err)
 			goto err_out_cleanup;
 	}

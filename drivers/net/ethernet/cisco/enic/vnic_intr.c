@@ -27,19 +27,11 @@
 #include "vnic_intr.h"
 #include "enic.h"
 
-void vnic_intr_free(struct vnic_intr *intr)
-{
-	intr->ctrl = NULL;
-}
-
-int vnic_intr_alloc(struct vnic_dev *vdev, struct vnic_intr *intr,
+int vnic_intr_alloc(struct vnic_dev *vdev, struct vnic_intr_ctrl **ctrl,
 	unsigned int index)
 {
-	intr->index = index;
-	intr->vdev = vdev;
-
-	intr->ctrl = vnic_dev_get_res(vdev, RES_TYPE_INTR_CTRL, index);
-	if (!intr->ctrl) {
+	*ctrl = vnic_dev_get_res(vdev, RES_TYPE_INTR_CTRL, index);
+	if (!*ctrl) {
 		vdev_err(vdev, "Failed to hook INTR[%d].ctrl resource\n",
 			 index);
 		return -EINVAL;
@@ -48,23 +40,25 @@ int vnic_intr_alloc(struct vnic_dev *vdev, struct vnic_intr *intr,
 	return 0;
 }
 
-void vnic_intr_init(struct vnic_intr *intr, u32 coalescing_timer,
-	unsigned int coalescing_type, unsigned int mask_on_assertion)
+void vnic_intr_init(struct vnic_dev *vdev, struct vnic_intr_ctrl *ctrl,
+		    u32 coalescing_timer, unsigned int coalescing_type,
+		    unsigned int mask_on_assertion)
 {
-	vnic_intr_coalescing_timer_set(intr, coalescing_timer);
-	iowrite32(coalescing_type, &intr->ctrl->coalescing_type);
-	iowrite32(mask_on_assertion, &intr->ctrl->mask_on_assertion);
-	iowrite32(0, &intr->ctrl->int_credits);
+	vnic_intr_coalescing_timer_set(vdev, ctrl, coalescing_timer);
+	iowrite32(coalescing_type, &ctrl->coalescing_type);
+	iowrite32(mask_on_assertion, &ctrl->mask_on_assertion);
+	iowrite32(0, &ctrl->int_credits);
 }
 
-void vnic_intr_coalescing_timer_set(struct vnic_intr *intr,
-	u32 coalescing_timer)
+void vnic_intr_coalescing_timer_set(struct vnic_dev *vdev,
+				    struct vnic_intr_ctrl *ctrl,
+				    u32 coalescing_timer)
 {
-	iowrite32(vnic_dev_intr_coal_timer_usec_to_hw(intr->vdev,
-		coalescing_timer), &intr->ctrl->coalescing_timer);
+	iowrite32(vnic_dev_intr_coal_timer_usec_to_hw(vdev,
+		coalescing_timer), &ctrl->coalescing_timer);
 }
 
-void vnic_intr_clean(struct vnic_intr *intr)
+void vnic_intr_clean(struct vnic_intr_ctrl *ctrl)
 {
-	iowrite32(0, &intr->ctrl->int_credits);
+	iowrite32(0, &ctrl->int_credits);
 }

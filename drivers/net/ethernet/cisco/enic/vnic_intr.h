@@ -45,28 +45,22 @@ struct vnic_intr_ctrl {
 	u32 pad6;
 };
 
-struct vnic_intr {
-	unsigned int index;
-	struct vnic_dev *vdev;
-	struct vnic_intr_ctrl __iomem *ctrl;		/* memory-mapped */
-};
-
-static inline void vnic_intr_unmask(struct vnic_intr *intr)
+static inline void vnic_intr_unmask(struct vnic_intr_ctrl *ctrl)
 {
-	iowrite32(0, &intr->ctrl->mask);
+	iowrite32(0, &ctrl->mask);
 }
 
-static inline void vnic_intr_mask(struct vnic_intr *intr)
+static inline void vnic_intr_mask(struct vnic_intr_ctrl *ctrl)
 {
-	iowrite32(1, &intr->ctrl->mask);
+	iowrite32(1, &ctrl->mask);
 }
 
-static inline int vnic_intr_masked(struct vnic_intr *intr)
+static inline int vnic_intr_masked(struct vnic_intr_ctrl *ctrl)
 {
-	return ioread32(&intr->ctrl->mask);
+	return ioread32(&ctrl->mask);
 }
 
-static inline void vnic_intr_return_credits(struct vnic_intr *intr,
+static inline void vnic_intr_return_credits(struct vnic_intr_ctrl *ctrl,
 	unsigned int credits, int unmask, int reset_timer)
 {
 #define VNIC_INTR_UNMASK_SHIFT		16
@@ -76,21 +70,21 @@ static inline void vnic_intr_return_credits(struct vnic_intr *intr,
 		(unmask ? (1 << VNIC_INTR_UNMASK_SHIFT) : 0) |
 		(reset_timer ? (1 << VNIC_INTR_RESET_TIMER_SHIFT) : 0);
 
-	iowrite32(int_credit_return, &intr->ctrl->int_credit_return);
+	iowrite32(int_credit_return, &ctrl->int_credit_return);
 }
 
-static inline unsigned int vnic_intr_credits(struct vnic_intr *intr)
+static inline unsigned int vnic_intr_credits(struct vnic_intr_ctrl *ctrl)
 {
-	return ioread32(&intr->ctrl->int_credits);
+	return ioread32(&ctrl->int_credits);
 }
 
-static inline void vnic_intr_return_all_credits(struct vnic_intr *intr)
+static inline void vnic_intr_return_all_credits(struct vnic_intr_ctrl *ctrl)
 {
-	unsigned int credits = vnic_intr_credits(intr);
+	unsigned int credits = vnic_intr_credits(ctrl);
 	int unmask = 1;
 	int reset_timer = 1;
 
-	vnic_intr_return_credits(intr, credits, unmask, reset_timer);
+	vnic_intr_return_credits(ctrl, credits, unmask, reset_timer);
 }
 
 static inline u32 vnic_intr_legacy_pba(u32 __iomem *legacy_pba)
@@ -99,13 +93,14 @@ static inline u32 vnic_intr_legacy_pba(u32 __iomem *legacy_pba)
 	return ioread32(legacy_pba);
 }
 
-void vnic_intr_free(struct vnic_intr *intr);
-int vnic_intr_alloc(struct vnic_dev *vdev, struct vnic_intr *intr,
+int vnic_intr_alloc(struct vnic_dev *vdev, struct vnic_intr_ctrl **ctrl,
 	unsigned int index);
-void vnic_intr_init(struct vnic_intr *intr, u32 coalescing_timer,
-	unsigned int coalescing_type, unsigned int mask_on_assertion);
-void vnic_intr_coalescing_timer_set(struct vnic_intr *intr,
-	u32 coalescing_timer);
-void vnic_intr_clean(struct vnic_intr *intr);
+void vnic_intr_init(struct vnic_dev *vdev, struct vnic_intr_ctrl *ctrl,
+		    u32 coalescing_timer, unsigned int coalescing_type,
+		    unsigned int mask_on_assertion);
+void vnic_intr_coalescing_timer_set(struct vnic_dev *vdev,
+				    struct vnic_intr_ctrl *ctrl,
+				    u32 coalescing_timer);
+void vnic_intr_clean(struct vnic_intr_ctrl *ctrl);
 
 #endif /* _VNIC_INTR_H_ */

@@ -117,15 +117,14 @@ static void enic_init_affinity_hint(struct enic *enic)
 	int numa_node = dev_to_node(&enic->pdev->dev);
 	int i;
 
-	for (i = 0; i < enic->intr_count; i++) {
-		if (enic_is_err_intr(enic, i) || enic_is_notify_intr(enic, i) ||
-		    (enic->msix[i].affinity_mask &&
-		     !cpumask_empty(enic->msix[i].affinity_mask)))
+	for (i = 0; i < enic->qp_count; i++) {
+		if ((enic->qp[i].msix.affinity_mask &&
+		     !cpumask_empty(enic->qp[i].msix.affinity_mask)))
 			continue;
-		if (zalloc_cpumask_var(&enic->msix[i].affinity_mask,
+		if (zalloc_cpumask_var(&enic->qp[i].msix.affinity_mask,
 				       GFP_KERNEL))
 			cpumask_set_cpu(cpumask_local_spread(i, numa_node),
-					enic->msix[i].affinity_mask);
+					enic->qp[i].msix.affinity_mask);
 	}
 }
 
@@ -133,10 +132,8 @@ static void enic_free_affinity_hint(struct enic *enic)
 {
 	int i;
 
-	for (i = 0; i < enic->intr_count; i++) {
-		if (enic_is_err_intr(enic, i) || enic_is_notify_intr(enic, i))
-			continue;
-		free_cpumask_var(enic->msix[i].affinity_mask);
+	for (i = 0; i < enic->qp_count; i++) {
+		free_cpumask_var(enic->qp[i].msix.affinity_mask);
 	}
 }
 
@@ -145,35 +142,29 @@ static void enic_set_affinity_hint(struct enic *enic)
 	int i;
 	int err;
 
-	for (i = 0; i < enic->intr_count; i++) {
-		if (enic_is_err_intr(enic, i)		||
-		    enic_is_notify_intr(enic, i)	||
-		    !enic->msix[i].affinity_mask	||
-		    cpumask_empty(enic->msix[i].affinity_mask))
+	for (i = 0; i < enic->qp_count; i++) {
+		if (!enic->qp[i].msix.affinity_mask	||
+		    cpumask_empty(enic->qp[i].msix.affinity_mask))
 			continue;
 		err = irq_set_affinity_hint(enic->msix_entry[i].vector,
-					    enic->msix[i].affinity_mask);
+					    enic->qp[i].msix.affinity_mask);
 		if (err)
 			netdev_warn(enic->netdev, "irq_set_affinity_hint failed, err %d\n",
 				    err);
 	}
 
-	for (i = 0; i < enic->qp_count; i++) {
-		int wq_intr = enic_msix_wq_intr(enic, i);
-
-		if (enic->msix[wq_intr].affinity_mask &&
-		    !cpumask_empty(enic->msix[wq_intr].affinity_mask))
+	for (i = 0; i < enic->qp_count; i++)
+		if (enic->qp[i].msix.affinity_mask &&
+		    !cpumask_empty(enic->qp[i].msix.affinity_mask))
 			netif_set_xps_queue(enic->netdev,
-					    enic->msix[wq_intr].affinity_mask,
-					    i);
-	}
+					    enic->qp[i].msix.affinity_mask, i);
 }
 
 static void enic_unset_affinity_hint(struct enic *enic)
 {
 	int i;
 
-	for (i = 0; i < enic->intr_count; i++)
+	for (i = 0; i < enic->qp_count; i++)
 		irq_set_affinity_hint(enic->msix_entry[i].vector, NULL);
 }
 
@@ -454,21 +445,21 @@ static irqreturn_t enic_isr_legacy(int irq, void *data)
 	unsigned int notify_intr = enic_legacy_notify_intr();
 	u32 pba;
 
-	vnic_intr_mask(&enic->intr[io_intr]);
+	vnic_intr_mask(enic->qp[io_intr].intr_ctrl);
 
 	pba = vnic_intr_legacy_pba(enic->legacy_pba);
 	if (!pba) {
-		vnic_intr_unmask(&enic->intr[io_intr]);
+		vnic_intr_unmask(enic->qp[io_intr].intr_ctrl);
 		return IRQ_NONE;	/* not our interrupt */
 	}
 
 	if (ENIC_TEST_INTR(pba, notify_intr)) {
 		enic_notify_check(enic);
-		vnic_intr_return_all_credits(&enic->intr[notify_intr]);
+		vnic_intr_return_all_credits(enic->qp[notify_intr].intr_ctrl);
 	}
 
 	if (ENIC_TEST_INTR(pba, err_intr)) {
-		vnic_intr_return_all_credits(&enic->intr[err_intr]);
+		vnic_intr_return_all_credits(enic->qp[err_intr].intr_ctrl);
 		enic_log_q_error(enic);
 		/* schedule recovery from WQ/RQ error */
 		schedule_work(&enic->reset);
@@ -478,7 +469,7 @@ static irqreturn_t enic_isr_legacy(int irq, void *data)
 	if (ENIC_TEST_INTR(pba, io_intr))
 		napi_schedule_irqoff(&enic->qp[0].napi);
 	else
-		vnic_intr_unmask(&enic->intr[io_intr]);
+		vnic_intr_unmask(enic->qp[io_intr].intr_ctrl);
 
 	return IRQ_HANDLED;
 }
@@ -522,7 +513,7 @@ static irqreturn_t enic_isr_msix_err(int irq, void *data)
 	struct enic *enic = data;
 	unsigned int intr = enic_msix_err_intr(enic);
 
-	vnic_intr_return_all_credits(&enic->intr[intr]);
+	vnic_intr_return_all_credits(enic->qp[intr].intr_ctrl);
 
 	if (enic_log_q_error(enic))
 		/* schedule recovery from WQ/RQ error */
@@ -537,7 +528,7 @@ static irqreturn_t enic_isr_msix_notify(int irq, void *data)
 	unsigned int intr = enic_msix_notify_intr(enic);
 
 	enic_notify_check(enic);
-	vnic_intr_return_all_credits(&enic->intr[intr]);
+	vnic_intr_return_all_credits(enic->qp[intr].intr_ctrl);
 
 	return IRQ_HANDLED;
 }
@@ -1429,7 +1420,8 @@ static void enic_set_int_moderation(struct enic *enic, struct vnic_rq *rq)
 	u32 timer = cq->tobe_rx_coal_timeval;
 
 	if (cq->tobe_rx_coal_timeval != cq->cur_rx_coal_timeval) {
-		vnic_intr_coalescing_timer_set(&enic->intr[intr], timer);
+		vnic_intr_coalescing_timer_set(enic->vdev,
+					       enic->qp[intr].intr_ctrl, timer);
 		cq->cur_rx_coal_timeval = cq->tobe_rx_coal_timeval;
 	}
 }
@@ -1486,7 +1478,6 @@ static int enic_poll(struct napi_struct *napi, int budget)
 	struct enic *enic = netdev_priv(netdev);
 	struct vnic_qp *qp = container_of(napi, struct vnic_qp, napi);
 	u16 index = qp->rq.index;
-	u16 intr = enic_msix_rq_intr(enic, index);
 	unsigned int wq_work_to_do = ENIC_WQ_NAPI_BUDGET;
 	unsigned int  work_done, rq_work_done = 0, wq_work_done;
 	int err;
@@ -1506,7 +1497,7 @@ static int enic_poll(struct napi_struct *napi, int budget)
 	work_done = rq_work_done + wq_work_done;
 
 	if (work_done > 0)
-		vnic_intr_return_credits(&enic->intr[intr],
+		vnic_intr_return_credits(enic->qp[index].intr_ctrl,
 			work_done,
 			0 /* don't unmask intr */,
 			0 /* don't reset intr timer */);
@@ -1533,7 +1524,7 @@ static int enic_poll(struct napi_struct *napi, int budget)
 
 		if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
 			enic_set_int_moderation(enic, &qp->rq);
-		vnic_intr_unmask(&enic->intr[intr]);
+		vnic_intr_unmask(enic->qp[index].intr_ctrl);
 	}
 
 	return rq_work_done;
@@ -1601,10 +1592,10 @@ static void enic_free_intr(struct enic *enic)
 		free_irq(enic->pdev->irq, enic);
 		break;
 	case VNIC_DEV_INTR_MODE_MSIX:
-		for (i = 0; i < ARRAY_SIZE(enic->msix); i++)
-			if (enic->msix[i].requested)
+		for (i = 0; i < (enic->qp_count + 2); i++)
+			if (enic->qp[i].msix.requested)
 				free_irq(enic->msix_entry[i].vector,
-					enic->msix[i].devid);
+					enic->qp[i].msix.devid);
 		break;
 	default:
 		break;
@@ -1635,40 +1626,40 @@ static int enic_request_intr(struct enic *enic)
 	case VNIC_DEV_INTR_MODE_MSIX:
 
 		for (i = 0; i < enic->qp_count; i++) {
-			snprintf(enic->msix[i].devname,
-				sizeof(enic->msix[i].devname),
+			snprintf(enic->qp[i].msix.devname,
+				sizeof(enic->qp[i].msix.devname),
 				"%s-qp-%u", netdev->name, i);
-			enic->msix[i].isr = enic_isr_msix;
-			enic->msix[i].devid = &enic->qp[i].napi;
+			enic->qp[i].msix.isr = enic_isr_msix;
+			enic->qp[i].msix.devid = &enic->qp[i].napi;
 		}
 
 		intr = enic_msix_err_intr(enic);
-		snprintf(enic->msix[intr].devname,
-			sizeof(enic->msix[intr].devname),
+		snprintf(enic->qp[intr].msix.devname,
+			sizeof(enic->qp[intr].msix.devname),
 			"%s-err", netdev->name);
-		enic->msix[intr].isr = enic_isr_msix_err;
-		enic->msix[intr].devid = enic;
+		enic->qp[intr].msix.isr = enic_isr_msix_err;
+		enic->qp[intr].msix.devid = enic;
 
 		intr = enic_msix_notify_intr(enic);
-		snprintf(enic->msix[intr].devname,
-			sizeof(enic->msix[intr].devname),
+		snprintf(enic->qp[intr].msix.devname,
+			sizeof(enic->qp[intr].msix.devname),
 			"%s-notify", netdev->name);
-		enic->msix[intr].isr = enic_isr_msix_notify;
-		enic->msix[intr].devid = enic;
+		enic->qp[intr].msix.isr = enic_isr_msix_notify;
+		enic->qp[intr].msix.devid = enic;
 
-		for (i = 0; i < ARRAY_SIZE(enic->msix); i++)
-			enic->msix[i].requested = 0;
+		for (i = 0; i < (enic->qp_count + 2); i++)
+			enic->qp[i].msix.requested = 0;
 
-		for (i = 0; i < enic->intr_count; i++) {
+		for (i = 0; i < (enic->qp_count + 2); i++) {
 			err = request_irq(enic->msix_entry[i].vector,
-				enic->msix[i].isr, 0,
-				enic->msix[i].devname,
-				enic->msix[i].devid);
+				enic->qp[i].msix.isr, 0,
+				enic->qp[i].msix.devname,
+				enic->qp[i].msix.devid);
 			if (err) {
 				enic_free_intr(enic);
 				break;
 			}
-			enic->msix[i].requested = 1;
+			enic->qp[i].msix.requested = 1;
 		}
 
 		break;
@@ -1690,7 +1681,7 @@ static void enic_synchronize_irqs(struct enic *enic)
 		synchronize_irq(enic->pdev->irq);
 		break;
 	case VNIC_DEV_INTR_MODE_MSIX:
-		for (i = 0; i < enic->intr_count; i++)
+		for (i = 0; i < (enic->qp_count + 2); i++)
 			synchronize_irq(enic->msix_entry[i].vector);
 		break;
 	default:
@@ -1812,8 +1803,8 @@ static int enic_open(struct net_device *netdev)
 
 	enic_dev_enable(enic);
 
-	for (i = 0; i < enic->intr_count; i++)
-		vnic_intr_unmask(&enic->intr[i]);
+	for (i = 0; i < (enic->qp_count + 2); i++)
+		vnic_intr_unmask(enic->qp[i].intr_ctrl);
 
 	enic_notify_timer_start(enic);
 	enic_rfs_flw_tbl_init(enic);
@@ -1838,9 +1829,9 @@ static int enic_stop(struct net_device *netdev)
 	unsigned int i;
 	int err;
 
-	for (i = 0; i < enic->intr_count; i++) {
-		vnic_intr_mask(&enic->intr[i]);
-		(void)vnic_intr_masked(&enic->intr[i]); /* flush write */
+	for (i = 0; i < enic->qp_count + 2; i++) {
+		vnic_intr_mask(enic->qp[i].intr_ctrl);
+		(void)vnic_intr_masked(enic->qp[i].intr_ctrl); /* flush write */
 	}
 
 	enic_synchronize_irqs(enic);
@@ -1878,8 +1869,8 @@ static int enic_stop(struct net_device *netdev)
 		vnic_rq_clean(&enic->qp[i].rq, enic_free_rq_buf);
 		vnic_cq_clean(&enic->qp[i].cqr);
 	}
-	for (i = 0; i < enic->intr_count; i++)
-		vnic_intr_clean(&enic->intr[i]);
+	for (i = 0; i < (enic->qp_count + 2); i++)
+		vnic_intr_clean(enic->qp[i].intr_ctrl);
 
 	return 0;
 }
@@ -1926,7 +1917,7 @@ static void enic_change_mtu_work(struct work_struct *work)
 	for (i = 0; i < enic->qp_count; i++)
 		napi_disable(&enic->qp[i].napi);
 
-	vnic_intr_mask(&enic->intr[0]);
+	vnic_intr_mask(enic->qp[0].intr_ctrl);
 	enic_synchronize_irqs(enic);
 	err = vnic_rq_disable(&enic->qp[0].rq);
 	if (err) {
@@ -1936,7 +1927,7 @@ static void enic_change_mtu_work(struct work_struct *work)
 	}
 	vnic_rq_clean(&enic->qp[0].rq, enic_free_rq_buf);
 	vnic_cq_clean(&enic->qp[0].cqr);
-	vnic_intr_clean(&enic->intr[0]);
+	vnic_intr_clean(enic->qp[0].intr_ctrl);
 
 	/* Fill RQ with new_mtu-sized buffers */
 	netdev->mtu = new_mtu;
@@ -1951,7 +1942,7 @@ static void enic_change_mtu_work(struct work_struct *work)
 	/* Start RQ */
 	vnic_rq_enable(&enic->qp[0].rq);
 	napi_enable(&enic->qp[0].napi);
-	vnic_intr_unmask(&enic->intr[0]);
+	vnic_intr_unmask(enic->qp[0].intr_ctrl);
 	enic_notify_timer_start(enic);
 
 	rtnl_unlock();
@@ -2223,17 +2214,6 @@ static int enic_set_intr_mode(struct enic *enic)
 			        num_online_cpus(), ENIC_QP_MAX);
 	unsigned int i;
 
-	/* Set interrupt mode (INTx, MSI, MSI-X) depending
-	 * on system capabilities.
-	 *
-	 * Try MSI-X first
-	 *
-	 * We need n RQs, m WQs, n+m CQs, and n+m+2 INTRs
-	 * (the second to last INTR is used for WQ/RQ errors)
-	 * (the last INTR is used for notifications)
-	 */
-
-	BUG_ON(ARRAY_SIZE(enic->msix_entry) < n + 2);
 	for (i = 0; i < n + 2; i++)
 		enic->msix_entry[i].entry = i;
 

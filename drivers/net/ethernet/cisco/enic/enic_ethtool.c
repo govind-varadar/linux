@@ -100,7 +100,9 @@ static void enic_intr_coal_set_rx(struct enic *enic, u32 timer)
 
 	for (i = 0; i < enic->qp_count; i++) {
 		intr = enic_msix_rq_intr(enic, i);
-		vnic_intr_coalescing_timer_set(&enic->intr[intr], timer);
+		vnic_intr_coalescing_timer_set(enic->vdev,
+					       enic->qp[intr].intr_ctrl,
+					       timer);
 	}
 }
 
@@ -392,7 +394,8 @@ static int enic_set_coalesce(struct net_device *netdev,
 	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX) {
 		for (i = 0; i < enic->qp_count; i++) {
 			intr = enic_msix_wq_intr(enic, i);
-			vnic_intr_coalescing_timer_set(&enic->intr[intr],
+			vnic_intr_coalescing_timer_set(enic->vdev,
+						       enic->qp[intr].intr_ctrl,
 						       tx_coalesce_usecs);
 		}
 		enic->tx_coalesce_usecs = tx_coalesce_usecs;
