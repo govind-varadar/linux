@@ -147,7 +147,7 @@ struct enic {
 	struct work_struct reset;
 	struct work_struct tx_hang_reset;
 	struct work_struct change_mtu_work;
-	struct msix_entry msix_entry[ENIC_INTR_MAX];
+	struct msix_entry *msix_entry;
 	u32 msg_enable;
 	spinlock_t devcmd_lock;
 	u8 mac_addr[ETH_ALEN];
@@ -167,7 +167,7 @@ struct enic {
 
 	u16 qp_count;
 	/* QP cache line section */
-	____cacheline_aligned struct vnic_qp qp[ENIC_INTR_MAX];
+	____cacheline_aligned struct vnic_qp *qp;
 	u16 loop_enable;
 	u16 loop_tag;
 

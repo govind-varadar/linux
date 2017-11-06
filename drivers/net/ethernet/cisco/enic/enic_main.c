@@ -2214,6 +2214,11 @@ static int enic_set_intr_mode(struct enic *enic)
 			        num_online_cpus(), ENIC_QP_MAX);
 	unsigned int i;
 
+	enic->msix_entry = kzalloc(sizeof(struct msix_entry) * (n + 2),
+				   GFP_KERNEL);
+	if (!enic->msix_entry)
+		return -ENOMEM;
+
 	for (i = 0; i < n + 2; i++)
 		enic->msix_entry[i].entry = i;
 
@@ -2423,6 +2428,11 @@ static int enic_dev_init(struct enic *enic)
 			"counts and system capabilities, aborting\n");
 		return err;
 	}
+
+	enic->qp = kzalloc(sizeof(struct vnic_qp) * (enic->qp_count + 2),
+			   GFP_KERNEL);
+	if (!enic->qp)
+		return -ENOMEM;
 
 	/* Allocate and configure vNIC resources
 	 */
