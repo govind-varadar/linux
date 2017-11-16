@@ -104,7 +104,9 @@ struct virtio_scsi_rescan_req {
 
 struct virtio_scsi_rescan_resp {
 	__virtio32 id;
-	uint8_t wwn[8];
+	__virtio32 transport;
+	uint8_t node_wwn[8];
+	uint8_t port_wwn[8];
 } __attribute__((packed));
 
 struct virtio_scsi_event {

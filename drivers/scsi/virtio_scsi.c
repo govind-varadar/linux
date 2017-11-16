@@ -855,13 +855,17 @@ static void virtscsi_rescan_work(struct work_struct *work)
 
 	wait_for_completion(&comp);
 	if (cmd->resp.rescan.id != -1) {
-		int target_id = cmd->resp.rescan.id;
-
+		int target_id = virtio32_to_cpu(vscsi->vdev,
+						cmd->resp.rescan.id);
+		int transport = virtio32_to_cpu(vscsi->vdev,
+						cmd->resp.rescan.transport);
 		spin_lock_irq(&vscsi->rescan_lock);
 		vscsi->next_target_id = target_id + 1;
 		spin_unlock_irq(&vscsi->rescan_lock);
 		shost_printk(KERN_INFO, sh,
-			     "rescan: scanning target %d\n", target_id);
+			     "rescan: scanning %d target %d (WWN %*phN)\n",
+			     transport, target_id, 8,
+			     cmd->resp.rescan.port_wwn);
 		scsi_scan_target(&sh->shost_gendev, 0, target_id,
 				 SCAN_WILD_CARD, SCSI_SCAN_INITIAL);
 		queue_work(system_freezable_wq, &vscsi->rescan_work);
