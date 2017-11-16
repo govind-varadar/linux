@@ -850,21 +850,23 @@ static void virtscsi_rescan_work(struct work_struct *work)
 
 	ret = virtscsi_kick_cmd(&vscsi->ctrl_vq, cmd, sizeof(cmd->req.rescan),
 				sizeof(cmd->resp.rescan));
-	if (ret < 0)
+	if (ret < 0) {
+		mempool_free(cmd, virtscsi_cmd_pool);
 		goto scan_host;
+	}
 
 	wait_for_completion(&comp);
-	if (cmd->resp.rescan.id != -1) {
-		int target_id = virtio32_to_cpu(vscsi->vdev,
-						cmd->resp.rescan.id);
+	target_id = virtio32_to_cpu(vscsi->vdev, cmd->resp.rescan.id);
+	if (target_id != -1) {
 		int transport = virtio32_to_cpu(vscsi->vdev,
 						cmd->resp.rescan.transport);
 		spin_lock_irq(&vscsi->rescan_lock);
 		vscsi->next_target_id = target_id + 1;
 		spin_unlock_irq(&vscsi->rescan_lock);
 		shost_printk(KERN_INFO, sh,
-			     "rescan: scanning %d target %d (WWN %*phN)\n",
-			     transport, target_id, 8,
+			     "found %s target %d (WWN %*phN)\n",
+			     transport == SCSI_PROTOCOL_FCP ? "FC" : "SAS",
+			     target_id, 8,
 			     cmd->resp.rescan.port_wwn);
 		scsi_scan_target(&sh->shost_gendev, 0, target_id,
 				 SCAN_WILD_CARD, SCSI_SCAN_INITIAL);
@@ -876,6 +878,7 @@ static void virtscsi_rescan_work(struct work_struct *work)
 		vscsi->next_target_id = -1;
 		spin_unlock_irq(&vscsi->rescan_lock);
 	}
+	mempool_free(cmd, virtscsi_cmd_pool);
 	return;
 scan_host:
 	spin_lock_irq(&vscsi->rescan_lock);
@@ -885,10 +888,52 @@ scan_host:
 	scsi_scan_host(sh);
 }
 
+static void virtscsi_scan_host(struct virtio_scsi *vscsi)
+{
+	struct Scsi_Host *sh = virtio_scsi_host(vscsi->vdev);
+	int ret;
+	struct virtio_scsi_cmd *cmd;
+	DECLARE_COMPLETION_ONSTACK(comp);
+
+	cmd = mempool_alloc(virtscsi_cmd_pool, GFP_NOIO);
+	if (!cmd) {
+		shost_printk(KERN_INFO, sh, "rescan: no memory\n");
+		return;
+	}
+	shost_printk(KERN_INFO, sh, "rescan: scan host\n");
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->comp = &comp;
+	cmd->sc = NULL;
+	cmd->req.rescan = (struct virtio_scsi_rescan_req){
+		.type = VIRTIO_SCSI_T_RESCAN,
+		.next_id = cpu_to_virtio32(vscsi->vdev, -1),
+	};
+
+	ret = virtscsi_kick_cmd(&vscsi->ctrl_vq, cmd, sizeof(cmd->req.rescan),
+				sizeof(cmd->resp.rescan));
+	if (ret < 0) {
+		mempool_free(cmd, virtscsi_cmd_pool);
+		return;
+	}
+
+	wait_for_completion(&comp);
+	if (cmd->resp.rescan.id == -1) {
+		int transport = virtio32_to_cpu(vscsi->vdev,
+						cmd->resp.rescan.transport);
+		shost_printk(KERN_INFO, sh,
+			     "%s host wwnn %*phN wwpn %*phN\n",
+			     transport == SCSI_PROTOCOL_FCP ? "FC" : "SAS",
+			     8, cmd->resp.rescan.node_wwn,
+			     8, cmd->resp.rescan.port_wwn);
+	}
+	mempool_free(cmd, virtscsi_cmd_pool);
+}
+
 static void virtscsi_scan_start(struct Scsi_Host *sh)
 {
 	struct virtio_scsi *vscsi = shost_priv(sh);
 
+	virtscsi_scan_host(vscsi);
 	spin_lock_irq(&vscsi->rescan_lock);
 	if (vscsi->next_target_id != -1) {
 		shost_printk(KERN_INFO, sh, "rescan: already running\n");
