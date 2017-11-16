@@ -46,12 +46,14 @@ struct virtio_scsi_cmd {
 		struct virtio_scsi_cmd_req_pi    cmd_pi;
 		struct virtio_scsi_ctrl_tmf_req  tmf;
 		struct virtio_scsi_ctrl_an_req   an;
+		struct virtio_scsi_rescan_req    rescan;
 	} req;
 	union {
 		struct virtio_scsi_cmd_resp      cmd;
 		struct virtio_scsi_ctrl_tmf_resp tmf;
 		struct virtio_scsi_ctrl_an_resp  an;
 		struct virtio_scsi_event         evt;
+		struct virtio_scsi_rescan_resp   rescan;
 	} resp;
 } ____cacheline_aligned_in_smp;
 
@@ -114,6 +116,10 @@ struct virtio_scsi {
 
 	/* Protected by event_vq lock */
 	bool stop_events;
+
+	int next_target_id;
+	struct work_struct rescan_work;
+	spinlock_t rescan_lock;
 
 	struct virtio_scsi_vq ctrl_vq;
 	struct virtio_scsi_vq event_vq;
@@ -318,6 +324,11 @@ static void virtscsi_cancel_event_work(struct virtio_scsi *vscsi)
 
 	for (i = 0; i < VIRTIO_SCSI_EVENT_LEN; i++)
 		cancel_work_sync(&vscsi->event_list[i].work);
+
+	spin_lock_irq(&vscsi->rescan_lock);
+	vscsi->next_target_id = -1;
+	spin_unlock_irq(&vscsi->rescan_lock);
+	cancel_work_sync(&vscsi->rescan_work);
 }
 
 static void virtscsi_handle_transport_reset(struct virtio_scsi *vscsi,
@@ -805,6 +816,104 @@ static enum blk_eh_timer_return virtscsi_eh_timed_out(struct scsi_cmnd *scmnd)
 	return BLK_EH_RESET_TIMER;
 }
 
+static void virtscsi_rescan_work(struct work_struct *work)
+{
+	struct virtio_scsi *vscsi =
+		container_of(work, struct virtio_scsi, rescan_work);
+	struct Scsi_Host *sh = virtio_scsi_host(vscsi->vdev);
+	int target_id, ret;
+	struct virtio_scsi_cmd *cmd;
+	DECLARE_COMPLETION_ONSTACK(comp);
+
+	spin_lock_irq(&vscsi->rescan_lock);
+	target_id = vscsi->next_target_id;
+	if (target_id == -1) {
+		shost_printk(KERN_INFO, sh, "rescan: terminated\n");
+		spin_unlock_irq(&vscsi->rescan_lock);
+		return;
+	}
+	spin_unlock_irq(&vscsi->rescan_lock);
+
+	cmd = mempool_alloc(virtscsi_cmd_pool, GFP_NOIO);
+	if (!cmd) {
+		shost_printk(KERN_INFO, sh, "rescan: no memory\n");
+		goto scan_host;
+	}
+	shost_printk(KERN_INFO, sh, "rescan: next target %d\n", target_id);
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->comp = &comp;
+	cmd->sc = NULL;
+	cmd->req.rescan = (struct virtio_scsi_rescan_req){
+		.type = VIRTIO_SCSI_T_RESCAN,
+		.next_id = cpu_to_virtio32(vscsi->vdev, target_id),
+	};
+
+	ret = virtscsi_kick_cmd(&vscsi->ctrl_vq, cmd, sizeof(cmd->req.rescan),
+				sizeof(cmd->resp.rescan));
+	if (ret < 0)
+		goto scan_host;
+
+	wait_for_completion(&comp);
+	if (cmd->resp.rescan.id != -1) {
+		int target_id = cmd->resp.rescan.id;
+
+		spin_lock_irq(&vscsi->rescan_lock);
+		vscsi->next_target_id = target_id + 1;
+		spin_unlock_irq(&vscsi->rescan_lock);
+		shost_printk(KERN_INFO, sh,
+			     "rescan: scanning target %d\n", target_id);
+		scsi_scan_target(&sh->shost_gendev, 0, target_id,
+				 SCAN_WILD_CARD, SCSI_SCAN_INITIAL);
+		queue_work(system_freezable_wq, &vscsi->rescan_work);
+	} else {
+		shost_printk(KERN_INFO, sh,
+			     "rescan: no more targets\n");
+		spin_lock_irq(&vscsi->rescan_lock);
+		vscsi->next_target_id = -1;
+		spin_unlock_irq(&vscsi->rescan_lock);
+	}
+	return;
+scan_host:
+	spin_lock_irq(&vscsi->rescan_lock);
+	vscsi->next_target_id = -1;
+	spin_unlock_irq(&vscsi->rescan_lock);
+	shost_printk(KERN_INFO, sh, "rescan: scan host\n");
+	scsi_scan_host(sh);
+}
+
+static void virtscsi_scan_start(struct Scsi_Host *sh)
+{
+	struct virtio_scsi *vscsi = shost_priv(sh);
+
+	spin_lock_irq(&vscsi->rescan_lock);
+	if (vscsi->next_target_id != -1) {
+		shost_printk(KERN_INFO, sh, "rescan: already running\n");
+		spin_unlock_irq(&vscsi->rescan_lock);
+		return;
+	}
+	vscsi->next_target_id = 0;
+	shost_printk(KERN_INFO, sh, "rescan: start\n");
+	spin_unlock_irq(&vscsi->rescan_lock);
+	queue_work(system_freezable_wq, &vscsi->rescan_work);
+}
+
+int virtscsi_scan_finished(struct Scsi_Host *sh, unsigned long time)
+{
+	struct virtio_scsi *vscsi = shost_priv(sh);
+	int ret = 1;
+
+	spin_lock_irq(&vscsi->rescan_lock);
+	if (vscsi->next_target_id != -1)
+		ret = 0;
+	spin_unlock_irq(&vscsi->rescan_lock);
+	if (!ret)
+		flush_work(&vscsi->rescan_work);
+
+	shost_printk(KERN_INFO, sh, "rescan: %s finished\n",
+		     ret ? "" : "not");
+	return ret;
+}
+
 static struct scsi_host_template virtscsi_host_template_single = {
 	.module = THIS_MODULE,
 	.name = "Virtio SCSI HBA",
@@ -837,6 +946,51 @@ static struct scsi_host_template virtscsi_host_template_multi = {
 	.eh_device_reset_handler = virtscsi_device_reset,
 	.eh_timed_out = virtscsi_eh_timed_out,
 	.slave_alloc = virtscsi_device_alloc,
+
+	.dma_boundary = UINT_MAX,
+	.use_clustering = ENABLE_CLUSTERING,
+	.target_alloc = virtscsi_target_alloc,
+	.target_destroy = virtscsi_target_destroy,
+	.map_queues = virtscsi_map_queues,
+	.track_queue_depth = 1,
+};
+
+static struct scsi_host_template virtscsi_host_template_single_rescan = {
+	.module = THIS_MODULE,
+	.name = "Virtio SCSI HBA",
+	.proc_name = "virtio_scsi",
+	.this_id = -1,
+	.cmd_size = sizeof(struct virtio_scsi_cmd),
+	.queuecommand = virtscsi_queuecommand_single,
+	.change_queue_depth = virtscsi_change_queue_depth,
+	.eh_abort_handler = virtscsi_abort,
+	.eh_device_reset_handler = virtscsi_device_reset,
+	.eh_timed_out = virtscsi_eh_timed_out,
+	.slave_alloc = virtscsi_device_alloc,
+	.scan_start = virtscsi_scan_start,
+	.scan_finished = virtscsi_scan_finished,
+
+	.dma_boundary = UINT_MAX,
+	.use_clustering = ENABLE_CLUSTERING,
+	.target_alloc = virtscsi_target_alloc,
+	.target_destroy = virtscsi_target_destroy,
+	.track_queue_depth = 1,
+};
+
+static struct scsi_host_template virtscsi_host_template_multi_rescan = {
+	.module = THIS_MODULE,
+	.name = "Virtio SCSI HBA",
+	.proc_name = "virtio_scsi",
+	.this_id = -1,
+	.cmd_size = sizeof(struct virtio_scsi_cmd),
+	.queuecommand = virtscsi_queuecommand_multi,
+	.change_queue_depth = virtscsi_change_queue_depth,
+	.eh_abort_handler = virtscsi_abort,
+	.eh_device_reset_handler = virtscsi_device_reset,
+	.eh_timed_out = virtscsi_eh_timed_out,
+	.slave_alloc = virtscsi_device_alloc,
+	.scan_start = virtscsi_scan_start,
+	.scan_finished = virtscsi_scan_finished,
 
 	.dma_boundary = UINT_MAX,
 	.use_clustering = ENABLE_CLUSTERING,
@@ -898,6 +1052,7 @@ static int virtscsi_init(struct virtio_device *vdev,
 	callbacks[1] = virtscsi_event_done;
 	names[0] = "control";
 	names[1] = "event";
+
 	for (i = VIRTIO_SCSI_VQ_BASE; i < num_vqs; i++) {
 		callbacks[i] = virtscsi_req_done;
 		names[i] = "request";
@@ -949,10 +1104,17 @@ static int virtscsi_probe(struct virtio_device *vdev)
 
 	num_targets = virtscsi_config_get(vdev, max_target) + 1;
 
-	if (num_queues == 1)
-		hostt = &virtscsi_host_template_single;
-	else
-		hostt = &virtscsi_host_template_multi;
+	if (num_queues == 1) {
+		if (virtio_has_feature(vdev, VIRTIO_SCSI_F_RESCAN))
+			hostt = &virtscsi_host_template_single_rescan;
+		else
+			hostt = &virtscsi_host_template_single;
+	} else {
+		if (virtio_has_feature(vdev, VIRTIO_SCSI_F_RESCAN))
+			hostt = &virtscsi_host_template_multi_rescan;
+		else
+			hostt = &virtscsi_host_template_multi;
+	}
 
 	shost = scsi_host_alloc(hostt,
 		sizeof(*vscsi) + sizeof(vscsi->req_vqs[0]) * num_queues);
@@ -965,6 +1127,9 @@ static int virtscsi_probe(struct virtio_device *vdev)
 	vscsi->vdev = vdev;
 	vscsi->num_queues = num_queues;
 	vdev->priv = shost;
+	vscsi->next_target_id = -1;
+	spin_lock_init(&vscsi->rescan_lock);
+	INIT_WORK(&vscsi->rescan_work, virtscsi_rescan_work);
 
 	err = virtscsi_init(vdev, vscsi);
 	if (err)
@@ -1067,6 +1232,7 @@ static unsigned int features[] = {
 #ifdef CONFIG_BLK_DEV_INTEGRITY
 	VIRTIO_SCSI_F_T10_PI,
 #endif
+	VIRTIO_SCSI_F_RESCAN,
 };
 
 static struct virtio_driver virtio_scsi_driver = {

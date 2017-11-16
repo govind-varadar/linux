@@ -96,6 +96,17 @@ struct virtio_scsi_ctrl_an_resp {
 	__u8 response;
 } __attribute__((packed));
 
+/* Target rescan */
+struct virtio_scsi_rescan_req {
+	__virtio32 type;
+	__virtio32 next_id;
+} __attribute__((packed));
+
+struct virtio_scsi_rescan_resp {
+	__virtio32 id;
+	uint8_t wwn[8];
+} __attribute__((packed));
+
 struct virtio_scsi_event {
 	__virtio32 event;
 	__u8 lun[8];
@@ -120,6 +131,7 @@ struct virtio_scsi_config {
 #define VIRTIO_SCSI_F_HOTPLUG                  1
 #define VIRTIO_SCSI_F_CHANGE                   2
 #define VIRTIO_SCSI_F_T10_PI                   3
+#define VIRTIO_SCSI_F_RESCAN                   4
 
 /* Response codes */
 #define VIRTIO_SCSI_S_OK                       0
@@ -140,6 +152,7 @@ struct virtio_scsi_config {
 #define VIRTIO_SCSI_T_TMF                      0
 #define VIRTIO_SCSI_T_AN_QUERY                 1
 #define VIRTIO_SCSI_T_AN_SUBSCRIBE             2
+#define VIRTIO_SCSI_T_RESCAN                   3
 
 /* Valid TMF subtypes.  */
 #define VIRTIO_SCSI_T_TMF_ABORT_TASK           0
