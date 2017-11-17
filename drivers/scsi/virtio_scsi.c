@@ -359,7 +359,7 @@ static void virtscsi_handle_transport_reset(struct virtio_scsi *vscsi,
 	u64 lun;
 
 	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN))
-		lun = get_unaligned_be64(event->lun) >> 8;
+		lun = scsilun_to_int((struct scsi_lun *)event->lun) >> 16;
 	else
 		lun = (event->lun[2] << 8) | event->lun[3];
 	switch (virtio32_to_cpu(vscsi->vdev, event->reason)) {
@@ -392,7 +392,7 @@ static void virtscsi_handle_param_change(struct virtio_scsi *vscsi,
 	u8 ascq = virtio32_to_cpu(vscsi->vdev, event->reason) >> 8;
 
 	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN))
-		lun = get_unaligned_be64(event->lun) >> 8;
+		lun = scsilun_to_int((struct scsi_lun *)event->lun) >> 16;
 	else
 		lun = (event->lun[2] << 8) | event->lun[3];
 	sdev = scsi_device_lookup(shost, 0, target, lun);
@@ -532,11 +532,13 @@ static void virtio_scsi_init_hdr(struct virtio_device *vdev,
 				 int target_id,
 				 struct scsi_cmnd *sc)
 {
-	cmd->lun[0] = 1;
-	cmd->lun[1] = target_id;
-	if (virtio_has_feature(vdev, VIRTIO_SCSI_F_NATIVE_LUN))
-		put_unaligned_be32(sc->device->lun, &cmd->lun[2]);
-	else {
+	if (virtio_has_feature(vdev, VIRTIO_SCSI_F_NATIVE_LUN)) {
+		u64 lun = sc->device->lun << 16;
+		lun |= ((u64)1 << 8) | (u64)target_id;
+		int_to_scsilun(lun, (struct scsi_lun *)&cmd->lun);
+	} else {
+		cmd->lun[0] = 1;
+		cmd->lun[1] = target_id;
 		cmd->lun[2] = (sc->device->lun >> 8) | 0x40;
 		cmd->lun[3] = sc->device->lun & 0xff;
 	}
@@ -641,6 +643,7 @@ static int virtscsi_queuecommand_single(struct Scsi_Host *sh,
 	} else
 		tgt = scsi_target(sc->device)->hostdata;
 	if (!tgt || tgt->removed) {
+		scmd_printk(KERN_INFO, sc, "device removed\n");
 		sc->result = DID_NO_CONNECT << 16;
 		sc->scsi_done(sc);
 		return 0;
@@ -713,6 +716,7 @@ static int virtscsi_queuecommand_multi(struct Scsi_Host *sh,
 	} else
 		tgt = scsi_target(sc->device)->hostdata;
 	if (!tgt || tgt->removed) {
+		scmd_printk(KERN_INFO, sc, "device removed\n");
 		sc->result = DID_NO_CONNECT << 16;
 		sc->scsi_done(sc);
 		return 0;
@@ -788,12 +792,14 @@ static int virtscsi_device_reset(struct scsi_cmnd *sc)
 		.type = VIRTIO_SCSI_T_TMF,
 		.subtype = cpu_to_virtio32(vscsi->vdev,
 					     VIRTIO_SCSI_T_TMF_LOGICAL_UNIT_RESET),
-		.lun[0] = 1,
-		.lun[1] = target_id,
 	};
-	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN))
-		put_unaligned_be32(sc->device->lun, &cmd->req.tmf.lun[2]);
-	else {
+	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN)) {
+		u64 lun = sc->device->lun << 16;
+		lun |= ((u64)1 << 8) | (u64)target_id;
+		int_to_scsilun(lun, (struct scsi_lun *)&cmd->req.tmf.lun);
+	} else {
+		cmd->req.tmf.lun[0] = 1;
+		cmd->req.tmf.lun[1] = target_id;
 		cmd->req.tmf.lun[2] = (sc->device->lun >> 8) | 0x40;
 		cmd->req.tmf.lun[3] = sc->device->lun & 0xff;
 	}
@@ -869,9 +875,13 @@ static int virtscsi_abort(struct scsi_cmnd *sc)
 		.lun[1] = target_id,
 		.tag = cpu_to_virtio64(vscsi->vdev, (unsigned long)sc),
 	};
-	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN))
-		put_unaligned_be32(sc->device->lun, &cmd->req.tmf.lun[2]);
-	else {
+	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN)) {
+		u64 lun = sc->device->lun << 16;
+		lun |= ((u64)1 << 8) | (u64)target_id;
+		int_to_scsilun(lun, (struct scsi_lun *)&cmd->req.tmf.lun);
+	} else {
+		cmd->req.tmf.lun[0] = 1;
+		cmd->req.tmf.lun[1] = target_id;
 		cmd->req.tmf.lun[2] = (sc->device->lun >> 8) | 0x40;
 		cmd->req.tmf.lun[3] = sc->device->lun & 0xff;
 	}
@@ -1011,6 +1021,7 @@ static void virtscsi_rescan_work(struct work_struct *work)
 		goto out;
 	}
 	tgt->target_id = target_id;
+	tgt->removed = false;
 	spin_lock_irq(&vscsi->rescan_lock);
 	vscsi->next_target_id = target_id + 1;
 	list_for_each_entry(tmp, &vscsi->target_list, list) {
@@ -1045,7 +1056,6 @@ static void virtscsi_rescan_work(struct work_struct *work)
 			tgt = NULL;
 		}
 	} else {
-		tgt->removed = false;
 		scsi_scan_target(&sh->shost_gendev, 0, target_id,
 				 SCAN_WILD_CARD, SCSI_SCAN_INITIAL);
 	}
@@ -1434,6 +1444,8 @@ static int virtscsi_probe(struct virtio_device *vdev)
 	 */
 	if (!virtio_has_feature(vdev, VIRTIO_SCSI_F_NATIVE_LUN))
 		shost->max_lun = virtscsi_config_get(vdev, max_lun) + 1 + 0x4000;
+	else
+		shost->max_lun = (u64)-1;
 	shost->max_id = num_targets;
 	shost->max_channel = 0;
 	shost->max_cmd_len = VIRTIO_SCSI_CDB_SIZE;
