@@ -356,8 +356,12 @@ static void virtscsi_handle_transport_reset(struct virtio_scsi *vscsi,
 	struct scsi_device *sdev;
 	struct Scsi_Host *shost = virtio_scsi_host(vscsi->vdev);
 	unsigned int target = event->lun[1];
-	unsigned int lun = (event->lun[2] << 8) | event->lun[3];
+	u64 lun;
 
+	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN))
+		lun = scsilun_to_int((struct scsi_lun *)event->lun) >> 16;
+	else
+		lun = (event->lun[2] << 8) | event->lun[3];
 	switch (virtio32_to_cpu(vscsi->vdev, event->reason)) {
 	case VIRTIO_SCSI_EVT_RESET_RESCAN:
 		scsi_add_device(shost, 0, target, lun);
@@ -368,7 +372,7 @@ static void virtscsi_handle_transport_reset(struct virtio_scsi *vscsi,
 			scsi_remove_device(sdev);
 			scsi_device_put(sdev);
 		} else {
-			pr_err("SCSI device %d 0 %d %d not found\n",
+			pr_err("SCSI device %d 0 %d %llu not found\n",
 				shost->host_no, target, lun);
 		}
 		break;
@@ -383,13 +387,17 @@ static void virtscsi_handle_param_change(struct virtio_scsi *vscsi,
 	struct scsi_device *sdev;
 	struct Scsi_Host *shost = virtio_scsi_host(vscsi->vdev);
 	unsigned int target = event->lun[1];
-	unsigned int lun = (event->lun[2] << 8) | event->lun[3];
+	u64 lun;
 	u8 asc = virtio32_to_cpu(vscsi->vdev, event->reason) & 255;
 	u8 ascq = virtio32_to_cpu(vscsi->vdev, event->reason) >> 8;
 
+	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN))
+		lun = scsilun_to_int((struct scsi_lun *)event->lun) >> 16;
+	else
+		lun = (event->lun[2] << 8) | event->lun[3];
 	sdev = scsi_device_lookup(shost, 0, target, lun);
 	if (!sdev) {
-		pr_err("SCSI device %d 0 %d %d not found\n",
+		pr_err("SCSI device %d 0 %d %llu not found\n",
 			shost->host_no, target, lun);
 		return;
 	}
@@ -524,10 +532,16 @@ static void virtio_scsi_init_hdr(struct virtio_device *vdev,
 				 int target_id,
 				 struct scsi_cmnd *sc)
 {
-	cmd->lun[0] = 1;
-	cmd->lun[1] = target_id;
-	cmd->lun[2] = (sc->device->lun >> 8) | 0x40;
-	cmd->lun[3] = sc->device->lun & 0xff;
+	if (virtio_has_feature(vdev, VIRTIO_SCSI_F_NATIVE_LUN)) {
+		u64 lun = sc->device->lun << 16;
+		lun |= ((u64)1 << 8) | (u64)target_id;
+		int_to_scsilun(lun, (struct scsi_lun *)&cmd->lun);
+	} else {
+		cmd->lun[0] = 1;
+		cmd->lun[1] = target_id;
+		cmd->lun[2] = (sc->device->lun >> 8) | 0x40;
+		cmd->lun[3] = sc->device->lun & 0xff;
+	}
 	cmd->tag = cpu_to_virtio64(vdev, (unsigned long)sc);
 	cmd->task_attr = VIRTIO_SCSI_S_SIMPLE;
 	cmd->prio = 0;
@@ -776,11 +790,17 @@ static int virtscsi_device_reset(struct scsi_cmnd *sc)
 		.type = VIRTIO_SCSI_T_TMF,
 		.subtype = cpu_to_virtio32(vscsi->vdev,
 					     VIRTIO_SCSI_T_TMF_LOGICAL_UNIT_RESET),
-		.lun[0] = 1,
-		.lun[1] = target_id,
-		.lun[2] = (sc->device->lun >> 8) | 0x40,
-		.lun[3] = sc->device->lun & 0xff,
 	};
+	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN)) {
+		u64 lun = sc->device->lun << 16;
+		lun |= ((u64)1 << 8) | (u64)target_id;
+		int_to_scsilun(lun, (struct scsi_lun *)&cmd->req.tmf.lun);
+	} else {
+		cmd->req.tmf.lun[0] = 1;
+		cmd->req.tmf.lun[1] = target_id;
+		cmd->req.tmf.lun[2] = (sc->device->lun >> 8) | 0x40;
+		cmd->req.tmf.lun[3] = sc->device->lun & 0xff;
+	}
 	return virtscsi_tmf(vscsi, cmd);
 }
 
@@ -851,10 +871,18 @@ static int virtscsi_abort(struct scsi_cmnd *sc)
 		.subtype = VIRTIO_SCSI_T_TMF_ABORT_TASK,
 		.lun[0] = 1,
 		.lun[1] = target_id,
-		.lun[2] = (sc->device->lun >> 8) | 0x40,
-		.lun[3] = sc->device->lun & 0xff,
 		.tag = cpu_to_virtio64(vscsi->vdev, (unsigned long)sc),
 	};
+	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN)) {
+		u64 lun = sc->device->lun << 16;
+		lun |= ((u64)1 << 8) | (u64)target_id;
+		int_to_scsilun(lun, (struct scsi_lun *)&cmd->req.tmf.lun);
+	} else {
+		cmd->req.tmf.lun[0] = 1;
+		cmd->req.tmf.lun[1] = target_id;
+		cmd->req.tmf.lun[2] = (sc->device->lun >> 8) | 0x40;
+		cmd->req.tmf.lun[3] = sc->device->lun & 0xff;
+	}
 	return virtscsi_tmf(vscsi, cmd);
 }
 
@@ -1412,7 +1440,10 @@ static int virtscsi_probe(struct virtio_device *vdev)
 	/* LUNs > 256 are reported with format 1, so they go in the range
 	 * 16640-32767.
 	 */
-	shost->max_lun = virtscsi_config_get(vdev, max_lun) + 1 + 0x4000;
+	if (!virtio_has_feature(vdev, VIRTIO_SCSI_F_NATIVE_LUN))
+		shost->max_lun = virtscsi_config_get(vdev, max_lun) + 1 + 0x4000;
+	else
+		shost->max_lun = (u64)-1;
 	shost->max_id = num_targets;
 	shost->max_channel = 0;
 	shost->max_cmd_len = VIRTIO_SCSI_CDB_SIZE;
@@ -1505,6 +1536,7 @@ static unsigned int features[] = {
 	VIRTIO_SCSI_F_T10_PI,
 #endif
 	VIRTIO_SCSI_F_RESCAN,
+	VIRTIO_SCSI_F_NATIVE_LUN,
 };
 
 static struct virtio_driver virtio_scsi_driver = {
