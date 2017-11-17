@@ -529,10 +529,11 @@ static int virtscsi_kick_cmd(struct virtio_scsi_vq *vq,
 
 static void virtio_scsi_init_hdr(struct virtio_device *vdev,
 				 struct virtio_scsi_cmd_req *cmd,
+				 int target_id,
 				 struct scsi_cmnd *sc)
 {
 	cmd->lun[0] = 1;
-	cmd->lun[1] = sc->device->id;
+	cmd->lun[1] = target_id;
 	if (virtio_has_feature(vdev, VIRTIO_SCSI_F_NATIVE_LUN))
 		put_unaligned_be32(sc->device->lun, &cmd->lun[2]);
 	else {
@@ -548,12 +549,14 @@ static void virtio_scsi_init_hdr(struct virtio_device *vdev,
 #ifdef CONFIG_BLK_DEV_INTEGRITY
 static void virtio_scsi_init_hdr_pi(struct virtio_device *vdev,
 				    struct virtio_scsi_cmd_req_pi *cmd_pi,
+				    int target_id,
 				    struct scsi_cmnd *sc)
 {
 	struct request *rq = sc->request;
 	struct blk_integrity *bi;
 
-	virtio_scsi_init_hdr(vdev, (struct virtio_scsi_cmd_req *)cmd_pi, sc);
+	virtio_scsi_init_hdr(vdev, (struct virtio_scsi_cmd_req *)cmd_pi,
+			     target_id, sc);
 
 	if (!rq || !scsi_prot_sg_count(sc))
 		return;
@@ -573,6 +576,7 @@ static void virtio_scsi_init_hdr_pi(struct virtio_device *vdev,
 
 static int virtscsi_queuecommand(struct virtio_scsi *vscsi,
 				 struct virtio_scsi_vq *req_vq,
+				 int target_id,
 				 struct scsi_cmnd *sc)
 {
 	struct Scsi_Host *shost = virtio_scsi_host(vscsi->vdev);
@@ -595,13 +599,15 @@ static int virtscsi_queuecommand(struct virtio_scsi *vscsi,
 
 #ifdef CONFIG_BLK_DEV_INTEGRITY
 	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_T10_PI)) {
-		virtio_scsi_init_hdr_pi(vscsi->vdev, &cmd->req.cmd_pi, sc);
+		virtio_scsi_init_hdr_pi(vscsi->vdev, &cmd->req.cmd_pi,
+					target_id, sc);
 		memcpy(cmd->req.cmd_pi.cdb, sc->cmnd, sc->cmd_len);
 		req_size = sizeof(cmd->req.cmd_pi);
 	} else
 #endif
 	{
-		virtio_scsi_init_hdr(vscsi->vdev, &cmd->req.cmd, sc);
+		virtio_scsi_init_hdr(vscsi->vdev, &cmd->req.cmd,
+				     target_id, sc);
 		memcpy(cmd->req.cmd.cdb, sc->cmnd, sc->cmd_len);
 		req_size = sizeof(cmd->req.cmd);
 	}
@@ -622,21 +628,25 @@ static int virtscsi_queuecommand_single(struct Scsi_Host *sh,
 					struct scsi_cmnd *sc)
 {
 	struct virtio_scsi *vscsi = shost_priv(sh);
-	struct fc_rport *rport;
-	struct virtio_scsi_target_state *tgt;
+	struct virtio_scsi_target_state *tgt = NULL;
+	int target_id = sc->device->id;
 
-	rport = starget_to_rport(scsi_target(sc->device));
-	if (!rport)
+	if (vscsi->protocol == SCSI_PROTOCOL_FCP) {
+		struct fc_rport *rport =
+			starget_to_rport(scsi_target(sc->device));
+		if (rport) {
+			tgt = rport->dd_data;
+			target_id = tgt->target_id;
+		}
+	} else
 		tgt = scsi_target(sc->device)->hostdata;
-	else
-		tgt = rport->dd_data;
 	if (!tgt || tgt->removed) {
 		sc->result = DID_NO_CONNECT << 16;
 		sc->scsi_done(sc);
 		return 0;
 	}
 	atomic_inc(&tgt->reqs);
-	return virtscsi_queuecommand(vscsi, &vscsi->req_vqs[0], sc);
+	return virtscsi_queuecommand(vscsi, &vscsi->req_vqs[0], target_id, sc);
 }
 
 static struct virtio_scsi_vq *virtscsi_pick_vq_mq(struct virtio_scsi *vscsi,
@@ -689,15 +699,19 @@ static int virtscsi_queuecommand_multi(struct Scsi_Host *sh,
 				       struct scsi_cmnd *sc)
 {
 	struct virtio_scsi *vscsi = shost_priv(sh);
-	struct fc_rport *rport;
-	struct virtio_scsi_target_state *tgt;
+	struct virtio_scsi_target_state *tgt = NULL;
 	struct virtio_scsi_vq *req_vq;
+	int target_id = sc->device->id;
 
-	rport = starget_to_rport(scsi_target(sc->device));
-	if (!rport)
+	if (vscsi->protocol == SCSI_PROTOCOL_FCP) {
+		struct fc_rport *rport =
+			starget_to_rport(scsi_target(sc->device));
+		if (rport) {
+			tgt = rport->dd_data;
+			target_id = tgt->target_id;
+		}
+	} else
 		tgt = scsi_target(sc->device)->hostdata;
-	else
-		tgt = rport->dd_data;
 	if (!tgt || tgt->removed) {
 		sc->result = DID_NO_CONNECT << 16;
 		sc->scsi_done(sc);
@@ -708,7 +722,7 @@ static int virtscsi_queuecommand_multi(struct Scsi_Host *sh,
 	else
 		req_vq = virtscsi_pick_vq(vscsi, tgt);
 
-	return virtscsi_queuecommand(vscsi, req_vq, sc);
+	return virtscsi_queuecommand(vscsi, req_vq, target_id, sc);
 }
 
 static int virtscsi_tmf(struct virtio_scsi *vscsi, struct virtio_scsi_cmd *cmd)
@@ -747,12 +761,27 @@ static int virtscsi_device_reset(struct scsi_cmnd *sc)
 {
 	struct virtio_scsi *vscsi = shost_priv(sc->device->host);
 	struct virtio_scsi_cmd *cmd;
+	struct virtio_scsi_target_state *tgt = NULL;
+	int target_id = sc->device->id;
 
 	sdev_printk(KERN_INFO, sc->device, "device reset\n");
 	cmd = mempool_alloc(virtscsi_cmd_pool, GFP_NOIO);
 	if (!cmd)
 		return FAILED;
 
+	if (vscsi->protocol == SCSI_PROTOCOL_FCP) {
+		struct fc_rport *rport =
+			starget_to_rport(scsi_target(sc->device));
+		if (rport && rport->dd_data ) {
+			tgt = rport->dd_data;
+			target_id = tgt->target_id;
+		} else
+			return FAST_IO_FAIL;
+	} else {
+		tgt = scsi_target(sc->device)->hostdata;
+		if (tgt && tgt->removed)
+			return FAST_IO_FAIL;
+	}
 	memset(cmd, 0, sizeof(*cmd));
 	cmd->sc = sc;
 	cmd->req.tmf = (struct virtio_scsi_ctrl_tmf_req){
@@ -760,7 +789,7 @@ static int virtscsi_device_reset(struct scsi_cmnd *sc)
 		.subtype = cpu_to_virtio32(vscsi->vdev,
 					     VIRTIO_SCSI_T_TMF_LOGICAL_UNIT_RESET),
 		.lun[0] = 1,
-		.lun[1] = sc->device->id,
+		.lun[1] = target_id,
 	};
 	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN))
 		put_unaligned_be32(sc->device->lun, &cmd->req.tmf.lun[2]);
@@ -810,19 +839,34 @@ static int virtscsi_abort(struct scsi_cmnd *sc)
 {
 	struct virtio_scsi *vscsi = shost_priv(sc->device->host);
 	struct virtio_scsi_cmd *cmd;
+	struct virtio_scsi_target_state *tgt = NULL;
+	int target_id = sc->device->id;
 
 	scmd_printk(KERN_INFO, sc, "abort\n");
 	cmd = mempool_alloc(virtscsi_cmd_pool, GFP_NOIO);
 	if (!cmd)
 		return FAILED;
 
+	if (vscsi->protocol == SCSI_PROTOCOL_FCP) {
+		struct fc_rport *rport =
+			starget_to_rport(scsi_target(sc->device));
+		if (rport && rport->dd_data ) {
+			tgt = rport->dd_data;
+			target_id = tgt->target_id;
+		} else
+			return FAST_IO_FAIL;
+	} else {
+		tgt = scsi_target(sc->device)->hostdata;
+		if (tgt && tgt->removed)
+			return FAST_IO_FAIL;
+	}
 	memset(cmd, 0, sizeof(*cmd));
 	cmd->sc = sc;
 	cmd->req.tmf = (struct virtio_scsi_ctrl_tmf_req){
 		.type = VIRTIO_SCSI_T_TMF,
 		.subtype = VIRTIO_SCSI_T_TMF_ABORT_TASK,
 		.lun[0] = 1,
-		.lun[1] = sc->device->id,
+		.lun[1] = target_id,
 		.tag = cpu_to_virtio64(vscsi->vdev, (unsigned long)sc),
 	};
 	if (virtio_has_feature(vscsi->vdev, VIRTIO_SCSI_F_NATIVE_LUN))
