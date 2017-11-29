@@ -193,6 +193,13 @@ static inline struct net_device *vnic_get_netdev(struct vnic_dev *vdev)
 	return enic->netdev;
 }
 
+static inline struct vnic_dev *wq_get_vdev(struct vnic_wq *wq)
+{
+	struct vnic_qp *qp = container_of(wq, struct vnic_qp, wq);
+
+	return qp->vdev;
+}
+
 /* wrappers function for kernel log
  */
 #define vdev_err(vdev, fmt, ...)					\

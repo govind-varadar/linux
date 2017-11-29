@@ -28,7 +28,7 @@
 
 void vnic_cq_free(struct vnic_cq *cq)
 {
-	vnic_dev_free_desc_ring(cq->vdev, &cq->ring);
+	vnic_dev_free_desc_ring(cq->vdev->pdev, &cq->ring);
 
 	cq->ctrl = NULL;
 }

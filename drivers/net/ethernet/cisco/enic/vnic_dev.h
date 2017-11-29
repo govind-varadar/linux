@@ -20,6 +20,8 @@
 #ifndef _VNIC_DEV_H_
 #define _VNIC_DEV_H_
 
+#include <linux/pci.h>
+
 #include "vnic_resource.h"
 #include "vnic_devcmd.h"
 
@@ -122,7 +124,7 @@ void __iomem *vnic_dev_get_res(struct vnic_dev *vdev, enum vnic_res_type type,
 void vnic_dev_clear_desc_ring(struct vnic_dev_ring *ring);
 int vnic_dev_alloc_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring,
 	unsigned int desc_count, unsigned int desc_size);
-void vnic_dev_free_desc_ring(struct vnic_dev *vdev,
+void vnic_dev_free_desc_ring(struct pci_dev *pdev,
 	struct vnic_dev_ring *ring);
 int vnic_dev_cmd(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd,
 	u64 *a0, u64 *a1, int wait);

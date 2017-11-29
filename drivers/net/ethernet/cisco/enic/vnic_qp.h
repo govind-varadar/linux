@@ -24,7 +24,8 @@ struct vnic_qp {
 	struct enic_msix_entry msix;
 
 	struct napi_struct napi;
-	u32 index;
+	u16 index;
+	struct vnic_dev *vdev;
 } ____cacheline_aligned_in_smp;
 
 #endif /* _VNIC_QP_H_ */

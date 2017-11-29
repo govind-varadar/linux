@@ -68,12 +68,9 @@ static int vnic_wq_alloc_bufs(struct vnic_wq *wq)
 
 void vnic_wq_free(struct vnic_wq *wq)
 {
-	struct vnic_dev *vdev;
 	unsigned int i;
 
-	vdev = wq->vdev;
-
-	vnic_dev_free_desc_ring(vdev, &wq->ring);
+	vnic_dev_free_desc_ring(wq->pdev, &wq->ring);
 
 	for (i = 0; i < VNIC_WQ_BUF_BLKS_MAX; i++) {
 		if (wq->bufs[i]) {
@@ -89,9 +86,9 @@ int vnic_wq_alloc(struct vnic_dev *vdev, struct vnic_wq *wq, unsigned int index,
 	unsigned int desc_count, unsigned int desc_size)
 {
 	int err;
+	struct enic *enic = vnic_dev_priv(vdev);
 
-	wq->index = index;
-	wq->vdev = vdev;
+	wq->pdev = enic->pdev;
 
 	wq->ctrl = vnic_dev_get_res(vdev, RES_TYPE_WQ, index);
 	if (!wq->ctrl) {
@@ -118,9 +115,6 @@ int enic_wq_devcmd2_alloc(struct vnic_dev *vdev, struct vnic_wq *wq,
 			  unsigned int desc_count, unsigned int desc_size)
 {
 	int err;
-
-	wq->index = 0;
-	wq->vdev = vdev;
 
 	wq->ctrl = vnic_dev_get_res(vdev, RES_TYPE_DEVCMD2, 0);
 	if (!wq->ctrl)
@@ -176,7 +170,8 @@ void vnic_wq_enable(struct vnic_wq *wq)
 int vnic_wq_disable(struct vnic_wq *wq)
 {
 	unsigned int wait;
-	struct vnic_dev *vdev = wq->vdev;
+	struct vnic_dev *vdev = wq_get_vdev(wq);
+	u16 index = container_of(wq, struct vnic_qp, wq)->index;
 
 	iowrite32(0, &wq->ctrl->enable);
 
@@ -187,7 +182,7 @@ int vnic_wq_disable(struct vnic_wq *wq)
 		udelay(10);
 	}
 
-	vdev_neterr(vdev, "Failed to disable WQ[%d]\n", wq->index);
+	vdev_neterr(vdev, "Failed to disable WQ[%d]\n", index);
 
 	return -ETIMEDOUT;
 }

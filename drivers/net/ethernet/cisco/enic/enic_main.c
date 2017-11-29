@@ -322,13 +322,11 @@ int enic_is_valid_vf(struct enic *enic, int vf)
 
 static void enic_free_wq_buf(struct vnic_wq *wq, struct vnic_wq_buf *buf)
 {
-	struct enic *enic = vnic_dev_priv(wq->vdev);
-
 	if (buf->sop)
-		pci_unmap_single(enic->pdev, buf->dma_addr,
+		pci_unmap_single(wq->pdev, buf->dma_addr,
 			buf->len, PCI_DMA_TODEVICE);
 	else
-		pci_unmap_page(enic->pdev, buf->dma_addr,
+		pci_unmap_page(wq->pdev, buf->dma_addr,
 			buf->len, PCI_DMA_TODEVICE);
 
 	if (buf->os_buf)
@@ -2385,6 +2383,24 @@ static void enic_kdump_kernel_config(struct enic *enic)
 	}
 }
 
+static int enic_qp_init(struct enic *enic)
+{
+	int i;
+
+	enic->qp = kzalloc(sizeof(struct vnic_qp) * (enic->qp_count + 2),
+			   GFP_KERNEL);
+	if (!enic->qp)
+		goto out;
+
+	for (i = 0; i < (enic->qp_count + 2); i++) {
+		enic->qp[i].index = i;
+		enic->qp[i].vdev = enic->vdev;
+	}
+
+out:
+	return -ENOMEM;
+}
+
 static int enic_dev_init(struct enic *enic)
 {
 	struct device *dev = enic_get_dev(enic);
@@ -2429,10 +2445,9 @@ static int enic_dev_init(struct enic *enic)
 		return err;
 	}
 
-	enic->qp = kzalloc(sizeof(struct vnic_qp) * (enic->qp_count + 2),
-			   GFP_KERNEL);
-	if (!enic->qp)
-		return -ENOMEM;
+	err = enic_qp_init(enic);
+	if (err)
+		return err;
 
 	/* Allocate and configure vNIC resources
 	 */

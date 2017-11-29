@@ -70,7 +70,7 @@ void vnic_rq_free(struct vnic_rq *rq)
 
 	vdev = rq->vdev;
 
-	vnic_dev_free_desc_ring(vdev, &rq->ring);
+	vnic_dev_free_desc_ring(vdev->pdev, &rq->ring);
 
 	for (i = 0; i < VNIC_RQ_BUF_BLKS_MAX; i++) {
 		if (rq->bufs[i]) {

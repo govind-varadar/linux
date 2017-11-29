@@ -74,13 +74,12 @@ struct vnic_wq_buf {
 #define VNIC_WQ_BUF_BLKS_MAX VNIC_WQ_BUF_BLKS_NEEDED(4096)
 
 struct vnic_wq {
-	unsigned int index;
-	struct vnic_dev *vdev;
+	struct pci_dev *pdev;
 	struct vnic_wq_ctrl __iomem *ctrl;              /* memory-mapped */
-	struct vnic_dev_ring ring;
-	struct vnic_wq_buf *bufs[VNIC_WQ_BUF_BLKS_MAX];
 	struct vnic_wq_buf *to_use;
 	struct vnic_wq_buf *to_clean;
+	struct vnic_wq_buf *bufs[VNIC_WQ_BUF_BLKS_MAX];
+	struct vnic_dev_ring ring;
 };
 
 struct devcmd2_controller {

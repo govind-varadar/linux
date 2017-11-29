@@ -26,8 +26,8 @@
 
 #include "vnic_resource.h"
 #include "vnic_devcmd.h"
-#include "vnic_dev.h"
 #include "vnic_wq.h"
+#include "vnic_dev.h"
 #include "vnic_stats.h"
 #include "enic.h"
 
@@ -213,10 +213,10 @@ int vnic_dev_alloc_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring,
 	return 0;
 }
 
-void vnic_dev_free_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring)
+void vnic_dev_free_desc_ring(struct pci_dev *pdev, struct vnic_dev_ring *ring)
 {
 	if (ring->descs) {
-		pci_free_consistent(vdev->pdev,
+		pci_free_consistent(pdev,
 			ring->size_unaligned,
 			ring->descs_unaligned,
 			ring->base_addr_unaligned);
@@ -430,7 +430,7 @@ static int vnic_dev_init_devcmd2(struct vnic_dev *vdev)
 	return 0;
 
 err_free_desc_ring:
-	vnic_dev_free_desc_ring(vdev, &vdev->devcmd2->results_ring);
+	vnic_dev_free_desc_ring(vdev->pdev, &vdev->devcmd2->results_ring);
 err_disable_wq:
 	vnic_wq_disable(&vdev->devcmd2->wq);
 err_free_wq:
@@ -444,7 +444,7 @@ err_free_devcmd2:
 
 static void vnic_dev_deinit_devcmd2(struct vnic_dev *vdev)
 {
-	vnic_dev_free_desc_ring(vdev, &vdev->devcmd2->results_ring);
+	vnic_dev_free_desc_ring(vdev->pdev, &vdev->devcmd2->results_ring);
 	vnic_wq_disable(&vdev->devcmd2->wq);
 	vnic_wq_free(&vdev->devcmd2->wq);
 	kfree(vdev->devcmd2);
