@@ -465,16 +465,24 @@ static irqreturn_t enic_isr_legacy(int irq, void *data)
 
 	pba = vnic_intr_legacy_pba(enic->legacy_pba);
 	if (!pba) {
+		if (printk_ratelimit())
+			netdev_info(netdev, "!pba %x", pba);
 		vnic_intr_unmask(&enic->intr[io_intr]);
 		return IRQ_NONE;	/* not our interrupt */
 	}
+	if (printk_ratelimit())
+		netdev_info(netdev, "isr %x", pba);
 
 	if (ENIC_TEST_INTR(pba, notify_intr)) {
+		if (printk_ratelimit())
+			netdev_info(netdev, "notify %x", pba);
 		enic_notify_check(enic);
 		vnic_intr_return_all_credits(&enic->intr[notify_intr]);
 	}
 
 	if (ENIC_TEST_INTR(pba, err_intr)) {
+		if (printk_ratelimit())
+			netdev_info(netdev, "err %x", pba);
 		vnic_intr_return_all_credits(&enic->intr[err_intr]);
 		enic_log_q_error(enic);
 		/* schedule recovery from WQ/RQ error */
@@ -482,10 +490,13 @@ static irqreturn_t enic_isr_legacy(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
-	if (ENIC_TEST_INTR(pba, io_intr))
+	if (ENIC_TEST_INTR(pba, io_intr)) {
+		if (printk_ratelimit())
+			netdev_info(netdev, "io %x", pba);
 		napi_schedule_irqoff(&enic->napi[0]);
-	else
+	} else {
 		vnic_intr_unmask(&enic->intr[io_intr]);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -2388,7 +2399,7 @@ static int enic_set_intr_mode(struct enic *enic)
 		}
 	}
 
-	if (enic->config.intr_mode < 1 &&
+	if (0 && enic->config.intr_mode < 1 &&
 	    enic->rq_count >= 1 &&
 	    enic->wq_count >= m &&
 	    enic->cq_count >= 1 + m &&
@@ -2413,7 +2424,7 @@ static int enic_set_intr_mode(struct enic *enic)
 	 * We need 1 RQ, 1 WQ, 2 CQs, and 1 INTR
 	 */
 
-	if (enic->config.intr_mode < 2 &&
+	if (0 && enic->config.intr_mode < 2 &&
 	    enic->rq_count >= 1 &&
 	    enic->wq_count >= 1 &&
 	    enic->cq_count >= 2 &&
@@ -2892,7 +2903,7 @@ static int enic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 	if (ENIC_SETTING(enic, TXCSUM))
 		netdev->hw_features |= NETIF_F_SG | NETIF_F_HW_CSUM;
-	if (ENIC_SETTING(enic, TSO))
+	if (1 || ENIC_SETTING(enic, TSO))
 		netdev->hw_features |= NETIF_F_TSO |
 			NETIF_F_TSO6 | NETIF_F_TSO_ECN;
 	if (ENIC_SETTING(enic, RSS))
