@@ -671,6 +671,9 @@ struct Scsi_Host {
 	/* Host responded with short (<36 bytes) INQUIRY result */
 	unsigned short_inquiry:1;
 
+	/* Host should use sequential scan */
+	unsigned sequential_scan:1;
+
 	/*
 	 * Optional work queue to be utilized by the transport
 	 */

@@ -1812,7 +1812,7 @@ static void scsi_finish_async_scan(struct async_scan_data *data)
 
 static void do_scsi_scan_host(struct Scsi_Host *shost)
 {
-	if (shost->hostt->scan_finished) {
+	if (shost->hostt->scan_finished && !shost->sequential_scan) {
 		unsigned long start = jiffies;
 		if (shost->hostt->scan_start)
 			shost->hostt->scan_start(shost);
