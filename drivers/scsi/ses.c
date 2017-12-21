@@ -51,6 +51,13 @@ struct ses_component {
 	u64 addr;
 };
 
+#define INIT_ALLOC_SIZE 32
+
+static unsigned long ses_alloc_size = INIT_ALLOC_SIZE;
+
+module_param_named(alloc_size, ses_alloc_size, ulong, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(alloc_size, "initial allocation length");
+
 static bool ses_page2_supported(struct enclosure_device *edev)
 {
 	struct ses_device *ses_dev = edev->scratch;
@@ -508,8 +515,6 @@ static int ses_enclosure_find_by_addr(struct enclosure_device *edev,
 	return 0;
 }
 
-#define INIT_ALLOC_SIZE 32
-
 static void ses_enclosure_data_process(struct enclosure_device *edev,
 				       struct scsi_device *sdev,
 				       int create)
@@ -519,7 +524,7 @@ static void ses_enclosure_data_process(struct enclosure_device *edev,
 	int i, j, page7_len, len, components;
 	struct ses_device *ses_dev = edev->scratch;
 	int types = ses_dev->page1_num_types;
-	unsigned char *hdr_buf = kzalloc(INIT_ALLOC_SIZE, GFP_KERNEL);
+	unsigned char *hdr_buf = kzalloc(ses_alloc_size, GFP_KERNEL);
 
 	if (!hdr_buf)
 		goto simple_populate;
@@ -528,7 +533,7 @@ static void ses_enclosure_data_process(struct enclosure_device *edev,
 	if (ses_dev->page10)
 		ses_recv_diag(sdev, 10, ses_dev->page10, ses_dev->page10_len);
 	/* Page 7 for the descriptors is optional */
-	result = ses_recv_diag(sdev, 7, hdr_buf, INIT_ALLOC_SIZE);
+	result = ses_recv_diag(sdev, 7, hdr_buf, ses_alloc_size);
 	if (result)
 		goto simple_populate;
 
@@ -666,12 +671,12 @@ static int ses_intf_add(struct device *cdev,
 		sdev_printk(KERN_NOTICE, sdev, "Embedded Enclosure Device\n");
 
 	ses_dev = kzalloc(sizeof(*ses_dev), GFP_KERNEL);
-	hdr_buf = kzalloc(INIT_ALLOC_SIZE, GFP_KERNEL);
+	hdr_buf = kzalloc(ses_alloc_size, GFP_KERNEL);
 	if (!hdr_buf || !ses_dev)
 		goto err_init_free;
 
 	page = 1;
-	result = ses_recv_diag(sdev, page, hdr_buf, INIT_ALLOC_SIZE);
+	result = ses_recv_diag(sdev, page, hdr_buf, ses_alloc_size);
 	if (result)
 		goto recv_failed;
 
@@ -711,7 +716,7 @@ static int ses_intf_add(struct device *cdev,
 	buf = NULL;
 
 	page = 2;
-	result = ses_recv_diag(sdev, page, hdr_buf, INIT_ALLOC_SIZE);
+	result = ses_recv_diag(sdev, page, hdr_buf, ses_alloc_size);
 	if (result)
 		goto page2_not_supported;
 
@@ -731,7 +736,7 @@ static int ses_intf_add(struct device *cdev,
 	/* The additional information page --- allows us
 	 * to match up the devices */
 	page = 10;
-	result = ses_recv_diag(sdev, page, hdr_buf, INIT_ALLOC_SIZE);
+	result = ses_recv_diag(sdev, page, hdr_buf, ses_alloc_size);
 	if (!result) {
 
 		len = (hdr_buf[2] << 8) + hdr_buf[3] + 4;
