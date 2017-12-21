@@ -110,12 +110,17 @@ static int ses_recv_diag(struct scsi_device *sdev, int page_code,
 		0
 	};
 	unsigned char recv_page_code;
+	struct scsi_sense_hdr sshdr;
 
 	ret =  scsi_execute_req(sdev, cmd, DMA_FROM_DEVICE, buf, bufflen,
-				NULL, SES_TIMEOUT, SES_RETRIES, NULL);
-	if (unlikely(ret))
+				&sshdr, SES_TIMEOUT, SES_RETRIES, NULL);
+	if (unlikely(ret)) {
+		if (status_byte(ret) == CHECK_CONDITION &&
+		    sshdr.asc == 0x25 && sshdr.ascq == 0x00) {
+			ret = -ENODEV;
+		}
 		return ret;
-
+	}
 	recv_page_code = ((unsigned char *)buf)[0];
 
 	if (likely(recv_page_code == page_code))
@@ -677,9 +682,14 @@ static int ses_intf_add(struct device *cdev,
 
 	page = 1;
 	result = ses_recv_diag(sdev, page, hdr_buf, ses_alloc_size);
-	if (result)
+	if (result) {
+		if (result == -ENODEV &&
+		    sdev->inq_periph_qual != 0) {
+			kfree(hdr_buf);
+			return result;
+		}
 		goto recv_failed;
-
+	}
 	len = (hdr_buf[2] << 8) + hdr_buf[3] + 4;
 	buf = kzalloc(len, GFP_KERNEL);
 	if (!buf)
