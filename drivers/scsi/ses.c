@@ -110,14 +110,20 @@ static int ses_recv_diag(struct scsi_device *sdev, int page_code,
 		0
 	};
 	unsigned char recv_page_code;
+	int retries = SES_RETRIES;
 	struct scsi_sense_hdr sshdr;
 
+retry:
 	ret =  scsi_execute_req(sdev, cmd, DMA_FROM_DEVICE, buf, bufflen,
-				&sshdr, SES_TIMEOUT, SES_RETRIES, NULL);
+				&sshdr, SES_TIMEOUT, retries, NULL);
 	if (unlikely(ret)) {
-		if (status_byte(ret) == CHECK_CONDITION &&
-		    sshdr.asc == 0x25 && sshdr.ascq == 0x00) {
-			ret = -ENODEV;
+		if (status_byte(ret) == CHECK_CONDITION) {
+			if (sshdr.asc == 0x29) {
+				retries--;
+				goto retry;
+			}
+			if (sshdr.asc == 0x25 && sshdr.ascq == 0x00)
+				ret = -ENODEV;
 		}
 		return ret;
 	}
