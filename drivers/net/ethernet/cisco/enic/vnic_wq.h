@@ -78,7 +78,6 @@ struct vnic_wq {
 	struct vnic_wq_ctrl __iomem *ctrl;              /* memory-mapped */
 	struct vnic_wq_buf *to_use;
 	struct vnic_wq_buf *to_clean;
-	struct vnic_wq_buf *bufs[VNIC_WQ_BUF_BLKS_MAX];
 	struct vnic_dev_ring ring;
 };
 

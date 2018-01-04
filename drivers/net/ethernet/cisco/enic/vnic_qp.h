@@ -4,6 +4,7 @@
 #include <linux/irq.h>
 
 #include "vnic_wq.h"
+#include "vnic_rq.h"
 #include "vnic_cq.h"
 
 struct enic_msix_entry {
@@ -23,6 +24,8 @@ struct vnic_qp {
 	struct vnic_intr_ctrl __iomem *intr_ctrl;
 	struct enic_msix_entry msix;
 
+
+	struct vnic_wq_buf *wq_bufs[VNIC_WQ_BUF_BLKS_MAX];
 	struct napi_struct napi;
 	u16 index;
 	struct vnic_dev *vdev;
