@@ -486,18 +486,34 @@ static int sas_queue_reset(struct domain_device *dev, int reset_type,
 
 int sas_eh_abort_handler(struct scsi_cmnd *cmd)
 {
-	int res;
-	struct sas_task *task = TO_SAS_TASK(cmd);
+	int res = TMF_RESP_FUNC_COMPLETE;
+	struct sas_task *task;
 	struct Scsi_Host *host = cmd->device->host;
 	struct sas_internal *i = to_sas_internal(host->transportt);
+	struct domain_device *dev = cmd_to_domain_dev(cmd);
+	struct sas_ha_struct *ha = dev->port->ha;
+	unsigned long flags;
 
 	if (!i->dft->lldd_abort_task)
 		return FAILED;
 
-	res = i->dft->lldd_abort_task(task);
+	/* Avoid sas_scsi_task_done() interfering */
+	spin_lock_irqsave(&dev->done_lock, flags);
+	task = TO_SAS_TASK(cmd);
+	if (test_bit(SAS_HA_FROZEN, &ha->state)) {
+		res = TMF_RESP_FUNC_FAILED;
+		task = NULL;
+	} else
+		ASSIGN_SAS_TASK(cmd, NULL);
+	spin_unlock_irqrestore(&dev->done_lock, flags);
+	if (task)
+		res = i->dft->lldd_abort_task(task);
 	if (res == TMF_RESP_FUNC_SUCC || res == TMF_RESP_FUNC_COMPLETE)
 		return SUCCESS;
 
+	spin_lock_irqsave(&dev->done_lock, flags);
+	ASSIGN_SAS_TASK(cmd, task);
+	spin_unlock_irqrestore(&dev->done_lock, flags);
 	return FAILED;
 }
 EXPORT_SYMBOL_GPL(sas_eh_abort_handler);
