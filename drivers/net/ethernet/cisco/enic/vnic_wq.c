@@ -76,6 +76,8 @@ void vnic_wq_free(struct vnic_wq *wq)
 
 	for (i = 0; i < VNIC_WQ_BUF_BLKS_MAX; i++) {
 		if (qp->wq_bufs[i]) {
+			pr_info("%s: wq_buff= %p i = %d qp = %d", __func__,
+				qp->wq_bufs[i], i, qp->index);
 			kfree(qp->wq_bufs[i]);
 			qp->wq_bufs[i] = NULL;
 		}

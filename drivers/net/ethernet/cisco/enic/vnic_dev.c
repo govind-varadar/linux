@@ -216,6 +216,7 @@ int vnic_dev_alloc_desc_ring(struct vnic_dev *vdev, struct vnic_dev_ring *ring,
 void vnic_dev_free_desc_ring(struct pci_dev *pdev, struct vnic_dev_ring *ring)
 {
 	if (ring->descs) {
+		pr_info("%s: ring->desc = %p", __func__, ring->descs);
 		pci_free_consistent(pdev,
 			ring->size_unaligned,
 			ring->descs_unaligned,

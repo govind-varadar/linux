@@ -133,6 +133,9 @@ static void enic_free_affinity_hint(struct enic *enic)
 	int i;
 
 	for (i = 0; i < enic->qp_count; i++) {
+		if (enic->qp[i].msix.affinity_mask)
+			pr_info("%s: i = %d, mas = %p", __func__, i,
+				enic->qp[i].msix.affinity_mask);
 		free_cpumask_var(enic->qp[i].msix.affinity_mask);
 	}
 }
@@ -2238,6 +2241,8 @@ static int enic_set_intr_mode(struct enic *enic)
 
 			vnic_dev_set_intr_mode(enic->vdev,
 				VNIC_DEV_INTR_MODE_MSIX);
+			pr_info("%s: n = %d, qp_count = %d", __func__, n,
+				enic->qp_count);
 
 			return 0;
 		}
@@ -2389,6 +2394,10 @@ static int enic_qp_init(struct enic *enic)
 
 	enic->qp = kzalloc(sizeof(struct vnic_qp) * (enic->qp_count + 2),
 			   GFP_KERNEL);
+	pr_info("qp size = %llu qp_count = %d",
+		sizeof(struct vnic_qp) * (enic->qp_count + 2),
+		enic->qp_count);
+	memset(enic->qp, 0, sizeof(struct vnic_qp) * (enic->qp_count + 2));
 	if (!enic->qp)
 		goto out;
 
