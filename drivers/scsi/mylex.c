@@ -349,9 +349,9 @@ static void DAC960_DestroyAuxiliaryStructures(myr_hba *c)
 
 static inline void DAC960_V1_ClearCommand(myr_v1_cmdblk *cmd_blk)
 {
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 
-	memset(mbox, 0, sizeof(DAC960_V1_CommandMailbox_T));
+	memset(mbox, 0, sizeof(myr_v1_cmd_mbox));
 	cmd_blk->status = 0;
 }
 
@@ -363,9 +363,9 @@ static inline void DAC960_V1_ClearCommand(myr_v1_cmdblk *cmd_blk)
 
 static inline void DAC960_V2_ClearCommand(myr_v2_cmdblk *cmd_blk)
 {
-	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 
-	memset(mbox, 0, sizeof(DAC960_V2_CommandMailbox_T));
+	memset(mbox, 0, sizeof(myr_v2_cmd_mbox));
 	cmd_blk->status = 0;
 }
 
@@ -377,8 +377,8 @@ static void DAC960_V2_QueueCommand(myr_hba *c,
 				   myr_v2_cmdblk *cmd_blk)
 {
 	void __iomem *base = c->BaseAddress;
-	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
-	DAC960_V2_CommandMailbox_T *next_mbox =
+	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
+	myr_v2_cmd_mbox *next_mbox =
 		c->V2.NextCommandMailbox;
 
 	c->V2.WriteCommandMailbox(next_mbox, mbox);
@@ -405,8 +405,8 @@ static void DAC960_V1_QueueCommand(myr_hba *c,
 				   myr_v1_cmdblk *cmd_blk)
 {
 	void __iomem *base = c->BaseAddress;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
-	DAC960_V1_CommandMailbox_T *next_mbox =
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *next_mbox =
 		c->V1.NextCommandMailbox;
 
 	c->V1.WriteCommandMailbox(next_mbox, mbox);
@@ -429,7 +429,7 @@ static void DAC960_PD_QueueCommand(myr_hba *c,
 				   myr_v1_cmdblk *cmd_blk)
 {
 	void __iomem *base = c->BaseAddress;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 
 	while (DAC960_PD_MailboxFullP(base))
 		udelay(1);
@@ -446,7 +446,7 @@ static void DAC960_P_QueueCommand(myr_hba *c,
 				  myr_v1_cmdblk *cmd_blk)
 {
 	void __iomem *base = c->BaseAddress;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 
 	switch (mbox->Common.opcode) {
 	case DAC960_V1_Enquiry:
@@ -533,7 +533,7 @@ static unsigned short DAC960_V1_ExecuteType3(myr_hba *c,
 					     dma_addr_t DataDMA)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
 	mutex_lock(&c->V1.dcmd_mutex);
@@ -560,7 +560,7 @@ static unsigned short DAC960_V1_ExecuteType3B(myr_hba *c,
 					      dma_addr_t DataDMA)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
 	mutex_lock(&c->V1.dcmd_mutex);
@@ -587,7 +587,7 @@ static unsigned short DAC960_V1_ExecuteType3D(myr_hba *c,
 					      struct scsi_device *sdev)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	myr_v1_pdev_state *pdev_info = sdev->hostdata;
 	unsigned short status;
 
@@ -631,7 +631,7 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myr_hba *c,
 						   unsigned int event)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 	static char *DAC960_EventMessages[] =
 		{ "killed because write recovery failed",
@@ -702,7 +702,7 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myr_hba *c,
 static void DAC960_V1_MonitorGetErrorTable(myr_hba *c)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
 	DAC960_V1_ClearCommand(cmd_blk);
@@ -755,7 +755,7 @@ static void DAC960_V1_MonitorGetErrorTable(myr_hba *c)
 static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
 	mutex_lock(&c->V1.dcmd_mutex);
@@ -820,7 +820,7 @@ static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 static void DAC960_V1_MonitorRebuildProgress(myr_hba *c)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
 	DAC960_V1_ClearCommand(cmd_blk);
@@ -891,7 +891,7 @@ static void DAC960_V1_MonitorRebuildProgress(myr_hba *c)
 static void DAC960_V1_ConsistencyCheckProgress(myr_hba *c)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
 	DAC960_V1_ClearCommand(cmd_blk);
@@ -927,7 +927,7 @@ static void DAC960_V1_ConsistencyCheckProgress(myr_hba *c)
 static void DAC960_V1_BackgroundInitialization(myr_hba *c)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	DAC960_V1_BackgroundInitializationStatus_T *bgi, *last_bgi;
 	struct scsi_device *sdev;
 	unsigned short status;
@@ -1005,7 +1005,7 @@ static void DAC960_V1_BackgroundInitialization(myr_hba *c)
 static unsigned short DAC960_V1_NewEnquiry(myr_hba *c)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
 	mutex_lock(&c->V1.dcmd_mutex);
@@ -1143,7 +1143,7 @@ static unsigned short DAC960_V1_SetDeviceState(myr_hba *c,
 					       myr_v1_devstate State)
 {
 	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
 	mutex_lock(&c->V1.dcmd_mutex);
@@ -1171,7 +1171,7 @@ static unsigned short DAC960_V1_SetDeviceState(myr_hba *c,
 static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
-	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
 
@@ -1238,7 +1238,7 @@ DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 			       DAC960_V2_LogicalDeviceInfo_T *ldev_info)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
-	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
 
@@ -1353,7 +1353,7 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 				DAC960_V2_PhysicalDeviceInfo_T *pdev_info)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
-	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
 
@@ -1399,7 +1399,7 @@ DAC960_V2_DeviceOperation(myr_hba *c,
 			  DAC960_V2_OperationDevice_T opdev)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
-	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
@@ -1430,7 +1430,7 @@ DAC960_V2_TranslatePhysicalDevice(myr_hba *c,
 				  unsigned short *ldev_num)
 {
 	myr_v2_cmdblk *cmd_blk;
-	DAC960_V2_CommandMailbox_T *mbox;
+	myr_v2_cmd_mbox *mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
 
@@ -1466,7 +1466,7 @@ DAC960_V2_TranslatePhysicalDevice(myr_hba *c,
 static unsigned char DAC960_V2_MonitorGetEvent(myr_hba *c)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.MonitoringCommandBlock;
-	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
 
@@ -1507,18 +1507,18 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myr_hba *c)
 	size_t CommandMailboxesSize;
 	size_t StatusMailboxesSize;
 
-	DAC960_V1_CommandMailbox_T *CommandMailboxesMemory;
+	myr_v1_cmd_mbox *CommandMailboxesMemory;
 	dma_addr_t CommandMailboxesMemoryDMA;
 
-	DAC960_V1_StatusMailbox_T *StatusMailboxesMemory;
+	myr_v1_stat_mbox *StatusMailboxesMemory;
 	dma_addr_t StatusMailboxesMemoryDMA;
 
-	DAC960_V1_CommandMailbox_T mbox;
+	myr_v1_cmd_mbox mbox;
 	unsigned short status;
 	int timeout = 0;
 	int i;
 
-	memset(&mbox, 0, sizeof(DAC960_V1_CommandMailbox_T));
+	memset(&mbox, 0, sizeof(myr_v1_cmd_mbox));
 
 	if (pci_set_dma_mask(pdev, DMA_BIT_MASK(32))) {
 		dev_err(&pdev->dev, "DMA mask out of range\n");
@@ -1530,8 +1530,8 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myr_hba *c)
 		CommandMailboxesSize =  0;
 		StatusMailboxesSize = 0;
 	} else {
-		CommandMailboxesSize =  DAC960_V1_CommandMailboxCount * sizeof(DAC960_V1_CommandMailbox_T);
-		StatusMailboxesSize = DAC960_V1_StatusMailboxCount * sizeof(DAC960_V1_StatusMailbox_T);
+		CommandMailboxesSize =  DAC960_V1_CommandMailboxCount * sizeof(myr_v1_cmd_mbox);
+		StatusMailboxesSize = DAC960_V1_StatusMailboxCount * sizeof(myr_v1_stat_mbox);
 	}
 	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
 		sizeof(DAC960_V1_DCDB_T) + sizeof(DAC960_V1_Enquiry_T) +
@@ -1720,13 +1720,13 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 	size_t CommandMailboxesSize;
 	size_t StatusMailboxesSize;
 
-	DAC960_V2_CommandMailbox_T *CommandMailboxesMemory;
+	myr_v2_cmd_mbox *CommandMailboxesMemory;
 	dma_addr_t CommandMailboxesMemoryDMA;
 
-	DAC960_V2_StatusMailbox_T *StatusMailboxesMemory;
+	myr_v2_stat_mbox *StatusMailboxesMemory;
 	dma_addr_t StatusMailboxesMemoryDMA;
 
-	DAC960_V2_CommandMailbox_T *mbox;
+	myr_v2_cmd_mbox *mbox;
 	dma_addr_t	CommandMailboxDMA;
 	unsigned char status;
 
@@ -1741,13 +1741,13 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 
 	/* This is a temporary dma mapping, used only in the scope of this function */
 	mbox = pci_alloc_consistent(pdev,
-				    sizeof(DAC960_V2_CommandMailbox_T),
+				    sizeof(myr_v2_cmd_mbox),
 				    &CommandMailboxDMA);
 	if (mbox == NULL)
 		return false;
 
-	CommandMailboxesSize = DAC960_V2_CommandMailboxCount * sizeof(DAC960_V2_CommandMailbox_T);
-	StatusMailboxesSize = DAC960_V2_StatusMailboxCount * sizeof(DAC960_V2_StatusMailbox_T);
+	CommandMailboxesSize = DAC960_V2_CommandMailboxCount * sizeof(myr_v2_cmd_mbox);
+	StatusMailboxesSize = DAC960_V2_StatusMailboxCount * sizeof(myr_v2_stat_mbox);
 	DmaPagesSize =
 		CommandMailboxesSize + StatusMailboxesSize +
 		sizeof(DAC960_V2_HealthStatusBuffer_T) +
@@ -1758,7 +1758,7 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 		sizeof(DAC960_V2_PhysicalToLogicalDevice_T);
 
 	if (!init_dma_loaf(pdev, DmaPages, DmaPagesSize)) {
-		pci_free_consistent(pdev, sizeof(DAC960_V2_CommandMailbox_T),
+		pci_free_consistent(pdev, sizeof(myr_v2_cmd_mbox),
 				    mbox, CommandMailboxDMA);
 		return false;
 	}
@@ -1817,14 +1817,14 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 	  we just allocated to do this, instead of using this temporary one.
 	  Try this change later.
 	*/
-	memset(mbox, 0, sizeof(DAC960_V2_CommandMailbox_T));
+	memset(mbox, 0, sizeof(myr_v2_cmd_mbox));
 	mbox->SetMemoryMailbox.id = 1;
 	mbox->SetMemoryMailbox.opcode = DAC960_V2_IOCTL;
 	mbox->SetMemoryMailbox.control.NoAutoRequestSense = true;
 	mbox->SetMemoryMailbox.FirstCommandMailboxSizeKB =
-		(DAC960_V2_CommandMailboxCount * sizeof(DAC960_V2_CommandMailbox_T)) >> 10;
+		(DAC960_V2_CommandMailboxCount * sizeof(myr_v2_cmd_mbox)) >> 10;
 	mbox->SetMemoryMailbox.FirstStatusMailboxSizeKB =
-		(DAC960_V2_StatusMailboxCount * sizeof(DAC960_V2_StatusMailbox_T)) >> 10;
+		(DAC960_V2_StatusMailboxCount * sizeof(myr_v2_stat_mbox)) >> 10;
 	mbox->SetMemoryMailbox.SecondCommandMailboxSizeKB = 0;
 	mbox->SetMemoryMailbox.SecondStatusMailboxSizeKB = 0;
 	mbox->SetMemoryMailbox.sense_len = 0;
@@ -1875,7 +1875,7 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 			c->HardwareType);
 		return false;
 	}
-	pci_free_consistent(pdev, sizeof(DAC960_V2_CommandMailbox_T),
+	pci_free_consistent(pdev, sizeof(myr_v2_cmd_mbox),
 			    mbox, CommandMailboxDMA);
 	if (status != DAC960_V2_NormalCompletion)
 		dev_err(&pdev->dev, "Failed to enable mailbox, status %X\n",
@@ -2422,7 +2422,7 @@ static int mylex_v1_pthru_queuecommand(struct Scsi_Host *shost,
 {
 	myr_hba *c = (myr_hba *)shost->hostdata;
 	myr_v1_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	DAC960_V1_DCDB_T *DCDB;
 	dma_addr_t DCDB_dma;
 	struct scsi_device *sdev = scmd->device;
@@ -2581,7 +2581,7 @@ static int mylex_v1_ldev_queuecommand(struct Scsi_Host *shost,
 {
 	myr_hba *c = (myr_hba *)shost->hostdata;
 	myr_v1_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	DAC960_V1_LogicalDeviceInfo_T *ldev_info;
 	struct scsi_device *sdev = scmd->device;
 	struct scatterlist *sgl;
@@ -3031,7 +3031,7 @@ static ssize_t mylex_v2_store_dev_state(struct device *dev,
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 	myr_v2_cmdblk *cmd_blk;
-	DAC960_V2_CommandMailbox_T *mbox;
+	myr_v2_cmd_mbox *mbox;
 	DAC960_V2_DriveState_T new_state;
 	unsigned short ldev_num;
 	unsigned char status;
@@ -3210,7 +3210,7 @@ static ssize_t mylex_v1_show_dev_rebuild(struct device *dev,
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short ldev_num = 0xffff;
 	unsigned char status;
 	bool rebuild = false;
@@ -3283,7 +3283,7 @@ static ssize_t mylex_v1_store_dev_rebuild(struct device *dev,
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 	myr_v1_cmdblk *cmd_blk;
-	DAC960_V1_CommandMailbox_T *mbox;
+	myr_v1_cmd_mbox *mbox;
 	char tmpbuf[8];
 	ssize_t len;
 	unsigned short ldev_num = 0xFFFF;
@@ -3432,7 +3432,7 @@ static ssize_t mylex_v2_store_dev_rebuild(struct device *dev,
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 	DAC960_V2_LogicalDeviceInfo_T *ldev_info;
 	myr_v2_cmdblk *cmd_blk;
-	DAC960_V2_CommandMailbox_T *mbox;
+	myr_v2_cmd_mbox *mbox;
 	char tmpbuf[8];
 	ssize_t len;
 	unsigned short ldev_num;
@@ -3563,7 +3563,7 @@ static ssize_t mylex_v2_store_consistency_check(struct device *dev,
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 	DAC960_V2_LogicalDeviceInfo_T *ldev_info;
 	myr_v2_cmdblk *cmd_blk;
-	DAC960_V2_CommandMailbox_T *mbox;
+	myr_v2_cmd_mbox *mbox;
 	char tmpbuf[8];
 	ssize_t len;
 	unsigned short ldev_num;
@@ -3774,7 +3774,7 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 {
 	myr_hba *c = (myr_hba *)shost->hostdata;
 	myr_v2_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
-	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	struct scsi_device *sdev = scmd->device;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	dma_addr_t sense_addr;
@@ -4196,7 +4196,7 @@ static ssize_t mylex_v2_store_discovery_command(struct device *dev,
 	struct Scsi_Host *shost = class_to_shost(dev);
 	myr_hba *c = (myr_hba *)shost->hostdata;
 	myr_v2_cmdblk *cmd_blk;
-	DAC960_V2_CommandMailbox_T *mbox;
+	myr_v2_cmd_mbox *mbox;
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
@@ -5095,7 +5095,7 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 {
 	myr_hba *c = DeviceIdentifier;
 	void __iomem *base = c->BaseAddress;
-	DAC960_V2_StatusMailbox_T *NextStatusMailbox;
+	myr_v2_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
@@ -5123,7 +5123,7 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 			dev_err(&c->PCIDevice->dev,
 				"Unhandled command completion %d\n", id);
 
-		memset(NextStatusMailbox, 0, sizeof(DAC960_V2_StatusMailbox_T));
+		memset(NextStatusMailbox, 0, sizeof(myr_v2_stat_mbox));
 		if (++NextStatusMailbox > c->V2.LastStatusMailbox)
 			NextStatusMailbox = c->V2.FirstStatusMailbox;
 
@@ -5195,7 +5195,7 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 {
 	myr_hba *c = DeviceIdentifier;
 	void __iomem *base = c->BaseAddress;
-	DAC960_V2_StatusMailbox_T *NextStatusMailbox;
+	myr_v2_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
@@ -5223,7 +5223,7 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 			dev_err(&c->PCIDevice->dev,
 				"Unhandled command completion %d\n", id);
 
-		memset(NextStatusMailbox, 0, sizeof(DAC960_V2_StatusMailbox_T));
+		memset(NextStatusMailbox, 0, sizeof(myr_v2_stat_mbox));
 		if (++NextStatusMailbox > c->V2.LastStatusMailbox)
 			NextStatusMailbox = c->V2.FirstStatusMailbox;
 
@@ -5295,7 +5295,7 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 {
 	myr_hba *c = DeviceIdentifier;
 	void __iomem *base = c->BaseAddress;
-	DAC960_V2_StatusMailbox_T *NextStatusMailbox;
+	myr_v2_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
@@ -5323,7 +5323,7 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 			dev_err(&c->PCIDevice->dev,
 				"Unhandled command completion %d\n", id);
 
-		memset(NextStatusMailbox, 0, sizeof(DAC960_V2_StatusMailbox_T));
+		memset(NextStatusMailbox, 0, sizeof(myr_v2_stat_mbox));
 		if (++NextStatusMailbox > c->V2.LastStatusMailbox)
 			NextStatusMailbox = c->V2.FirstStatusMailbox;
 
@@ -5417,7 +5417,7 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 {
 	myr_hba *c = DeviceIdentifier;
 	void __iomem *base = c->BaseAddress;
-	DAC960_V1_StatusMailbox_T *NextStatusMailbox;
+	myr_v1_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
@@ -5443,7 +5443,7 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 			dev_err(&c->PCIDevice->dev,
 				"Unhandled command completion %d\n", id);
 
-		memset(NextStatusMailbox, 0, sizeof(DAC960_V1_StatusMailbox_T));
+		memset(NextStatusMailbox, 0, sizeof(myr_v1_stat_mbox));
 		if (++NextStatusMailbox > c->V1.LastStatusMailbox)
 			NextStatusMailbox = c->V1.FirstStatusMailbox;
 
@@ -5520,7 +5520,7 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 {
 	myr_hba *c = DeviceIdentifier;
 	void __iomem *base = c->BaseAddress;
-	DAC960_V1_StatusMailbox_T *NextStatusMailbox;
+	myr_v1_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
@@ -5546,7 +5546,7 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 			dev_err(&c->PCIDevice->dev,
 				"Unhandled command completion %d\n", id);
 
-		memset(NextStatusMailbox, 0, sizeof(DAC960_V1_StatusMailbox_T));
+		memset(NextStatusMailbox, 0, sizeof(myr_v1_stat_mbox));
 		if (++NextStatusMailbox > c->V1.LastStatusMailbox)
 			NextStatusMailbox = c->V1.FirstStatusMailbox;
 
@@ -5752,7 +5752,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 		DAC960_PD_AcknowledgeStatus(base);
 
 		if (cmd_blk) {
-			DAC960_V1_CommandMailbox_T *mbox;
+			myr_v1_cmd_mbox *mbox;
 			myr_v1_cmd_opcode op;
 
 			mbox = &cmd_blk->mbox;
@@ -5804,7 +5804,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 static unsigned char DAC960_V2_MonitoringGetHealthStatus(myr_hba *c)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.MonitoringCommandBlock;
-	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status = cmd_blk->status;
 

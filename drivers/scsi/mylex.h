@@ -720,7 +720,7 @@ DAC960_V1_ScatterGatherSegment_T;
   efficient access.
 */
 
-typedef union DAC960_V1_CommandMailbox
+typedef union myr_v1_cmd_mbox_s
 {
 	unsigned int Words[4];				/* Words 0-3 */
 	unsigned char Bytes[16];			/* Bytes 0-15 */
@@ -817,8 +817,7 @@ typedef union DAC960_V1_CommandMailbox
 		u32 StatusMailboxesBusAddress;				/* Bytes 8-11 */
 		unsigned char Dummy[4];					/* Bytes 12-15 */
 	} __attribute__ ((packed)) TypeX;
-}
-DAC960_V1_CommandMailbox_T;
+} myr_v1_cmd_mbox;
 
 
 /*
@@ -1557,7 +1556,7 @@ DAC960_V2_DataTransferMemoryAddress_T;
   Define the 64 Byte DAC960 V2 Firmware Command Mailbox structure.
 */
 
-typedef union DAC960_V2_CommandMailbox
+typedef union myr_v2_cmd_mbox_s
 {
 	unsigned int Words[16];				/* Words 0-15 */
 	struct {
@@ -1731,8 +1730,7 @@ typedef union DAC960_V2_CommandMailbox
 		unsigned char Reserved[9];			/* Bytes 23-31 */
 		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
 	} DeviceOperation;
-}
-DAC960_V2_CommandMailbox_T;
+} myr_v2_cmd_mbox;
 
 
 /*
@@ -1899,35 +1897,33 @@ struct DAC960_privdata {
   Define the DAC960 V1 Firmware Controller Status Mailbox structure.
 */
 
-typedef struct DAC960_V1_StatusMailbox
+typedef struct myr_v1_stat_mbox_s
 {
 	unsigned char id;		/* Byte 0 */
 	unsigned char rsvd:7;		/* Byte 1 Bits 0-6 */
 	bool valid:1;			/* Byte 1 Bit 7 */
 	unsigned short status;		/* Bytes 2-3 */
-}
-DAC960_V1_StatusMailbox_T;
+} myr_v1_stat_mbox;
 
 
 /*
   Define the DAC960 V2 Firmware Controller Status Mailbox structure.
 */
 
-typedef struct DAC960_V2_StatusMailbox
+typedef struct myr_v2_stat_mbox_s
 {
 	unsigned short id;		/* Bytes 0-1 */
 	unsigned char status;		/* Byte 2 */
 	unsigned char sense_len;	/* Byte 3 */
 	int residual;			/* Bytes 4-7 */
-}
-DAC960_V2_StatusMailbox_T;
+} myr_v2_stat_mbox;
 
 #define DAC960_DirectCommandIdentifier 1
 #define DAC960_MonitoringIdentifier 2
 
 typedef struct myr_v1_cmdblk_s
 {
-	DAC960_V1_CommandMailbox_T mbox;
+	myr_v1_cmd_mbox mbox;
 	unsigned short status;
 	struct completion *Completion;
 	DAC960_V1_DCDB_T *DCDB;
@@ -1936,9 +1932,9 @@ typedef struct myr_v1_cmdblk_s
 	dma_addr_t sgl_addr;
 } myr_v1_cmdblk;
 
-typedef struct DAC960_V2_CommandBlock
+typedef struct myr_v2_cmdblk_s
 {
-	DAC960_V2_CommandMailbox_T mbox;
+	myr_v2_cmd_mbox mbox;
 	unsigned char status;
 	unsigned char sense_len;
 	int residual;
@@ -2025,21 +2021,21 @@ typedef struct myr_hba_s
 
 			void (*QueueCommand)(struct myr_hba_s *,
 					     myr_v1_cmdblk *);
-			void (*WriteCommandMailbox)(DAC960_V1_CommandMailbox_T *,
-						    DAC960_V1_CommandMailbox_T *);
+			void (*WriteCommandMailbox)(myr_v1_cmd_mbox *,
+						    myr_v1_cmd_mbox *);
 			void (*MailboxNewCommand)(void __iomem *);
 
 			dma_addr_t	FirstCommandMailboxDMA;
-			DAC960_V1_CommandMailbox_T *FirstCommandMailbox;
-			DAC960_V1_CommandMailbox_T *LastCommandMailbox;
-			DAC960_V1_CommandMailbox_T *NextCommandMailbox;
-			DAC960_V1_CommandMailbox_T *PreviousCommandMailbox1;
-			DAC960_V1_CommandMailbox_T *PreviousCommandMailbox2;
+			myr_v1_cmd_mbox *FirstCommandMailbox;
+			myr_v1_cmd_mbox *LastCommandMailbox;
+			myr_v1_cmd_mbox *NextCommandMailbox;
+			myr_v1_cmd_mbox *PreviousCommandMailbox1;
+			myr_v1_cmd_mbox *PreviousCommandMailbox2;
 
 			dma_addr_t	FirstStatusMailboxDMA;
-			DAC960_V1_StatusMailbox_T *FirstStatusMailbox;
-			DAC960_V1_StatusMailbox_T *LastStatusMailbox;
-			DAC960_V1_StatusMailbox_T *NextStatusMailbox;
+			myr_v1_stat_mbox *FirstStatusMailbox;
+			myr_v1_stat_mbox *LastStatusMailbox;
+			myr_v1_stat_mbox *NextStatusMailbox;
 
 			myr_v1_cmdblk DirectCommandBlock;
 			myr_v1_cmdblk MonitoringCommandBlock;
@@ -2083,21 +2079,21 @@ typedef struct myr_hba_s
 
 			void (*QueueCommand)(struct myr_hba_s *,
 					     myr_v2_cmdblk *);
-			void (*WriteCommandMailbox)(DAC960_V2_CommandMailbox_T *,
-						    DAC960_V2_CommandMailbox_T *);
+			void (*WriteCommandMailbox)(myr_v2_cmd_mbox *,
+						    myr_v2_cmd_mbox *);
 			void (*MailboxNewCommand)(void __iomem *);
 
 			dma_addr_t	FirstCommandMailboxDMA;
-			DAC960_V2_CommandMailbox_T *FirstCommandMailbox;
-			DAC960_V2_CommandMailbox_T *LastCommandMailbox;
-			DAC960_V2_CommandMailbox_T *NextCommandMailbox;
-			DAC960_V2_CommandMailbox_T *PreviousCommandMailbox1;
-			DAC960_V2_CommandMailbox_T *PreviousCommandMailbox2;
+			myr_v2_cmd_mbox *FirstCommandMailbox;
+			myr_v2_cmd_mbox *LastCommandMailbox;
+			myr_v2_cmd_mbox *NextCommandMailbox;
+			myr_v2_cmd_mbox *PreviousCommandMailbox1;
+			myr_v2_cmd_mbox *PreviousCommandMailbox2;
 
 			dma_addr_t	FirstStatusMailboxDMA;
-			DAC960_V2_StatusMailbox_T *FirstStatusMailbox;
-			DAC960_V2_StatusMailbox_T *LastStatusMailbox;
-			DAC960_V2_StatusMailbox_T *NextStatusMailbox;
+			myr_v2_stat_mbox *FirstStatusMailbox;
+			myr_v2_stat_mbox *LastStatusMailbox;
+			myr_v2_stat_mbox *NextStatusMailbox;
 
 			myr_v2_cmdblk DirectCommandBlock;
 			myr_v2_cmdblk MonitoringCommandBlock;
@@ -2422,11 +2418,11 @@ bool DAC960_GEM_InterruptsEnabledP(void __iomem *base)
 }
 
 static inline
-void DAC960_GEM_WriteCommandMailbox(DAC960_V2_CommandMailbox_T *mem_mbox,
-				    DAC960_V2_CommandMailbox_T *mbox)
+void DAC960_GEM_WriteCommandMailbox(myr_v2_cmd_mbox *mem_mbox,
+				    myr_v2_cmd_mbox *mbox)
 {
 	memcpy(&mem_mbox->Words[1], &mbox->Words[1],
-	       sizeof(DAC960_V2_CommandMailbox_T) - sizeof(unsigned int));
+	       sizeof(myr_v2_cmd_mbox) - sizeof(unsigned int));
 	wmb();
 	mem_mbox->Words[0] = mbox->Words[0];
 	mb();
@@ -2724,11 +2720,11 @@ bool DAC960_BA_InterruptsEnabledP(void __iomem *base)
 }
 
 static inline
-void DAC960_BA_WriteCommandMailbox(DAC960_V2_CommandMailbox_T *mem_mbox,
-				   DAC960_V2_CommandMailbox_T *mbox)
+void DAC960_BA_WriteCommandMailbox(myr_v2_cmd_mbox *mem_mbox,
+				   myr_v2_cmd_mbox *mbox)
 {
 	memcpy(&mem_mbox->Words[1], &mbox->Words[1],
-	       sizeof(DAC960_V2_CommandMailbox_T) - sizeof(unsigned int));
+	       sizeof(myr_v2_cmd_mbox) - sizeof(unsigned int));
 	wmb();
 	mem_mbox->Words[0] = mbox->Words[0];
 	mb();
@@ -3022,11 +3018,11 @@ bool DAC960_LP_InterruptsEnabledP(void __iomem *base)
 }
 
 static inline
-void DAC960_LP_WriteCommandMailbox(DAC960_V2_CommandMailbox_T *mem_mbox,
-				   DAC960_V2_CommandMailbox_T *mbox)
+void DAC960_LP_WriteCommandMailbox(myr_v2_cmd_mbox *mem_mbox,
+				   myr_v2_cmd_mbox *mbox)
 {
 	memcpy(&mem_mbox->Words[1], &mbox->Words[1],
-	       sizeof(DAC960_V2_CommandMailbox_T) - sizeof(unsigned int));
+	       sizeof(myr_v2_cmd_mbox) - sizeof(unsigned int));
 	wmb();
 	mem_mbox->Words[0] = mbox->Words[0];
 	mb();
@@ -3334,8 +3330,8 @@ bool DAC960_LA_InterruptsEnabledP(void __iomem *base)
 }
 
 static inline
-void DAC960_LA_WriteCommandMailbox(DAC960_V1_CommandMailbox_T *mem_mbox,
-				   DAC960_V1_CommandMailbox_T *mbox)
+void DAC960_LA_WriteCommandMailbox(myr_v1_cmd_mbox *mem_mbox,
+				   myr_v1_cmd_mbox *mbox)
 {
 	mem_mbox->Words[1] = mbox->Words[1];
 	mem_mbox->Words[2] = mbox->Words[2];
@@ -3347,7 +3343,7 @@ void DAC960_LA_WriteCommandMailbox(DAC960_V1_CommandMailbox_T *mem_mbox,
 
 static inline
 void DAC960_LA_WriteHardwareMailbox(void __iomem *base,
-				    DAC960_V1_CommandMailbox_T *mbox)
+				    myr_v1_cmd_mbox *mbox)
 {
 	writel(mbox->Words[0],
 	       base + DAC960_LA_CommandOpcodeRegisterOffset);
@@ -3657,8 +3653,8 @@ bool DAC960_PG_InterruptsEnabledP(void __iomem *base)
 }
 
 static inline
-void DAC960_PG_WriteCommandMailbox(DAC960_V1_CommandMailbox_T *mem_mbox,
-				   DAC960_V1_CommandMailbox_T *mbox)
+void DAC960_PG_WriteCommandMailbox(myr_v1_cmd_mbox *mem_mbox,
+				   myr_v1_cmd_mbox *mbox)
 {
 	mem_mbox->Words[1] = mbox->Words[1];
 	mem_mbox->Words[2] = mbox->Words[2];
@@ -3670,7 +3666,7 @@ void DAC960_PG_WriteCommandMailbox(DAC960_V1_CommandMailbox_T *mem_mbox,
 
 static inline
 void DAC960_PG_WriteHardwareMailbox(void __iomem *base,
-				    DAC960_V1_CommandMailbox_T *mbox)
+				    myr_v1_cmd_mbox *mbox)
 {
 	writel(mbox->Words[0],
 	       base + DAC960_PG_CommandOpcodeRegisterOffset);
@@ -3930,7 +3926,7 @@ bool DAC960_PD_InterruptsEnabledP(void __iomem *base)
 
 static inline
 void DAC960_PD_WriteCommandMailbox(void __iomem *base,
-				   DAC960_V1_CommandMailbox_T *mbox)
+				   myr_v1_cmd_mbox *mbox)
 {
 	writel(mbox->Words[0],
 	       base + DAC960_PD_CommandOpcodeRegisterOffset);
@@ -3989,7 +3985,7 @@ static inline void DAC960_P_To_PD_TranslateDeviceState(void *DeviceState)
 static inline
 void DAC960_PD_To_P_TranslateReadWriteCommand(myr_v1_cmdblk *cmd_blk)
 {
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	int ldev_num = mbox->Type5.LD.LogicalDriveNumber;
 
 	mbox->Bytes[3] &= 0x7;
@@ -4000,7 +3996,7 @@ void DAC960_PD_To_P_TranslateReadWriteCommand(myr_v1_cmdblk *cmd_blk)
 static inline
 void DAC960_P_To_PD_TranslateReadWriteCommand(myr_v1_cmdblk *cmd_blk)
 {
-	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
+	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	int ldev_num = mbox->Bytes[7];
 
 	mbox->Bytes[7] = mbox->Bytes[3] >> 6;
