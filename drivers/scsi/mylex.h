@@ -930,7 +930,7 @@ DAC960_V2_ProcessorType_T;
   Define the DAC960 V2 Firmware Get Controller Info reply structure.
 */
 
-typedef struct DAC960_V2_ControllerInfo
+typedef struct myr_v2_ctlr_info_s
 {
 	unsigned char :8;				/* Byte 0 */
 	enum {
@@ -1141,8 +1141,7 @@ typedef struct DAC960_V2_ControllerInfo
 	unsigned int :24;					/* Bytes 476-479 */
 	unsigned char Reserved10[32];				/* Bytes 480-511 */
 	unsigned char Reserved11[512];			/* Bytes 512-1023 */
-}
-DAC960_V2_ControllerInfo_T;
+} myr_v2_ctlr_info;
 
 
 /*
@@ -1375,7 +1374,7 @@ typedef struct myr_v2_pdev_info_s
   Define the DAC960 V2 Firmware Health Status Buffer structure.
 */
 
-typedef struct DAC960_V2_HealthStatusBuffer
+typedef struct myr_v2_fwstat_s
 {
 	unsigned int MicrosecondsFromControllerStartTime;	/* Bytes 0-3 */
 	unsigned int MillisecondsFromControllerStartTime;	/* Bytes 4-7 */
@@ -1391,8 +1390,7 @@ typedef struct DAC960_V2_HealthStatusBuffer
 	unsigned int :32;					/* Bytes 44-47 */
 	unsigned char Reserved1[16];				/* Bytes 48-63 */
 	unsigned char Reserved2[64];				/* Bytes 64-127 */
-}
-DAC960_V2_HealthStatusBuffer_T;
+} myr_v2_fwstat;
 
 
 /*
@@ -1412,7 +1410,7 @@ typedef struct DAC960_V2_Event
 	unsigned int EventSpecificParameter;			/* Bytes 20-23 */
 	unsigned char RequestSenseData[40];			/* Bytes 24-63 */
 }
-DAC960_V2_Event_T;
+myr_v2_event;
 
 
 /*
@@ -1493,14 +1491,14 @@ typedef enum
 	DAC960_V2_Enclosure =			0x11
 }
 __attribute__ ((packed))
-DAC960_V2_OperationDevice_T;
+myr_v2_opdev;
 
 
 /*
   Define the DAC960 V2 Firmware Translate Physical To Logical Device structure.
 */
 
-typedef struct DAC960_V2_PhysicalToLogicalDevice
+typedef struct myr_v2_devmap_s
 {
 	unsigned short LogicalDeviceNumber;			/* Bytes 0-1 */
 	unsigned short :16;					/* Bytes 2-3 */
@@ -1508,8 +1506,7 @@ typedef struct DAC960_V2_PhysicalToLogicalDevice
 	unsigned char PreviousBootChannel;			/* Byte 5 */
 	unsigned char PreviousBootTargetID;			/* Byte 6 */
 	unsigned char PreviousBootLogicalUnit;		/* Byte 7 */
-}
-DAC960_V2_PhysicalToLogicalDevice_T;
+} myr_v2_devmap;
 
 
 
@@ -1551,175 +1548,175 @@ typedef union myr_v2_cmd_mbox_s
 {
 	unsigned int Words[16];				/* Words 0-15 */
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size:24;				/* Bytes 4-6 */
-		unsigned char dma_num;				/* Byte 7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		unsigned int :24;				/* Bytes 16-18 */
+		u32 dma_size:24;			/* Bytes 4-6 */
+		unsigned char dma_num;			/* Byte 7 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		unsigned int rsvd1:24;			/* Bytes 16-18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char IOCTL_Opcode;			/* Byte 21 */
-		unsigned char Reserved[10];			/* Bytes 22-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char ioctl_opcode;		/* Byte 21 */
+		unsigned char rsvd2[10];		/* Bytes 22-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} Common;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size;					/* Bytes 4-7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		myr_v2_pdev pdev;	/* Bytes 16-18 */
+		u32 dma_size;				/* Bytes 4-7 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		myr_v2_pdev pdev;			/* Bytes 16-18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char CDBLength;			/* Byte 21 */
-		unsigned char SCSI_CDB[10];			/* Bytes 22-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char cdb_len;			/* Byte 21 */
+		unsigned char cdb[10];			/* Bytes 22-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} SCSI_10;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size;					/* Bytes 4-7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		myr_v2_pdev pdev;	/* Bytes 16-18 */
+		u32 dma_size;				/* Bytes 4-7 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		myr_v2_pdev pdev;			/* Bytes 16-18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char CDBLength;			/* Byte 21 */
-		unsigned short :16;				/* Bytes 22-23 */
-		u64 SCSI_CDB_BusAddress;			/* Bytes 24-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char cdb_len;			/* Byte 21 */
+		unsigned short rsvd:16;			/* Bytes 22-23 */
+		u64 cdb_addr;				/* Bytes 24-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} SCSI_255;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size:24;				/* Bytes 4-6 */
-		unsigned char dma_num;				/* Byte 7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		unsigned short :16;				/* Bytes 16-17 */
-		unsigned char ControllerNumber;			/* Byte 18 */
+		u32 dma_size:24;			/* Bytes 4-6 */
+		unsigned char dma_num;			/* Byte 7 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		unsigned short rsvd1:16;		/* Bytes 16-17 */
+		unsigned char ctlr_num;			/* Byte 18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char IOCTL_Opcode;			/* Byte 21 */
-		unsigned char Reserved[10];			/* Bytes 22-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char ioctl_opcode;		/* Byte 21 */
+		unsigned char rsvd2[10];		/* Bytes 22-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} ControllerInfo;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size:24;				/* Bytes 4-6 */
-		unsigned char dma_num;				/* Byte 7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		myr_v2_ldev ldev;	/* Bytes 16-18 */
+		u32 dma_size:24;			/* Bytes 4-6 */
+		unsigned char dma_num;			/* Byte 7 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		myr_v2_ldev ldev;			/* Bytes 16-18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char IOCTL_Opcode;			/* Byte 21 */
-		unsigned char Reserved[10];			/* Bytes 22-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char ioctl_opcode;		/* Byte 21 */
+		unsigned char rsvd[10];			/* Bytes 22-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} LogicalDeviceInfo;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size:24;				/* Bytes 4-6 */
-		unsigned char dma_num;				/* Byte 7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		myr_v2_pdev pdev;	/* Bytes 16-18 */
+		u32 dma_size:24;			/* Bytes 4-6 */
+		unsigned char dma_num;			/* Byte 7 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		myr_v2_pdev pdev;			/* Bytes 16-18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char IOCTL_Opcode;			/* Byte 21 */
-		unsigned char Reserved[10];			/* Bytes 22-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char ioctl_opcode;		/* Byte 21 */
+		unsigned char rsvd[10];			/* Bytes 22-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} PhysicalDeviceInfo;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size:24;				/* Bytes 4-6 */
-		unsigned char dma_num;				/* Byte 7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		unsigned short EventSequenceNumberHigh16;	/* Bytes 16-17 */
-		unsigned char ControllerNumber;			/* Byte 18 */
+		u32 dma_size:24;			/* Bytes 4-6 */
+		unsigned char dma_num;			/* Byte 7 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		unsigned short evnum_upper;		/* Bytes 16-17 */
+		unsigned char ctlr_num;			/* Byte 18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char IOCTL_Opcode;			/* Byte 21 */
-		unsigned short EventSequenceNumberLow16;	/* Bytes 22-23 */
-		unsigned char Reserved[8];			/* Bytes 24-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char ioctl_opcode;		/* Byte 21 */
+		unsigned short evnum_lower;		/* Bytes 22-23 */
+		unsigned char rsvd[8];			/* Bytes 24-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} GetEvent;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size:24;				/* Bytes 4-6 */
-		unsigned char dma_num;				/* Byte 7 */
-		u64 sense_addr;					/* Bytes 8-15 */
+		u32 dma_size:24;			/* Bytes 4-6 */
+		unsigned char dma_num;			/* Byte 7 */
+		u64 sense_addr;				/* Bytes 8-15 */
 		union {
-			myr_v2_ldev ldev;	/* Bytes 16-18 */
-			myr_v2_pdev pdev;	/* Bytes 16-18 */
+			myr_v2_ldev ldev;		/* Bytes 16-18 */
+			myr_v2_pdev pdev;		/* Bytes 16-18 */
 		};
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char IOCTL_Opcode;			/* Byte 21 */
-		myr_v2_devstate State;
-		unsigned char Reserved[9];			/* Bytes 23-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char ioctl_opcode;		/* Byte 21 */
+		myr_v2_devstate state;			/* Byte 22 */
+		unsigned char rsvd[9];			/* Bytes 23-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} SetDeviceState;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size:24;				/* Bytes 4-6 */
-		unsigned char dma_num;				/* Byte 7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		myr_v2_ldev ldev;	/* Bytes 16-18 */
+		u32 dma_size:24;			/* Bytes 4-6 */
+		unsigned char dma_num;			/* Byte 7 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		myr_v2_ldev ldev;			/* Bytes 16-18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char IOCTL_Opcode;			/* Byte 21 */
-		bool RestoreConsistency:1;			/* Byte 22 Bit 0 */
-		bool InitializedAreaOnly:1;			/* Byte 22 Bit 1 */
-		unsigned char :6;				/* Byte 22 Bits 2-7 */
-		unsigned char Reserved[9];			/* Bytes 23-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char ioctl_opcode;		/* Byte 21 */
+		bool RestoreConsistency:1;		/* Byte 22 Bit 0 */
+		bool InitializedAreaOnly:1;		/* Byte 22 Bit 1 */
+		unsigned char rsvd1:6;			/* Byte 22 Bits 2-7 */
+		unsigned char rsvd2[9];			/* Bytes 23-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} ConsistencyCheck;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		unsigned char FirstCommandMailboxSizeKB;	/* Byte 4 */
 		unsigned char FirstStatusMailboxSizeKB;		/* Byte 5 */
 		unsigned char SecondCommandMailboxSizeKB;	/* Byte 6 */
 		unsigned char SecondStatusMailboxSizeKB;	/* Byte 7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		unsigned int :24;				/* Bytes 16-18 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		unsigned int rsvd1:24;			/* Bytes 16-18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char IOCTL_Opcode;			/* Byte 21 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char ioctl_opcode;		/* Byte 21 */
 		unsigned char HealthStatusBufferSizeKB;		/* Byte 22 */
-		unsigned char :8;				/* Byte 23 */
-		u64 HealthStatusBufferBusAddress; /* Bytes 24-31 */
-		u64 FirstCommandMailboxBusAddress; /* Bytes 32-39 */
-		u64 FirstStatusMailboxBusAddress; /* Bytes 40-47 */
-		u64 SecondCommandMailboxBusAddress; /* Bytes 48-55 */
-		u64 SecondStatusMailboxBusAddress; /* Bytes 56-63 */
+		unsigned char rsvd2:8;			/* Byte 23 */
+		u64 HealthStatusBufferBusAddress;	/* Bytes 24-31 */
+		u64 FirstCommandMailboxBusAddress;	/* Bytes 32-39 */
+		u64 FirstStatusMailboxBusAddress;	/* Bytes 40-47 */
+		u64 SecondCommandMailboxBusAddress;	/* Bytes 48-55 */
+		u64 SecondStatusMailboxBusAddress;	/* Bytes 56-63 */
 	} SetMemoryMailbox;
 	struct {
-		unsigned short id;				/* Bytes 0-1 */
-		myr_v2_cmd_opcode opcode;			/* Byte 2 */
+		unsigned short id;			/* Bytes 0-1 */
+		myr_v2_cmd_opcode opcode;		/* Byte 2 */
 		myr_v2_cmd_ctrl control;		/* Byte 3 */
-		u32 dma_size:24;				/* Bytes 4-6 */
-		unsigned char dma_num;				/* Byte 7 */
-		u64 sense_addr;					/* Bytes 8-15 */
-		myr_v2_pdev pdev;	/* Bytes 16-18 */
+		u32 dma_size:24;			/* Bytes 4-6 */
+		unsigned char dma_num;			/* Byte 7 */
+		u64 sense_addr;				/* Bytes 8-15 */
+		myr_v2_pdev pdev;			/* Bytes 16-18 */
 		myr_v2_cmd_tmo tmo;			/* Byte 19 */
-		unsigned char sense_len;			/* Byte 20 */
-		unsigned char IOCTL_Opcode;			/* Byte 21 */
-		DAC960_V2_OperationDevice_T OperationDevice;	/* Byte 22 */
-		unsigned char Reserved[9];			/* Bytes 23-31 */
-		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
+		unsigned char sense_len;		/* Byte 20 */
+		unsigned char ioctl_opcode;		/* Byte 21 */
+		myr_v2_opdev opdev;			/* Byte 22 */
+		unsigned char rsvd[9];			/* Bytes 23-31 */
+		myr_v2_sgl dma_addr;			/* Bytes 32-63 */
 	} DeviceOperation;
 } myr_v2_cmd_mbox;
 
@@ -1763,7 +1760,7 @@ DAC960_ControllerInfo_T;
 typedef struct DAC960_V2_GetHealthStatus
 {
 	unsigned char ControllerNumber;
-	DAC960_V2_HealthStatusBuffer_T __user *HealthStatusBuffer;
+	myr_v2_fwstat __user *HealthStatusBuffer;
 }
 DAC960_V2_GetHealthStatus_T;
 
@@ -2028,8 +2025,8 @@ typedef struct myr_hba_s
 			myr_v1_stat_mbox *LastStatusMailbox;
 			myr_v1_stat_mbox *NextStatusMailbox;
 
-			myr_v1_cmdblk DirectCommandBlock;
-			myr_v1_cmdblk MonitoringCommandBlock;
+			myr_v1_cmdblk dcmd_blk;
+			myr_v1_cmdblk mcmd_blk;
 			struct mutex dcmd_mutex;
 
 			DAC960_V1_Enquiry_T Enquiry;
@@ -2086,29 +2083,29 @@ typedef struct myr_hba_s
 			myr_v2_stat_mbox *LastStatusMailbox;
 			myr_v2_stat_mbox *NextStatusMailbox;
 
-			myr_v2_cmdblk DirectCommandBlock;
-			myr_v2_cmdblk MonitoringCommandBlock;
+			myr_v2_cmdblk dcmd_blk;
+			myr_v2_cmdblk mcmd_blk;
 			struct mutex dcmd_mutex;
 
-			dma_addr_t	HealthStatusBufferDMA;
-			DAC960_V2_HealthStatusBuffer_T *HealthStatusBuffer;
+			myr_v2_fwstat *fwstat_buf;
+			dma_addr_t fwstat_addr;
 
-			DAC960_V2_ControllerInfo_T ControllerInformation;
-			DAC960_V2_ControllerInfo_T *NewControllerInformation;
-			dma_addr_t	NewControllerInformationDMA;
+			myr_v2_ctlr_info ctlr_info;
+			myr_v2_ctlr_info *ctlr_info_buf;
+			dma_addr_t ctlr_info_addr;
 			struct mutex cinfo_mutex;
 
-			myr_v2_ldev_info *NewLogicalDeviceInformation;
-			dma_addr_t	 NewLogicalDeviceInformationDMA;
+			myr_v2_ldev_info *ldev_info_buf;
+			dma_addr_t ldev_info_addr;
 
-			myr_v2_pdev_info *NewPhysicalDeviceInformation;
-			dma_addr_t	NewPhysicalDeviceInformationDMA;
+			myr_v2_pdev_info *pdev_info_buf;
+			dma_addr_t pdev_info_addr;
 
-			DAC960_V2_Event_T *Event;
-			dma_addr_t EventDMA;
+			myr_v2_event *event_buf;
+			dma_addr_t event_addr;
 
-			DAC960_V2_PhysicalToLogicalDevice_T *PhysicalToLogicalDevice;
-			dma_addr_t PhysicalToLogicalDeviceDMA;
+			myr_v2_devmap *devmap_buf;
+			dma_addr_t devmap_addr;
 		} V2;
 	} FW;
 } myr_hba;

@@ -532,7 +532,7 @@ static unsigned short DAC960_V1_ExecuteType3(myr_hba *c,
 					     myr_v1_cmd_opcode op,
 					     dma_addr_t DataDMA)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.dcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -559,7 +559,7 @@ static unsigned short DAC960_V1_ExecuteType3B(myr_hba *c,
 					      unsigned char CommandOpcode2,
 					      dma_addr_t DataDMA)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.dcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -586,7 +586,7 @@ static unsigned short DAC960_V1_ExecuteType3D(myr_hba *c,
 					      myr_v1_cmd_opcode op,
 					      struct scsi_device *sdev)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.dcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	myr_v1_pdev_state *pdev_info = sdev->hostdata;
 	unsigned short status;
@@ -630,7 +630,7 @@ static unsigned short DAC960_V1_ExecuteType3D(myr_hba *c,
 static unsigned short DAC960_V1_MonitorGetEventLog(myr_hba *c,
 						   unsigned int event)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.mcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 	static char *DAC960_EventMessages[] =
@@ -701,7 +701,7 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myr_hba *c,
 
 static void DAC960_V1_MonitorGetErrorTable(myr_hba *c)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.mcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -754,7 +754,7 @@ static void DAC960_V1_MonitorGetErrorTable(myr_hba *c)
 
 static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.dcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -819,7 +819,7 @@ static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 
 static void DAC960_V1_MonitorRebuildProgress(myr_hba *c)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.mcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -890,7 +890,7 @@ static void DAC960_V1_MonitorRebuildProgress(myr_hba *c)
 
 static void DAC960_V1_ConsistencyCheckProgress(myr_hba *c)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.mcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -926,7 +926,7 @@ static void DAC960_V1_ConsistencyCheckProgress(myr_hba *c)
 
 static void DAC960_V1_BackgroundInitialization(myr_hba *c)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.mcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	DAC960_V1_BackgroundInitializationStatus_T *bgi, *last_bgi;
 	struct scsi_device *sdev;
@@ -1004,7 +1004,7 @@ static void DAC960_V1_BackgroundInitialization(myr_hba *c)
 
 static unsigned short DAC960_V1_NewEnquiry(myr_hba *c)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.dcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -1142,7 +1142,7 @@ static unsigned short DAC960_V1_SetDeviceState(myr_hba *c,
 					       struct scsi_device *sdev,
 					       myr_v1_devstate State)
 {
-	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.dcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -1164,13 +1164,13 @@ static unsigned short DAC960_V1_SetDeviceState(myr_hba *c,
   Information Reading IOCTL Command and waits for completion.  It returns
   true on success and false on failure.
 
-  Data is returned in the controller's V2.NewControllerInformation dma-able
+  Data is returned in the controller's V2.ctlr_info_buf dma-able
   memory buffer.
 */
 
 static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 {
-	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.dcmd_blk;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	myr_v2_sgl *sgl;
 	unsigned char status;
@@ -1181,12 +1181,11 @@ static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 	mbox->ControllerInfo.opcode = DAC960_V2_IOCTL;
 	mbox->ControllerInfo.control.DataTransferControllerToHost = true;
 	mbox->ControllerInfo.control.NoAutoRequestSense = true;
-	mbox->ControllerInfo.dma_size =
-		sizeof(DAC960_V2_ControllerInfo_T);
-	mbox->ControllerInfo.ControllerNumber = 0;
-	mbox->ControllerInfo.IOCTL_Opcode = DAC960_V2_GetControllerInfo;
+	mbox->ControllerInfo.dma_size = sizeof(myr_v2_ctlr_info);
+	mbox->ControllerInfo.ctlr_num = 0;
+	mbox->ControllerInfo.ioctl_opcode = DAC960_V2_GetControllerInfo;
 	sgl = &mbox->ControllerInfo.dma_addr;
-	sgl->sge[0].sge_addr = c->V2.NewControllerInformationDMA;
+	sgl->sge[0].sge_addr = c->V2.ctlr_info_addr;
 	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetControllerInfo\n");
@@ -1194,10 +1193,8 @@ static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 	status = cmd_blk->status;
 	mutex_unlock(&c->V2.dcmd_mutex);
 	if (status == DAC960_V2_NormalCompletion) {
-		DAC960_V2_ControllerInfo_T *new =
-			c->V2.NewControllerInformation;
-		DAC960_V2_ControllerInfo_T *old =
-			&c->V2.ControllerInformation;
+		myr_v2_ctlr_info *new = c->V2.ctlr_info_buf;
+		myr_v2_ctlr_info *old = &c->V2.ctlr_info;
 		if (new->BackgroundInitializationsActive +
 		    new->LogicalDeviceInitializationsActive +
 		    new->PhysicalDeviceInitializationsActive +
@@ -1214,8 +1211,7 @@ static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 				     new->LogicalDevicesOffline,
 				     new->LogicalDevicesPresent);
 		c->LogicalDriveCount = new->LogicalDevicesPresent;
-		memcpy(old, new,
-		       sizeof(DAC960_V2_ControllerInfo_T));
+		memcpy(old, new, sizeof(myr_v2_ctlr_info));
 	}
 
 	return status;
@@ -1227,7 +1223,7 @@ static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
   Device Information Reading IOCTL Command and waits for completion.  It
   returns true on success and false on failure.
 
-  Data is returned in the controller's V2.NewLogicalDeviceInformation
+  Data is returned in the controller's V2.ldev_info_buf
 */
 
 static unsigned char
@@ -1235,7 +1231,7 @@ DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 			       unsigned short ldev_num,
 			       myr_v2_ldev_info *ldev_info)
 {
-	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.dcmd_blk;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	myr_v2_sgl *sgl;
 	unsigned char status;
@@ -1249,10 +1245,10 @@ DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 	mbox->LogicalDeviceInfo.dma_size =
 		sizeof(myr_v2_ldev_info);
 	mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
-	mbox->LogicalDeviceInfo.IOCTL_Opcode =
+	mbox->LogicalDeviceInfo.ioctl_opcode =
 		DAC960_V2_GetLogicalDeviceInfoValid;
 	sgl = &mbox->LogicalDeviceInfo.dma_addr;
-	sgl->sge[0].sge_addr = c->V2.NewLogicalDeviceInformationDMA;
+	sgl->sge[0].sge_addr = c->V2.ldev_info_addr;
 	sgl->sge[0].sge_count = mbox->LogicalDeviceInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetLogicalDeviceInfoValid for ldev %d\n", ldev_num);
@@ -1260,13 +1256,11 @@ DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 	status = cmd_blk->status;
 	if (status == DAC960_V2_NormalCompletion) {
 		unsigned short ldev_num = ldev_info->LogicalDeviceNumber;
-		myr_v2_ldev_info *new =
-			c->V2.NewLogicalDeviceInformation;
+		myr_v2_ldev_info *new = c->V2.ldev_info_buf;
 		myr_v2_ldev_info *old = ldev_info;
 
 		if (old != NULL) {
-			unsigned long ldev_size =
-				new->ConfigurableDeviceSize;
+			unsigned long ldev_size = new->ConfigurableDeviceSize;
 
 			if (new->State != old->State) {
 				const char *name;
@@ -1316,7 +1310,7 @@ DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 					    (new->LogicalDeviceControl
 						 .LogicalDeviceInitialized
 						 ? "Completed" : "Failed"));
-			memcpy(ldev_info, c->V2.NewLogicalDeviceInformation,
+			memcpy(ldev_info, c->V2.ldev_info_buf,
 			       sizeof(*ldev_info));
 		}
 	}
@@ -1348,7 +1342,7 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 				unsigned char LogicalUnit,
 				myr_v2_pdev_info *pdev_info)
 {
-	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.dcmd_blk;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	myr_v2_sgl *sgl;
 	unsigned char status;
@@ -1364,10 +1358,10 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 	mbox->PhysicalDeviceInfo.pdev.LogicalUnit = LogicalUnit;
 	mbox->PhysicalDeviceInfo.pdev.TargetID = TargetID;
 	mbox->PhysicalDeviceInfo.pdev.Channel = Channel;
-	mbox->PhysicalDeviceInfo.IOCTL_Opcode =
+	mbox->PhysicalDeviceInfo.ioctl_opcode =
 		DAC960_V2_GetPhysicalDeviceInfoValid;
 	sgl = &mbox->PhysicalDeviceInfo.dma_addr;
-	sgl->sge[0].sge_addr = c->V2.NewPhysicalDeviceInformationDMA;
+	sgl->sge[0].sge_addr = c->V2.pdev_info_addr;
 	sgl->sge[0].sge_count = mbox->PhysicalDeviceInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetPhysicalDeviceInfoValid for pdev %d:%d:%d\n",
@@ -1375,7 +1369,7 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V2_NormalCompletion)
-		memcpy(pdev_info, &c->V2.NewPhysicalDeviceInformation,
+		memcpy(pdev_info, &c->V2.pdev_info_buf,
 		       sizeof(*pdev_info));
 	mutex_unlock(&c->V2.dcmd_mutex);
 	return status;
@@ -1390,9 +1384,9 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 static unsigned char
 DAC960_V2_DeviceOperation(myr_hba *c,
 			  myr_v2_ioctl_opcode opcode,
-			  DAC960_V2_OperationDevice_T opdev)
+			  myr_v2_opdev opdev)
 {
-	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.dcmd_blk;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned char status;
 
@@ -1402,8 +1396,8 @@ DAC960_V2_DeviceOperation(myr_hba *c,
 	mbox->DeviceOperation.id = DAC960_DirectCommandIdentifier;
 	mbox->DeviceOperation.control.DataTransferControllerToHost = true;
 	mbox->DeviceOperation.control.NoAutoRequestSense = true;
-	mbox->DeviceOperation.IOCTL_Opcode = opcode;
-	mbox->DeviceOperation.OperationDevice = opdev;
+	mbox->DeviceOperation.ioctl_opcode = opcode;
+	mbox->DeviceOperation.opdev = opdev;
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&c->V2.dcmd_mutex);
@@ -1429,27 +1423,26 @@ DAC960_V2_TranslatePhysicalDevice(myr_hba *c,
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
-	cmd_blk = &c->V2.DirectCommandBlock;
+	cmd_blk = &c->V2.dcmd_blk;
 	mbox = &cmd_blk->mbox;
 	mbox->PhysicalDeviceInfo.opcode = DAC960_V2_IOCTL;
 	mbox->PhysicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->PhysicalDeviceInfo.control.NoAutoRequestSense = true;
-	mbox->PhysicalDeviceInfo.dma_size =
-		sizeof(DAC960_V2_PhysicalToLogicalDevice_T);
+	mbox->PhysicalDeviceInfo.dma_size = sizeof(myr_v2_devmap);
 	mbox->PhysicalDeviceInfo.pdev.TargetID = TargetID;
 	mbox->PhysicalDeviceInfo.pdev.Channel = Channel;
 	mbox->PhysicalDeviceInfo.pdev.LogicalUnit = LogicalUnit;
-	mbox->PhysicalDeviceInfo.IOCTL_Opcode =
+	mbox->PhysicalDeviceInfo.ioctl_opcode =
 		DAC960_V2_TranslatePhysicalToLogicalDevice;
 	sgl = &mbox->PhysicalDeviceInfo.dma_addr;
-	sgl->sge[0].sge_addr = c->V2.PhysicalToLogicalDeviceDMA;
+	sgl->sge[0].sge_addr = c->V2.devmap_addr;
 	sgl->sge[0].sge_addr = mbox->PhysicalDeviceInfo.dma_size;
 
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&c->V2.dcmd_mutex);
 	if (status == DAC960_V2_NormalCompletion)
-		*ldev_num = c->V2.PhysicalToLogicalDevice->LogicalDeviceNumber;
+		*ldev_num = c->V2.devmap_buf->LogicalDeviceNumber;
 
 	return status;
 }
@@ -1457,21 +1450,19 @@ DAC960_V2_TranslatePhysicalDevice(myr_hba *c,
 
 static unsigned char DAC960_V2_MonitorGetEvent(myr_hba *c)
 {
-	myr_v2_cmdblk *cmd_blk = &c->V2.MonitoringCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.mcmd_blk;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	myr_v2_sgl *sgl;
 	unsigned char status;
 
 	mbox->GetEvent.opcode = DAC960_V2_IOCTL;
-	mbox->GetEvent.dma_size = sizeof(DAC960_V2_Event_T);
-	mbox->GetEvent.EventSequenceNumberHigh16 =
-		c->V2.NextEventSequenceNumber >> 16;
-	mbox->GetEvent.ControllerNumber = 0;
-	mbox->GetEvent.IOCTL_Opcode = DAC960_V2_GetEvent;
-	mbox->GetEvent.EventSequenceNumberLow16 =
-		c->V2.NextEventSequenceNumber & 0xFFFF;
+	mbox->GetEvent.dma_size = sizeof(myr_v2_event);
+	mbox->GetEvent.evnum_upper = c->V2.NextEventSequenceNumber >> 16;
+	mbox->GetEvent.ctlr_num = 0;
+	mbox->GetEvent.ioctl_opcode = DAC960_V2_GetEvent;
+	mbox->GetEvent.evnum_lower = c->V2.NextEventSequenceNumber & 0xFFFF;
 	sgl = &mbox->GetEvent.dma_addr;
-	sgl->sge[0].sge_addr = c->V2.EventDMA;
+	sgl->sge[0].sge_addr = c->V2.event_addr;
 	sgl->sge[0].sge_count = mbox->GetEvent.dma_size;
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
@@ -1740,12 +1731,12 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 	StatusMailboxesSize = DAC960_V2_StatusMailboxCount * sizeof(myr_v2_stat_mbox);
 	DmaPagesSize =
 		CommandMailboxesSize + StatusMailboxesSize +
-		sizeof(DAC960_V2_HealthStatusBuffer_T) +
-		sizeof(DAC960_V2_ControllerInfo_T) +
+		sizeof(myr_v2_fwstat) +
+		sizeof(myr_v2_ctlr_info) +
 		sizeof(myr_v2_ldev_info) +
 		sizeof(myr_v2_pdev_info) +
-		sizeof(DAC960_V2_Event_T) +
-		sizeof(DAC960_V2_PhysicalToLogicalDevice_T);
+		sizeof(myr_v2_event) +
+		sizeof(myr_v2_devmap);
 
 	if (!init_dma_loaf(pdev, DmaPages, DmaPagesSize)) {
 		pci_free_consistent(pdev, sizeof(myr_v2_cmd_mbox),
@@ -1776,29 +1767,23 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 	c->V2.LastStatusMailbox = StatusMailboxesMemory;
 	c->V2.NextStatusMailbox = c->V2.FirstStatusMailbox;
 
-	c->V2.HealthStatusBuffer = slice_dma_loaf(DmaPages,
-							   sizeof(DAC960_V2_HealthStatusBuffer_T),
-							   &c->V2.HealthStatusBufferDMA);
+	c->V2.fwstat_buf = slice_dma_loaf(DmaPages, sizeof(myr_v2_fwstat),
+					  &c->V2.fwstat_addr);
 
-	c->V2.NewControllerInformation = slice_dma_loaf(DmaPages,
-								 sizeof(DAC960_V2_ControllerInfo_T),
-								 &c->V2.NewControllerInformationDMA);
+	c->V2.ctlr_info_buf = slice_dma_loaf(DmaPages, sizeof(myr_v2_ctlr_info),
+					     &c->V2.ctlr_info_addr);
 
-	c->V2.NewLogicalDeviceInformation =  slice_dma_loaf(DmaPages,
-								     sizeof(myr_v2_ldev_info),
-								     &c->V2.NewLogicalDeviceInformationDMA);
+	c->V2.ldev_info_buf = slice_dma_loaf(DmaPages, sizeof(myr_v2_ldev_info),
+					     &c->V2.ldev_info_addr);
 
-	c->V2.NewPhysicalDeviceInformation = slice_dma_loaf(DmaPages,
-								     sizeof(myr_v2_pdev_info),
-								     &c->V2.NewPhysicalDeviceInformationDMA);
+	c->V2.pdev_info_buf = slice_dma_loaf(DmaPages, sizeof(myr_v2_pdev_info),
+					     &c->V2.pdev_info_addr);
 
-	c->V2.Event = slice_dma_loaf(DmaPages,
-					      sizeof(DAC960_V2_Event_T),
-					      &c->V2.EventDMA);
+	c->V2.event_buf = slice_dma_loaf(DmaPages, sizeof(myr_v2_event),
+					 &c->V2.event_addr);
 
-	c->V2.PhysicalToLogicalDevice = slice_dma_loaf(DmaPages,
-								sizeof(DAC960_V2_PhysicalToLogicalDevice_T),
-								&c->V2.PhysicalToLogicalDeviceDMA);
+	c->V2.devmap_buf = slice_dma_loaf(DmaPages, sizeof(myr_v2_devmap),
+					  &c->V2.devmap_addr);
 
 	/*
 	  Enable the Memory Mailbox Interface.
@@ -1818,10 +1803,10 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 	mbox->SetMemoryMailbox.SecondCommandMailboxSizeKB = 0;
 	mbox->SetMemoryMailbox.SecondStatusMailboxSizeKB = 0;
 	mbox->SetMemoryMailbox.sense_len = 0;
-	mbox->SetMemoryMailbox.IOCTL_Opcode = DAC960_V2_SetMemoryMailbox;
+	mbox->SetMemoryMailbox.ioctl_opcode = DAC960_V2_SetMemoryMailbox;
 	mbox->SetMemoryMailbox.HealthStatusBufferSizeKB = 1;
 	mbox->SetMemoryMailbox.HealthStatusBufferBusAddress =
-		c->V2.HealthStatusBufferDMA;
+		c->V2.fwstat_addr;
 	mbox->SetMemoryMailbox.FirstCommandMailboxBusAddress =
 		c->V2.FirstCommandMailboxDMA;
 	mbox->SetMemoryMailbox.FirstStatusMailboxBusAddress =
@@ -2156,7 +2141,7 @@ out:
 
 static int DAC960_V2_ReadControllerConfiguration(myr_hba *c)
 {
-	DAC960_V2_ControllerInfo_T *info = &c->V2.ControllerInformation;
+	myr_v2_ctlr_info *info = &c->V2.ctlr_info;
 	struct Scsi_Host *shost = c->host;
 	unsigned char status;
 	int i, ModelNameLength;
@@ -2287,9 +2272,8 @@ static void DAC960_ReportControllerConfiguration(myr_hba *c)
 			c->PhysicalChannelCount, c->PhysicalChannelMax);
 	} else {
 		int i;
-		DAC960_V2_ControllerInfo_T *info;
+		myr_v2_ctlr_info *info = &c->V2.ctlr_info;
 
-		info = &c->V2.ControllerInformation;
 		for (i = 0; i < c->PhysicalChannelMax; i++) {
 			if (!info->MaximumTargetsPerChannel[i])
 				continue;
@@ -3062,15 +3046,15 @@ static ssize_t mylex_v2_store_dev_state(struct device *dev,
 		ldev_num = ldev_info->LogicalDeviceNumber;
 	}
 	mutex_lock(&c->V2.dcmd_mutex);
-	cmd_blk = &c->V2.DirectCommandBlock;
+	cmd_blk = &c->V2.dcmd_blk;
 	DAC960_V2_ClearCommand(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
 	mbox->Common.id = DAC960_DirectCommandIdentifier;
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
-	mbox->SetDeviceState.IOCTL_Opcode = DAC960_V2_SetDeviceState;
-	mbox->SetDeviceState.State = new_state;
+	mbox->SetDeviceState.ioctl_opcode = DAC960_V2_SetDeviceState;
+	mbox->SetDeviceState.state = new_state;
 	mbox->SetDeviceState.ldev.LogicalDeviceNumber = ldev_num;
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
@@ -3199,7 +3183,7 @@ static ssize_t mylex_v1_show_dev_rebuild(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.mcmd_blk;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short ldev_num = 0xffff;
 	unsigned char status;
@@ -3314,7 +3298,7 @@ static ssize_t mylex_v1_store_dev_rebuild(struct device *dev,
 			return -EALREADY;
 		}
 		mutex_lock(&c->V1.dcmd_mutex);
-		cmd_blk = &c->V1.DirectCommandBlock;
+		cmd_blk = &c->V1.dcmd_blk;
 		DAC960_V1_ClearCommand(cmd_blk);
 		mbox = &cmd_blk->mbox;
 		if (rebuild) {
@@ -3352,7 +3336,7 @@ static ssize_t mylex_v1_store_dev_rebuild(struct device *dev,
 			return -ENOMEM;
 		}
 		mutex_lock(&c->V1.dcmd_mutex);
-		cmd_blk = &c->V1.DirectCommandBlock;
+		cmd_blk = &c->V1.dcmd_blk;
 		DAC960_V1_ClearCommand(cmd_blk);
 		mbox = &cmd_blk->mbox;
 		mbox->Type3R.opcode = DAC960_V1_RebuildControl;
@@ -3464,7 +3448,7 @@ static ssize_t mylex_v2_store_dev_rebuild(struct device *dev,
 	}
 
 	mutex_lock(&c->V2.dcmd_mutex);
-	cmd_blk = &c->V2.DirectCommandBlock;
+	cmd_blk = &c->V2.dcmd_blk;
 	DAC960_V2_ClearCommand(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
@@ -3473,11 +3457,11 @@ static ssize_t mylex_v2_store_dev_rebuild(struct device *dev,
 	mbox->Common.control.NoAutoRequestSense = true;
 	if (rebuild) {
 		mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
-		mbox->LogicalDeviceInfo.IOCTL_Opcode =
+		mbox->LogicalDeviceInfo.ioctl_opcode =
 			DAC960_V2_RebuildDeviceStart;
 	} else {
 		mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
-		mbox->LogicalDeviceInfo.IOCTL_Opcode =
+		mbox->LogicalDeviceInfo.ioctl_opcode =
 			DAC960_V2_RebuildDeviceStop;
 	}
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
@@ -3594,7 +3578,7 @@ static ssize_t mylex_v2_store_consistency_check(struct device *dev,
 	}
 
 	mutex_lock(&c->V2.dcmd_mutex);
-	cmd_blk = &c->V2.DirectCommandBlock;
+	cmd_blk = &c->V2.dcmd_blk;
 	DAC960_V2_ClearCommand(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
@@ -3603,13 +3587,13 @@ static ssize_t mylex_v2_store_consistency_check(struct device *dev,
 	mbox->Common.control.NoAutoRequestSense = true;
 	if (check) {
 		mbox->ConsistencyCheck.ldev.LogicalDeviceNumber = ldev_num;
-		mbox->ConsistencyCheck.IOCTL_Opcode =
+		mbox->ConsistencyCheck.ioctl_opcode =
 			DAC960_V2_ConsistencyCheckStart;
 		mbox->ConsistencyCheck.RestoreConsistency = true;
 		mbox->ConsistencyCheck.InitializedAreaOnly = false;
 	} else {
 		mbox->ConsistencyCheck.ldev.LogicalDeviceNumber = ldev_num;
-		mbox->ConsistencyCheck.IOCTL_Opcode =
+		mbox->ConsistencyCheck.ioctl_opcode =
 			DAC960_V2_ConsistencyCheckStop;
 	}
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
@@ -3814,7 +3798,7 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 		mbox->SCSI_10.dma_size = scsi_bufflen(scmd);
 		mbox->SCSI_10.sense_addr = cmd_blk->sense_addr;
 		mbox->SCSI_10.sense_len = DAC960_V2_SENSE_BUFFERSIZE;
-		mbox->SCSI_10.CDBLength = scmd->cmd_len;
+		mbox->SCSI_10.cdb_len = scmd->cmd_len;
 		if (timeout > 60) {
 			mbox->SCSI_10.tmo.TimeoutScale =
 				DAC960_V2_TimeoutScale_Minutes;
@@ -3824,7 +3808,7 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 				DAC960_V2_TimeoutScale_Seconds;
 			mbox->SCSI_10.tmo.TimeoutValue = timeout;
 		}
-		memcpy(&mbox->SCSI_10.SCSI_CDB, scmd->cmnd, scmd->cmd_len);
+		memcpy(&mbox->SCSI_10.cdb, scmd->cmnd, scmd->cmd_len);
 		hw_sge = &mbox->SCSI_10.dma_addr;
 		cmd_blk->DCDB = NULL;
 	} else {
@@ -3863,8 +3847,8 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 		mbox->SCSI_255.dma_size = scsi_bufflen(scmd);
 		mbox->SCSI_255.sense_addr = cmd_blk->sense_addr;
 		mbox->SCSI_255.sense_len = DAC960_V2_SENSE_BUFFERSIZE;
-		mbox->SCSI_255.CDBLength = scmd->cmd_len;
-		mbox->SCSI_255.SCSI_CDB_BusAddress = cmd_blk->DCDB_dma;
+		mbox->SCSI_255.cdb_len = scmd->cmd_len;
+		mbox->SCSI_255.cdb_addr = cmd_blk->DCDB_dma;
 		if (timeout > 60) {
 			mbox->SCSI_255.tmo.TimeoutScale =
 				DAC960_V2_TimeoutScale_Minutes;
@@ -4097,7 +4081,7 @@ static ssize_t mylex_v2_show_ctlr_serial(struct device *dev,
 	myr_hba *c = (myr_hba *)shost->hostdata;
 	char serial[17];
 
-	memcpy(serial, c->V2.ControllerInformation.ControllerSerialNumber, 16);
+	memcpy(serial, c->V2.ctlr_info.ControllerSerialNumber, 16);
 	serial[16] = '\0';
 	return snprintf(buf, 16, "%s\n", serial);
 }
@@ -4125,7 +4109,7 @@ static ssize_t mylex_v2_show_processor(struct device *dev,
 	struct DAC960_V2_ProcessorTypeTbl *tbl = DAC960_V2_ProcessorTypeNames;
 	const char *first_processor = NULL;
 	const char *second_processor = NULL;
-	DAC960_V2_ControllerInfo_T *info = &c->V2.ControllerInformation;
+	myr_v2_ctlr_info *info = &c->V2.ctlr_info;
 	ssize_t ret;
 
 	if (info->FirstProcessorCount) {
@@ -4179,14 +4163,14 @@ static ssize_t mylex_v2_store_discovery_command(struct device *dev,
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
-	cmd_blk = &c->V2.DirectCommandBlock;
+	cmd_blk = &c->V2.dcmd_blk;
 	DAC960_V2_ClearCommand(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
 	mbox->Common.id = DAC960_DirectCommandIdentifier;
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
-	mbox->Common.IOCTL_Opcode = DAC960_V2_StartDiscovery;
+	mbox->Common.ioctl_opcode = DAC960_V2_StartDiscovery;
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&c->V2.dcmd_mutex);
@@ -4827,87 +4811,80 @@ static struct {
 	{ 0, "" }
 };
 
-static void DAC960_V2_ReportEvent(myr_hba *c,
-				  DAC960_V2_Event_T *Event)
+static void DAC960_V2_ReportEvent(myr_hba *c, myr_v2_event *ev)
 {
 	unsigned char MessageBuffer[DAC960_LineBufferSize];
-	int EventListIndex = 0, EventCode;
-	unsigned char EventType, *EventMessage;
+	int ev_idx = 0, ev_code;
+	unsigned char ev_type, *ev_msg;
 	struct scsi_device *sdev;
 	struct scsi_sense_hdr sshdr;
 	unsigned char *sense_info;
 	unsigned char *cmd_specific;
 
-	if (Event->EventCode == 0x1C) {
-		if (!scsi_normalize_sense(Event->RequestSenseData,
+	if (ev->EventCode == 0x1C) {
+		if (!scsi_normalize_sense(ev->RequestSenseData,
 					  40, &sshdr))
 			memset(&sshdr, 0x0, sizeof(sshdr));
 		else {
-			sense_info = &Event->RequestSenseData[3];
-			cmd_specific = &Event->RequestSenseData[7];
+			sense_info = &ev->RequestSenseData[3];
+			cmd_specific = &ev->RequestSenseData[7];
 		}
 	}
 	if (sshdr.sense_key == VENDOR_SPECIFIC &&
 	    (sshdr.asc == 0x80 || sshdr.asc == 0x81))
-		Event->EventCode = ((sshdr.asc - 0x80) << 8 || sshdr.ascq);
+		ev->EventCode = ((sshdr.asc - 0x80) << 8 || sshdr.ascq);
 	while (true) {
-		EventCode = EventList[EventListIndex].EventCode;
-		if (EventCode == Event->EventCode || EventCode == 0)
+		ev_code = EventList[ev_idx].EventCode;
+		if (ev_code == ev->EventCode || ev_code == 0)
 			break;
-		EventListIndex++;
+		ev_idx++;
 	}
-	EventType = EventList[EventListIndex].EventMessage[0];
-	EventMessage = &EventList[EventListIndex].EventMessage[2];
-	if (EventCode == 0) {
+	ev_type = EventList[ev_idx].EventMessage[0];
+	ev_msg = &EventList[ev_idx].EventMessage[2];
+	if (ev_code == 0) {
 		shost_printk(KERN_WARNING, c->host,
 			     "Unknown Controller Event Code %04X\n",
-			     Event->EventCode);
+			     ev->EventCode);
 		return;
 	}
-	switch (EventType) {
+	switch (ev_type) {
 	case 'P':
-		sdev = scsi_device_lookup(c->host, Event->Channel,
-					  Event->TargetID, 0);
-		sdev_printk(KERN_INFO, sdev, "%s\n", EventMessage);
+		sdev = scsi_device_lookup(c->host, ev->Channel,
+					  ev->TargetID, 0);
+		sdev_printk(KERN_INFO, sdev, "%s\n", ev_msg);
 		if (sdev && sdev->hostdata &&
 		    sdev->channel < c->PhysicalChannelCount) {
-			if (c->FirmwareType == DAC960_V2_Controller) {
-				myr_v2_pdev_info *pdev_info =
-					sdev->hostdata;
-				switch (Event->EventCode) {
-				case 0x0001:
-				case 0x0007:
-					pdev_info->State =
-						DAC960_V2_Device_Online;
-					break;
-				case 0x0002:
-					pdev_info->State =
-						DAC960_V2_Device_Standby;
-					break;
-				case 0x000C:
-					pdev_info->State =
-						DAC960_V2_Device_Offline;
-					break;
-				case 0x000E:
-					pdev_info->State =
-						DAC960_V2_Device_Missing;
-					break;
-				case 0x000F:
-					pdev_info->State =
-						DAC960_V2_Device_Unconfigured;
-					break;
-				}
+			myr_v2_pdev_info *pdev_info =
+				sdev->hostdata;
+			switch (ev->EventCode) {
+			case 0x0001:
+			case 0x0007:
+				pdev_info->State = DAC960_V2_Device_Online;
+				break;
+			case 0x0002:
+				pdev_info->State = DAC960_V2_Device_Standby;
+				break;
+			case 0x000C:
+				pdev_info->State = DAC960_V2_Device_Offline;
+				break;
+			case 0x000E:
+				pdev_info->State = DAC960_V2_Device_Missing;
+				break;
+			case 0x000F:
+				pdev_info->State =
+					DAC960_V2_Device_Unconfigured;
+				break;
 			}
 		}
 		break;
 	case 'L':
 		shost_printk(KERN_INFO, c->host, "Logical Drive %d %s\n",
-			 Event->LogicalUnit, EventMessage);
+			     ev->LogicalUnit, ev_msg);
 		c->V2.NeedControllerInformation = true;
 		break;
 	case 'M':
 		shost_printk(KERN_INFO, c->host, "Logical Drive %d %s\n",
-			 Event->LogicalUnit, EventMessage);
+			     ev->LogicalUnit, ev_msg);
 		c->V2.NeedControllerInformation = true;
 		break;
 	case 'S':
@@ -4917,35 +4894,36 @@ static void DAC960_V2_ReportEvent(myr_hba *c,
 					    sshdr.ascq == 0x02)))
 			break;
 		shost_printk(KERN_INFO, c->host, "Physical Device %d:%d %s\n",
-			 Event->Channel, Event->TargetID, EventMessage);
+			     ev->Channel, ev->TargetID, ev_msg);
 		shost_printk(KERN_INFO, c->host,
-			 "Physical Device %d:%d Request Sense: "
-			 "Sense Key = %X, ASC = %02X, ASCQ = %02X\n",
-			 Event->Channel, Event->TargetID,
-			 sshdr.sense_key, sshdr.asc, sshdr.ascq);
+			     "Physical Device %d:%d Request Sense: "
+			     "Sense Key = %X, ASC = %02X, ASCQ = %02X\n",
+			     ev->Channel, ev->TargetID,
+			     sshdr.sense_key, sshdr.asc, sshdr.ascq);
 		shost_printk(KERN_INFO, c->host,
-			 "Physical Device %d:%d Request Sense: "
-			 "Information = %02X%02X%02X%02X "
-			 "%02X%02X%02X%02X\n",
-			 Event->Channel, Event->TargetID,
-			 sense_info[0], sense_info[1],
-			 sense_info[2], sense_info[3],
-			 cmd_specific[0], cmd_specific[1],
-			 cmd_specific[2], cmd_specific[3]);
+			     "Physical Device %d:%d Request Sense: "
+			     "Information = %02X%02X%02X%02X "
+			     "%02X%02X%02X%02X\n",
+			     ev->Channel, ev->TargetID,
+			     sense_info[0], sense_info[1],
+			     sense_info[2], sense_info[3],
+			     cmd_specific[0], cmd_specific[1],
+			     cmd_specific[2], cmd_specific[3]);
 		break;
 	case 'E':
 		if (c->SuppressEnclosureMessages)
 			break;
-		sprintf(MessageBuffer, EventMessage, Event->LogicalUnit);
+		sprintf(MessageBuffer, ev_msg, ev->LogicalUnit);
 		shost_printk(KERN_INFO, c->host, "Enclosure %d %s\n",
-			 Event->TargetID, MessageBuffer);
+			     ev->TargetID, MessageBuffer);
 		break;
 	case 'C':
-		shost_printk(KERN_INFO, c->host, "Controller %s\n", EventMessage);
+		shost_printk(KERN_INFO, c->host, "Controller %s\n", ev_msg);
 		break;
 	default:
-		shost_printk(KERN_INFO, c->host, "Unknown Controller Event Code %04X\n",
-			 Event->EventCode);
+		shost_printk(KERN_INFO, c->host,
+			     "Unknown Controller Event Code %04X\n",
+			     ev->EventCode);
 		break;
 	}
 }
@@ -5086,9 +5064,9 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 		myr_v2_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &c->V2.DirectCommandBlock;
+			cmd_blk = &c->V2.dcmd_blk;
 		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &c->V2.MonitoringCommandBlock;
+			cmd_blk = &c->V2.mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(c->host, id - 3);
 			if (scmd)
@@ -5186,9 +5164,9 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 		myr_v2_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &c->V2.DirectCommandBlock;
+			cmd_blk = &c->V2.dcmd_blk;
 		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &c->V2.MonitoringCommandBlock;
+			cmd_blk = &c->V2.mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(c->host, id - 3);
 			if (scmd)
@@ -5286,9 +5264,9 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 		myr_v2_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &c->V2.DirectCommandBlock;
+			cmd_blk = &c->V2.dcmd_blk;
 		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &c->V2.MonitoringCommandBlock;
+			cmd_blk = &c->V2.mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(c->host, id - 3);
 			if (scmd)
@@ -5408,9 +5386,9 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 		myr_v1_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &c->V1.DirectCommandBlock;
+			cmd_blk = &c->V1.dcmd_blk;
 		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &c->V1.MonitoringCommandBlock;
+			cmd_blk = &c->V1.mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(c->host, id - 3);
 			if (scmd)
@@ -5511,9 +5489,9 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 		myr_v1_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &c->V1.DirectCommandBlock;
+			cmd_blk = &c->V1.dcmd_blk;
 		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &c->V1.MonitoringCommandBlock;
+			cmd_blk = &c->V1.mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(c->host, id - 3);
 			if (scmd)
@@ -5611,9 +5589,9 @@ static irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
 		myr_v1_cmdblk *cmd_blk;
 
 		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &c->V1.DirectCommandBlock;
+			cmd_blk = &c->V1.dcmd_blk;
 		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &c->V1.MonitoringCommandBlock;
+			cmd_blk = &c->V1.mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(c->host, id - 3);
 			if (scmd)
@@ -5712,9 +5690,9 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 		myr_v1_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &c->V1.DirectCommandBlock;
+			cmd_blk = &c->V1.dcmd_blk;
 		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &c->V1.MonitoringCommandBlock;
+			cmd_blk = &c->V1.mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(c->host, id - 3);
 			if (scmd)
@@ -5782,7 +5760,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 
 static unsigned char DAC960_V2_MonitoringGetHealthStatus(myr_hba *c)
 {
-	myr_v2_cmdblk *cmd_blk = &c->V2.MonitoringCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.mcmd_blk;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	myr_v2_sgl *sgl;
 	unsigned char status = cmd_blk->status;
@@ -5792,10 +5770,10 @@ static unsigned char DAC960_V2_MonitoringGetHealthStatus(myr_hba *c)
 	mbox->Common.id = DAC960_MonitoringIdentifier;
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
-	mbox->Common.dma_size = sizeof(DAC960_V2_HealthStatusBuffer_T);
-	mbox->Common.IOCTL_Opcode = DAC960_V2_GetHealthStatus;
+	mbox->Common.dma_size = sizeof(myr_v2_fwstat);
+	mbox->Common.ioctl_opcode = DAC960_V2_GetHealthStatus;
 	sgl = &mbox->Common.dma_addr;
-	sgl->sge[0].sge_addr = c->V2.HealthStatusBufferDMA;
+	sgl->sge[0].sge_addr = c->V2.fwstat_addr;
 	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev, "Sending GetHealthStatus\n");
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
@@ -5880,10 +5858,9 @@ static void DAC960_MonitoringWork(struct work_struct *work)
 					"reschedule monitor\n");
 		}
 	} else {
-		DAC960_V2_ControllerInfo_T *info =
-			&c->V2.ControllerInformation;
+		myr_v2_ctlr_info *info = &c->V2.ctlr_info;
 		unsigned int StatusChangeCounter =
-			c->V2.HealthStatusBuffer->StatusChangeCounter;
+			c->V2.fwstat_buf->StatusChangeCounter;
 
 		status = DAC960_V2_MonitoringGetHealthStatus(c);
 
@@ -5893,11 +5870,11 @@ static void DAC960_MonitoringWork(struct work_struct *work)
 			status = DAC960_V2_NewControllerInfo(c);
 			mutex_unlock(&c->V2.cinfo_mutex);
 		}
-		if (c->V2.HealthStatusBuffer->NextEventSequenceNumber
+		if (c->V2.fwstat_buf->NextEventSequenceNumber
 		    - c->V2.NextEventSequenceNumber > 0) {
 			status = DAC960_V2_MonitorGetEvent(c);
 			if (status == DAC960_V2_NormalCompletion) {
-				DAC960_V2_ReportEvent(c, c->V2.Event);
+				DAC960_V2_ReportEvent(c, c->V2.event_buf);
 				c->V2.NextEventSequenceNumber++;
 				interval = 1;
 			}
@@ -5928,7 +5905,7 @@ static void DAC960_MonitoringWork(struct work_struct *work)
 			c->V2.NeedControllerInformation = true;
 		}
 		if (StatusChangeCounter == c->V2.StatusChangeCounter &&
-		    c->V2.HealthStatusBuffer->NextEventSequenceNumber
+		    c->V2.fwstat_buf->NextEventSequenceNumber
 		    == c->V2.NextEventSequenceNumber &&
 		    (c->V2.NeedControllerInformation == false ||
 		     time_before(jiffies, c->PrimaryMonitoringTime
