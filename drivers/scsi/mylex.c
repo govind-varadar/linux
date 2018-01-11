@@ -65,10 +65,10 @@ static int DAC960_ControllerCount;
 static struct raid_template *myr_v1_raid_template;
 static struct raid_template *myr_v2_raid_template;
 
-static struct DAC960_V1_DriveStateTbl {
+static struct myr_v1_devstate_name_entry {
 	myr_v1_devstate state;
 	char *name;
-} DAC960_V1_DriveStateNames[] = {
+} myr_v1_devstate_name_list[] = {
 	{ DAC960_V1_Device_Dead, "Dead" },
 	{ DAC960_V1_Device_WriteOnly, "WriteOnly" },
 	{ DAC960_V1_Device_Online, "Online" },
@@ -77,10 +77,9 @@ static struct DAC960_V1_DriveStateTbl {
 	{ DAC960_V1_Device_Offline, NULL },
 };
 
-static char *DAC960_V1_DriveStateName(myr_v1_devstate state)
+static char *myr_v1_devstate_name(myr_v1_devstate state)
 {
-	struct DAC960_V1_DriveStateTbl *entry =
-		DAC960_V1_DriveStateNames;
+	struct myr_v1_devstate_name_entry *entry = myr_v1_devstate_name_list;
 
 	while (entry && entry->name) {
 		if (entry->state == state)
@@ -116,10 +115,10 @@ static char *DAC960_V1_RAIDLevelName(DAC960_V1_RAIDLevel_T level)
 	return NULL;
 }
 
-static struct DAC960_V2_DriveStateTbl {
+static struct myr_v2_devstate_name_entry {
 	myr_v2_devstate state;
 	char *name;
-} DAC960_V2_DriveStateNames[] = {
+} myr_v2_devstate_name_list[] = {
 	{ DAC960_V2_Device_Unconfigured, "Unconfigured" },
 	{ DAC960_V2_Device_Online, "Online" },
 	{ DAC960_V2_Device_Rebuild, "Rebuild" },
@@ -133,10 +132,9 @@ static struct DAC960_V2_DriveStateTbl {
 	{ DAC960_V2_Device_InvalidState, NULL },
 };
 
-static char *DAC960_V2_DriveStateName(myr_v2_devstate state)
+static char *myr_v2_devstate_name(myr_v2_devstate state)
 {
-	struct DAC960_V2_DriveStateTbl *entry =
-		DAC960_V2_DriveStateNames;
+	struct myr_v2_devstate_name_entry *entry = myr_v2_devstate_name_list;
 
 	while (entry && entry->name) {
 		if (entry->state == state)
@@ -248,106 +246,89 @@ static void free_dma_loaf(struct pci_dev *dev, struct dma_loaf *loaf_handle)
   failure.
 */
 
-static bool DAC960_CreateAuxiliaryStructures(myr_hba *c)
+static bool myr_v1_create_mempools(struct pci_dev *pdev, myr_hba *c)
 {
-	struct pci_dev *pdev = c->PCIDevice;
+	struct pci_pool *ScatterGatherPool;
+	struct pci_pool *DCDBPool = NULL;
+	size_t elem_size, elem_align;
+
+	elem_align = sizeof(myr_v1_sge);
+	elem_size = c->host->sg_tablesize * elem_align;
+	ScatterGatherPool = pci_pool_create("DAC960_V1_ScatterGather",
+					    pdev, elem_size,
+					    elem_align, 0);
+	if (ScatterGatherPool == NULL) {
+		shost_printk(KERN_ERR, c->host,
+			     "Failed to allocate SG pool\n");
+		return false;
+	}
+	elem_size = sizeof(myr_v1_dcdb);
+	elem_align = sizeof(unsigned int);
+	DCDBPool = pci_pool_create("DAC960_V1_DCDB",
+				   pdev, elem_size, elem_align, 0);
+	if (!DCDBPool) {
+		pci_pool_destroy(ScatterGatherPool);
+		shost_printk(KERN_ERR, c->host,
+			     "Failed to allocate DCDB pool\n");
+		return false;
+	}
+	c->ScatterGatherPool = ScatterGatherPool;
+	c->V1.DCDBPool = DCDBPool;
+	return true;
+}
+
+static bool myr_v2_create_mempools(struct pci_dev *pdev, myr_hba *c)
+{
 	struct pci_pool *ScatterGatherPool;
 	struct pci_pool *RequestSensePool = NULL;
 	struct pci_pool *DCDBPool = NULL;
 	size_t elem_size, elem_align;
 
-	if (c->FirmwareType == DAC960_V1_Controller) {
-		elem_align = sizeof(myr_v1_sge);
-		elem_size = c->host->sg_tablesize * elem_align;
-		ScatterGatherPool = pci_pool_create("DAC960_V1_ScatterGather",
-						    pdev, elem_size,
-						    elem_align, 0);
-		if (ScatterGatherPool == NULL) {
-			shost_printk(KERN_ERR, c->host,
-				     "Failed to allocate SG pool\n");
-			return false;
-		}
-		elem_size = sizeof(myr_v1_dcdb);
-		elem_align = sizeof(unsigned int);
-		DCDBPool = pci_pool_create("DAC960_V1_DCDB",
-					   pdev, elem_size, elem_align, 0);
-		if (!DCDBPool) {
-			pci_pool_destroy(ScatterGatherPool);
-			shost_printk(KERN_ERR, c->host,
-				     "Failed to allocate DCDB pool\n");
-			return false;
-		}
-		c->ScatterGatherPool = ScatterGatherPool;
-		c->V1.DCDBPool = DCDBPool;
-	} else {
-		elem_align = sizeof(myr_v2_sge);
-		elem_size = c->host->sg_tablesize * elem_align;
-		ScatterGatherPool = pci_pool_create("DAC960_V2_ScatterGather",
-						    pdev, elem_size,
-						    elem_align, 0);
-		if (ScatterGatherPool == NULL) {
-			shost_printk(KERN_ERR, c->host,
-				     "Failed to allocate SG pool\n");
-			return false;
-		}
-		elem_size = DAC960_V2_SENSE_BUFFERSIZE;
-		elem_align = sizeof(int);
-		RequestSensePool = pci_pool_create("DAC960_V2_RequestSense",
-						   pdev, elem_size,
-						   elem_align, 0);
-		if (RequestSensePool == NULL) {
-			pci_pool_destroy(ScatterGatherPool);
-			shost_printk(KERN_ERR, c->host,
-				     "Failed to allocate sense data pool\n");
-			return false;
-		}
-		elem_size = DAC960_V2_DCDB_SIZE;
-		elem_align = sizeof(unsigned char);
-		DCDBPool = pci_pool_create("DAC960_V2_DCDB",
-					   pdev, elem_size, elem_align, 0);
-		if (!DCDBPool) {
-			pci_pool_destroy(ScatterGatherPool);
-			pci_pool_destroy(RequestSensePool);
-			shost_printk(KERN_ERR, c->host,
-				     "Failed to allocate DCDB pool\n");
-			return false;
-		}
-		c->ScatterGatherPool = ScatterGatherPool;
-		c->V2.RequestSensePool = RequestSensePool;
-		c->V2.DCDBPool = DCDBPool;
+	elem_align = sizeof(myr_v2_sge);
+	elem_size = c->host->sg_tablesize * elem_align;
+	ScatterGatherPool = pci_pool_create("DAC960_V2_ScatterGather",
+					    pdev, elem_size,
+					    elem_align, 0);
+	if (ScatterGatherPool == NULL) {
+		shost_printk(KERN_ERR, c->host,
+			     "Failed to allocate SG pool\n");
+		return false;
 	}
+	elem_size = DAC960_V2_SENSE_BUFFERSIZE;
+	elem_align = sizeof(int);
+	RequestSensePool = pci_pool_create("DAC960_V2_RequestSense",
+					   pdev, elem_size,
+					   elem_align, 0);
+	if (RequestSensePool == NULL) {
+		pci_pool_destroy(ScatterGatherPool);
+		shost_printk(KERN_ERR, c->host,
+			     "Failed to allocate sense data pool\n");
+		return false;
+	}
+	elem_size = DAC960_V2_DCDB_SIZE;
+	elem_align = sizeof(unsigned char);
+	DCDBPool = pci_pool_create("DAC960_V2_DCDB",
+				   pdev, elem_size, elem_align, 0);
+	if (!DCDBPool) {
+		pci_pool_destroy(ScatterGatherPool);
+		pci_pool_destroy(RequestSensePool);
+		shost_printk(KERN_ERR, c->host,
+			     "Failed to allocate DCDB pool\n");
+		return false;
+	}
+	c->ScatterGatherPool = ScatterGatherPool;
+	c->V2.RequestSensePool = RequestSensePool;
+	c->V2.DCDBPool = DCDBPool;
 	return true;
 }
 
 
 /*
-  DAC960_DestroyAuxiliaryStructures deallocates the auxiliary data
-  structures for Controller.
-*/
-
-static void DAC960_DestroyAuxiliaryStructures(myr_hba *c)
-{
-	if (c->ScatterGatherPool != NULL)
-		pci_pool_destroy(c->ScatterGatherPool);
-
-	if (c->FirmwareType == DAC960_V1_Controller) {
-		if (c->V1.DCDBPool)
-			pci_pool_destroy(c->V1.DCDBPool);
-	} else {
-		if (c->V2.DCDBPool)
-			pci_pool_destroy(c->V2.DCDBPool);
-		if (c->V2.RequestSensePool)
-			pci_pool_destroy(c->V2.RequestSensePool);
-	}
-}
-
-
-/*
-  DAC960_V1_ClearCommand clears critical fields of Command for DAC960 V1
+  myr_v1_reset_cmd clears critical fields of Command for DAC960 V1
   Firmware Controllers.
 */
 
-static inline void DAC960_V1_ClearCommand(myr_v1_cmdblk *cmd_blk)
+static inline void myr_v1_reset_cmd(myr_v1_cmdblk *cmd_blk)
 {
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 
@@ -357,11 +338,11 @@ static inline void DAC960_V1_ClearCommand(myr_v1_cmdblk *cmd_blk)
 
 
 /*
-  DAC960_V2_ClearCommand clears critical fields of Command for DAC960 V2
+  myr_v2_reset_cmd clears critical fields of Command for DAC960 V2
   Firmware Controllers.
 */
 
-static inline void DAC960_V2_ClearCommand(myr_v2_cmdblk *cmd_blk)
+static inline void myr_v2_reset_cmd(myr_v2_cmdblk *cmd_blk)
 {
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 
@@ -371,7 +352,7 @@ static inline void DAC960_V2_ClearCommand(myr_v2_cmdblk *cmd_blk)
 
 
 /*
- * DAC960_V2_QueueCommand queues Command for DAC960 V2 Series Controllers.
+ * DAC960_V2_qcmd queues Command for DAC960 V2 Series Controllers.
  */
 static void myr_v2_qcmd(myr_v2_hba *c, myr_v2_cmdblk *cmd_blk)
 {
@@ -395,7 +376,7 @@ static void myr_v2_qcmd(myr_v2_hba *c, myr_v2_cmdblk *cmd_blk)
 }
 
 /*
- * DAC960_V1_QueueCommand queues Command for DAC960 V1 Series Controller
+ * DAC960_V1_qcmd queues Command for DAC960 V1 Series Controller
  */
 
 static void myr_v1_qcmd(myr_v1_hba *c, myr_v1_cmdblk *cmd_blk)
@@ -485,7 +466,7 @@ static void DAC960_V1_ExecuteCommand(myr_hba *c,
 	cmd_blk->Completion = &Completion;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
-	c->V1.QueueCommand(c, cmd_blk);
+	c->V1.QueueCommand(&c->V1, cmd_blk);
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 
 	if (in_interrupt())
@@ -529,7 +510,7 @@ static unsigned short DAC960_V1_ExecuteType3(myr_hba *c,
 	unsigned short status;
 
 	mutex_lock(&c->V1.dcmd_mutex);
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3.opcode = op;
 	mbox->Type3.BusAddress = DataDMA;
@@ -556,7 +537,7 @@ static unsigned short DAC960_V1_ExecuteType3B(myr_hba *c,
 	unsigned short status;
 
 	mutex_lock(&c->V1.dcmd_mutex);
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3B.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3B.opcode = op;
 	mbox->Type3B.CommandOpcode2 = CommandOpcode2;
@@ -589,7 +570,7 @@ static unsigned short DAC960_V1_ExecuteType3D(myr_hba *c,
 			return DAC960_V1_OutOfMemory;
 	}
 	mutex_lock(&c->V1.dcmd_mutex);
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3D.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3D.opcode = op;
 	mbox->Type3D.Channel = sdev->channel;
@@ -640,7 +621,7 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myr_hba *c,
 		  "killed due to SCSI phase sequence error",
 		  "killed due to unknown status" };
 
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3E.id = DAC960_MonitoringIdentifier;
 	mbox->Type3E.opcode = DAC960_V1_PerformEventLogOperation;
 	mbox->Type3E.OperationType = DAC960_V1_GetEventLogEntry;
@@ -697,7 +678,7 @@ static void DAC960_V1_MonitorGetErrorTable(myr_hba *c)
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetErrorTable;
 	mbox->Type3.BusAddress = c->V1.NewErrorTableDMA;
@@ -751,7 +732,7 @@ static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 	unsigned short status;
 
 	mutex_lock(&c->V1.dcmd_mutex);
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetLogicalDeviceInfo;
 	mbox->Type3.BusAddress = c->V1.LogicalDeviceInfoDMA;
@@ -789,7 +770,7 @@ static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 				shost_printk(KERN_INFO, c->host,
 					 "Logical Drive %d is now %s\n",
 					 ldev_num,
-					 DAC960_V1_DriveStateName(new->State));
+					 myr_v1_devstate_name(new->State));
 			if (old && new->WriteBack != old->WriteBack)
 				sdev_printk(KERN_INFO, sdev,
 					 "Logical Drive is now %s\n",
@@ -815,7 +796,7 @@ static void DAC960_V1_MonitorRebuildProgress(myr_hba *c)
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
 	mbox->Type3.BusAddress = c->V1.RebuildProgressDMA;
@@ -886,7 +867,7 @@ static void DAC960_V1_ConsistencyCheckProgress(myr_hba *c)
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_RebuildStat;
 	mbox->Type3.BusAddress = c->V1.RebuildProgressDMA;
@@ -924,7 +905,7 @@ static void DAC960_V1_BackgroundInitialization(myr_hba *c)
 	struct scsi_device *sdev;
 	unsigned short status;
 
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3B.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3B.opcode = DAC960_V1_BackgroundInitializationControl;
 	mbox->Type3B.CommandOpcode2 = 0x20;
@@ -1001,7 +982,7 @@ static unsigned short DAC960_V1_NewEnquiry(myr_hba *c)
 	unsigned short status;
 
 	mutex_lock(&c->V1.dcmd_mutex);
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3.opcode = DAC960_V1_Enquiry;
 	mbox->Type3.BusAddress = c->V1.NewEnquiryDMA;
@@ -1168,7 +1149,7 @@ static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	mbox->ControllerInfo.id = DAC960_DirectCommandIdentifier;
 	mbox->ControllerInfo.opcode = DAC960_V2_IOCTL;
 	mbox->ControllerInfo.control.DataTransferControllerToHost = true;
@@ -1229,7 +1210,7 @@ DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	mbox->LogicalDeviceInfo.id = DAC960_DirectCommandIdentifier;
 	mbox->LogicalDeviceInfo.opcode = DAC960_V2_IOCTL;
 	mbox->LogicalDeviceInfo.control.DataTransferControllerToHost = true;
@@ -1257,7 +1238,7 @@ DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 			if (new->State != old->State) {
 				const char *name;
 
-				name = DAC960_V2_DriveStateName(new->State);
+				name = myr_v2_devstate_name(new->State);
 				shost_printk(KERN_INFO, c->host,
 					 "Logical Drive %d is now %s\n",
 					 ldev_num, name ? name : "Invalid");
@@ -1340,7 +1321,7 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	mbox->PhysicalDeviceInfo.opcode = DAC960_V2_IOCTL;
 	mbox->PhysicalDeviceInfo.id = DAC960_DirectCommandIdentifier;
 	mbox->PhysicalDeviceInfo.control.DataTransferControllerToHost = true;
@@ -1383,7 +1364,7 @@ DAC960_V2_DeviceOperation(myr_hba *c,
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	mbox->DeviceOperation.opcode = DAC960_V2_IOCTL;
 	mbox->DeviceOperation.id = DAC960_DirectCommandIdentifier;
 	mbox->DeviceOperation.control.DataTransferControllerToHost = true;
@@ -2344,35 +2325,6 @@ static bool DAC960_ReportErrorStatus(myr_hba *c,
 }
 
 
-/*
- * DAC960_DetectCleanup releases the resources that were allocated
- * during DAC960_DetectController().  DAC960_DetectController can
- * has several internal failure points, so not ALL resources may
- * have been allocated.  It's important to free only
- * resources that HAVE been allocated.  The code below always
- * tests that the resource has been allocated before attempting to
- * free it.
- */
-static void DAC960_DetectCleanup(myr_hba *c)
-{
-	struct pci_dev *pdev = c->PCIDevice;
-
-	/* Free the memory mailbox, status, and related structures */
-	free_dma_loaf(pdev, &c->DmaPages);
-	if (c->MemoryMappedAddress) {
-		myr_disable_intr(c);
-		iounmap(c->MemoryMappedAddress);
-	}
-	if (c->IRQ_Channel)
-		free_irq(c->IRQ_Channel, c);
-	if (c->IO_Address)
-		release_region(c->IO_Address, 0x80);
-	pci_set_drvdata(pdev, NULL);
-	pci_disable_device(pdev);
-	destroy_workqueue(c->work_q);
-	scsi_host_put(c->host);
-}
-
 int myr_v1_host_reset(struct scsi_cmnd *scmd)
 {
 	struct Scsi_Host *shost = scmd->device->host;
@@ -2395,7 +2347,7 @@ static int myr_v1_pthru_queuecommand(struct Scsi_Host *shost,
 	unsigned long flags;
 	int nsge;
 
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	DCDB = pci_pool_alloc(c->V1.DCDBPool, GFP_ATOMIC, &DCDB_dma);
 	if (!DCDB)
 		return SCSI_MLQUEUE_HOST_BUSY;
@@ -2454,7 +2406,7 @@ static int myr_v1_pthru_queuecommand(struct Scsi_Host *shost,
 	memcpy(&DCDB->CDB, scmd->cmnd, scmd->cmd_len);
 
 	spin_lock_irqsave(&c->queue_lock, flags);
-	c->V1.QueueCommand(c, cmd_blk);
+	c->V1.QueueCommand(&c->V1, cmd_blk);
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 	return 0;
 }
@@ -2668,7 +2620,7 @@ static int myr_v1_ldev_queuecommand(struct Scsi_Host *shost,
 		return 0;
 	}
 
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type5.id = scmd->request->tag + 3;
 	if (scmd->sc_data_direction == DMA_NONE)
 		goto submit;
@@ -2716,7 +2668,7 @@ static int myr_v1_ldev_queuecommand(struct Scsi_Host *shost,
 	}
 submit:
 	spin_lock_irqsave(&c->queue_lock, flags);
-	c->V1.QueueCommand(c, cmd_blk);
+	c->V1.QueueCommand(&c->V1, cmd_blk);
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 
 	return 0;
@@ -2826,7 +2778,7 @@ int myr_v1_slave_configure(struct scsi_device *sdev)
 	if (ldev_info->State != DAC960_V1_Device_Online)
 		sdev_printk(KERN_INFO, sdev,
 			    "Logical drive is %s\n",
-			    DAC960_V1_DriveStateName(ldev_info->State));
+			    myr_v1_devstate_name(ldev_info->State));
 
 	sdev->tagged_supported = 1;
 	return 0;
@@ -2857,7 +2809,7 @@ static ssize_t myr_v1_show_dev_state(struct device *dev,
 			sdev->hostdata;
 		const char *name;
 
-		name = DAC960_V1_DriveStateName(ldev_info->State);
+		name = myr_v1_devstate_name(ldev_info->State);
 		if (name)
 			ret = snprintf(buf, 32, "%s\n", name);
 		else
@@ -2878,7 +2830,7 @@ static ssize_t myr_v1_show_dev_state(struct device *dev,
 		if (!pdev_info->Present)
 			name = "Removed";
 		else
-			name = DAC960_V1_DriveStateName(pdev_info->State);
+			name = myr_v1_devstate_name(pdev_info->State);
 		if (name)
 			ret = snprintf(buf, 32, "%s\n", name);
 		else
@@ -2969,7 +2921,7 @@ static ssize_t myr_v2_show_dev_state(struct device *dev,
 		myr_v2_ldev_info *ldev_info = sdev->hostdata;
 		const char *name;
 
-		name = DAC960_V2_DriveStateName(ldev_info->State);
+		name = myr_v2_devstate_name(ldev_info->State);
 		if (name)
 			ret = snprintf(buf, 32, "%s\n", name);
 		else
@@ -2980,7 +2932,7 @@ static ssize_t myr_v2_show_dev_state(struct device *dev,
 		const char *name;
 
 		pdev_info = sdev->hostdata;
-		name = DAC960_V2_DriveStateName(pdev_info->State);
+		name = myr_v2_devstate_name(pdev_info->State);
 		if (name)
 			ret = snprintf(buf, 32, "%s\n", name);
 		else
@@ -3017,7 +2969,7 @@ static ssize_t myr_v2_store_dev_state(struct device *dev,
 		if (pdev_info->State == new_state) {
 			sdev_printk(KERN_INFO, sdev,
 				    "Device already in %s\n",
-				    DAC960_V2_DriveStateName(new_state));
+				    myr_v2_devstate_name(new_state));
 			return count;
 		}
 		status = DAC960_V2_TranslatePhysicalDevice(c, sdev->channel,
@@ -3031,14 +2983,14 @@ static ssize_t myr_v2_store_dev_state(struct device *dev,
 		if (ldev_info->State == new_state) {
 			sdev_printk(KERN_INFO, sdev,
 				    "Device already in %s\n",
-				    DAC960_V2_DriveStateName(new_state));
+				    myr_v2_devstate_name(new_state));
 			return count;
 		}
 		ldev_num = ldev_info->LogicalDeviceNumber;
 	}
 	mutex_lock(&c->V2.dcmd_mutex);
 	cmd_blk = &c->V2.dcmd_blk;
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
 	mbox->Common.id = DAC960_DirectCommandIdentifier;
@@ -3064,12 +3016,12 @@ static ssize_t myr_v2_store_dev_state(struct device *dev,
 		}
 		sdev_printk(KERN_INFO, sdev,
 			    "Set device state to %s\n",
-			    DAC960_V2_DriveStateName(new_state));
+			    myr_v2_devstate_name(new_state));
 		return count;
 	}
 	sdev_printk(KERN_INFO, sdev,
 		    "Failed to set device state to %s, status 0x%02x\n",
-		    DAC960_V2_DriveStateName(new_state),
+		    myr_v2_devstate_name(new_state),
 		    status);
 	return -EINVAL;
 }
@@ -3188,7 +3140,7 @@ static ssize_t myr_v1_show_dev_rebuild(struct device *dev,
 		rebuild = true;
 
 	mutex_lock(&c->V1.dcmd_mutex);
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
 	mbox->Type3.BusAddress = c->V1.RebuildProgressDMA;
@@ -3271,7 +3223,7 @@ static ssize_t myr_v1_store_dev_rebuild(struct device *dev,
 	else if (sdev->channel < c->PhysicalChannelCount)
 		return -ENXIO;
 	mutex_lock(&c->V1.dcmd_mutex);
-	DAC960_V1_ClearCommand(cmd_blk);
+	myr_v1_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
 	mbox->Type3.BusAddress = c->V1.RebuildProgressDMA;
@@ -3290,7 +3242,7 @@ static ssize_t myr_v1_store_dev_rebuild(struct device *dev,
 		}
 		mutex_lock(&c->V1.dcmd_mutex);
 		cmd_blk = &c->V1.dcmd_blk;
-		DAC960_V1_ClearCommand(cmd_blk);
+		myr_v1_reset_cmd(cmd_blk);
 		mbox = &cmd_blk->mbox;
 		if (rebuild) {
 			mbox->Type3D.opcode = DAC960_V1_RebuildAsync;
@@ -3328,7 +3280,7 @@ static ssize_t myr_v1_store_dev_rebuild(struct device *dev,
 		}
 		mutex_lock(&c->V1.dcmd_mutex);
 		cmd_blk = &c->V1.dcmd_blk;
-		DAC960_V1_ClearCommand(cmd_blk);
+		myr_v1_reset_cmd(cmd_blk);
 		mbox = &cmd_blk->mbox;
 		mbox->Type3R.opcode = DAC960_V1_RebuildControl;
 		mbox->Type3R.id = DAC960_DirectCommandIdentifier;
@@ -3440,7 +3392,7 @@ static ssize_t myr_v2_store_dev_rebuild(struct device *dev,
 
 	mutex_lock(&c->V2.dcmd_mutex);
 	cmd_blk = &c->V2.dcmd_blk;
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
 	mbox->Common.id = DAC960_DirectCommandIdentifier;
@@ -3570,7 +3522,7 @@ static ssize_t myr_v2_store_consistency_check(struct device *dev,
 
 	mutex_lock(&c->V2.dcmd_mutex);
 	cmd_blk = &c->V2.dcmd_blk;
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
 	mbox->Common.id = DAC960_DirectCommandIdentifier;
@@ -3766,7 +3718,7 @@ static int myr_v2_queuecommand(struct Scsi_Host *shost,
 		return 0;
 	}
 
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	cmd_blk->sense = pci_pool_alloc(c->V2.RequestSensePool, GFP_ATOMIC,
 					&sense_addr);
 	if (!cmd_blk->sense)
@@ -3918,7 +3870,7 @@ static int myr_v2_queuecommand(struct Scsi_Host *shost,
 	}
 submit:
 	spin_lock_irqsave(&c->queue_lock, flags);
-	c->V2.QueueCommand(c, cmd_blk);
+	c->V2.QueueCommand(&c->V2, cmd_blk);
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 
 	return 0;
@@ -3999,7 +3951,7 @@ static int myr_v2_slave_alloc(struct scsi_device *sdev)
 			if (ldev_info->State != DAC960_V2_Device_Online) {
 				const char *name;
 
-				name = DAC960_V2_DriveStateName(ldev_info->State);
+				name = myr_v2_devstate_name(ldev_info->State);
 				sdev_printk(KERN_DEBUG, sdev,
 					    "logical device in state %s\n",
 					    name ? name : "Invalid");
@@ -4164,7 +4116,7 @@ static ssize_t myr_v2_store_discovery_command(struct device *dev,
 
 	mutex_lock(&c->V2.dcmd_mutex);
 	cmd_blk = &c->V2.dcmd_blk;
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
 	mbox->Common.id = DAC960_DirectCommandIdentifier;
@@ -4398,6 +4350,37 @@ static struct raid_function_template myr_v2_raid_functions = {
 	.get_state	= myr_v2_get_state,
 };
 
+
+/*
+ * DAC960_DetectCleanup releases the resources that were allocated
+ * during DAC960_DetectController().  DAC960_DetectController can
+ * has several internal failure points, so not ALL resources may
+ * have been allocated.  It's important to free only
+ * resources that HAVE been allocated.  The code below always
+ * tests that the resource has been allocated before attempting to
+ * free it.
+ */
+static void DAC960_DetectCleanup(myr_hba *c)
+{
+	struct pci_dev *pdev = c->PCIDevice;
+
+	/* Free the memory mailbox, status, and related structures */
+	free_dma_loaf(pdev, &c->DmaPages);
+	if (c->MemoryMappedAddress) {
+		myr_disable_intr(c);
+		iounmap(c->MemoryMappedAddress);
+	}
+	if (c->IRQ_Channel)
+		free_irq(c->IRQ_Channel, c);
+	if (c->IO_Address)
+		release_region(c->IO_Address, 0x80);
+	pci_set_drvdata(pdev, NULL);
+	pci_disable_device(pdev);
+	destroy_workqueue(c->work_q);
+	scsi_host_put(c->host);
+}
+
+
 /*
   DAC960_DetectController detects Mylex DAC960/AcceleRAID/eXtremeRAID
   PCI RAID Controllers by interrogating the PCI Configuration Space for
@@ -4507,6 +4490,33 @@ Failure:
 	return NULL;
 }
 
+static bool DAC960_CreateAuxiliaryStructures(myr_hba *c)
+{
+	struct pci_dev *pdev = c->PCIDevice;
+
+	if (c->FirmwareType == DAC960_V1_Controller)
+		return myr_v1_create_mempools(pdev, c);
+	else
+		return myr_v2_create_mempools(pdev, c);
+}
+
+static void DAC960_DestroyAuxiliaryStructures(myr_hba *c)
+{
+	if (c->ScatterGatherPool != NULL)
+		pci_pool_destroy(c->ScatterGatherPool);
+
+	if (c->FirmwareType == DAC960_V1_Controller) {
+		if (c->V1.DCDBPool)
+			pci_pool_destroy(c->V1.DCDBPool);
+	} else {
+		if (c->V2.DCDBPool)
+			pci_pool_destroy(c->V2.DCDBPool);
+		if (c->V2.RequestSensePool)
+			pci_pool_destroy(c->V2.RequestSensePool);
+	}
+}
+
+
 /*
   DAC960_Probe verifies controller's existence and
   initializes the DAC960 Driver for that controller.
@@ -4556,7 +4566,7 @@ failed:
 
 
 /*
-  DAC960_Finalize finalizes the DAC960 Driver.
+  DAC960_Remove removes the DAC960 Driver.
 */
 
 static void DAC960_Remove(struct pci_dev *pdev)
@@ -4580,14 +4590,8 @@ static void DAC960_Remove(struct pci_dev *pdev)
 }
 
 
-/*
-  DAC960_V1_HandleSCSI performs completion processing for Command
-  for DAC960 V1 Firmware Controllers.
-*/
-
-static void DAC960_V1_HandleSCSI(myr_hba *c,
-				 myr_v1_cmdblk *cmd_blk,
-				 struct scsi_cmnd *scmd)
+static void myr_v1_handle_scsi(myr_hba *c, myr_v1_cmdblk *cmd_blk,
+			       struct scsi_cmnd *scmd)
 {
 	unsigned short status;
 
@@ -4665,8 +4669,7 @@ static void DAC960_V1_HandleSCSI(myr_hba *c,
 	scmd->scsi_done(scmd);
 }
 
-static void DAC960_V1_HandleCommandBlock(myr_hba *c,
-					 myr_v1_cmdblk *cmd_blk)
+static void myr_v1_handle_cmdblk(myr_hba *c, myr_v1_cmdblk *cmd_blk)
 {
 	if (!cmd_blk)
 		return;
@@ -4925,14 +4928,8 @@ static void DAC960_V2_ReportEvent(myr_hba *c, myr_v2_event *ev)
 }
 
 
-/*
-  DAC960_V2_ProcessCompletedCommand performs completion processing for Command
-  for DAC960 V2 Firmware Controllers.
-*/
-
-static void DAC960_V2_HandleSCSI(myr_hba *c,
-				 myr_v2_cmdblk *cmd_blk,
-				 struct scsi_cmnd *scmd)
+static void myr_v2_handle_scsi(myr_hba *c, myr_v2_cmdblk *cmd_blk,
+			       struct scsi_cmnd *scmd)
 {
 	unsigned char status;
 
@@ -4979,8 +4976,7 @@ static void DAC960_V2_HandleSCSI(myr_hba *c,
 	scmd->scsi_done(scmd);
 }
 
-static void DAC960_V2_HandleCommandBlock(myr_hba *c,
-					 myr_v2_cmdblk *cmd_blk)
+static void myr_v2_handle_cmdblk(myr_hba *c, myr_v2_cmdblk *cmd_blk)
 {
 	if (!cmd_blk)
 		return;
@@ -5081,9 +5077,9 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 			NextStatusMailbox = c->V2.FirstStatusMailbox;
 
 		if (id < 3)
-			DAC960_V2_HandleCommandBlock(c, cmd_blk);
+			myr_v2_handle_cmdblk(c, cmd_blk);
 		else
-			DAC960_V2_HandleSCSI(c, cmd_blk, scmd);
+			myr_v2_handle_scsi(c, cmd_blk, scmd);
 	}
 	c->V2.NextStatusMailbox = NextStatusMailbox;
 	spin_unlock_irqrestore(&c->queue_lock, flags);
@@ -5181,9 +5177,9 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 			NextStatusMailbox = c->V2.FirstStatusMailbox;
 
 		if (id < 3)
-			DAC960_V2_HandleCommandBlock(c, cmd_blk);
+			myr_v2_handle_cmdblk(c, cmd_blk);
 		else
-			DAC960_V2_HandleSCSI(c, cmd_blk, scmd);
+			myr_v2_handle_scsi(c, cmd_blk, scmd);
 	}
 	c->V2.NextStatusMailbox = NextStatusMailbox;
 	spin_unlock_irqrestore(&c->queue_lock, flags);
@@ -5281,9 +5277,9 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 			NextStatusMailbox = c->V2.FirstStatusMailbox;
 
 		if (id < 3)
-			DAC960_V2_HandleCommandBlock(c, cmd_blk);
+			myr_v2_handle_cmdblk(c, cmd_blk);
 		else
-			DAC960_V2_HandleSCSI(c, cmd_blk, scmd);
+			myr_v2_handle_scsi(c, cmd_blk, scmd);
 	}
 	c->V2.NextStatusMailbox = NextStatusMailbox;
 	spin_unlock_irqrestore(&c->queue_lock, flags);
@@ -5401,9 +5397,9 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 			NextStatusMailbox = c->V1.FirstStatusMailbox;
 
 		if (id < 3)
-			DAC960_V1_HandleCommandBlock(c, cmd_blk);
+			myr_v1_handle_cmdblk(c, cmd_blk);
 		else
-			DAC960_V1_HandleSCSI(c, cmd_blk, scmd);
+			myr_v1_handle_scsi(c, cmd_blk, scmd);
 	}
 	c->V1.NextStatusMailbox = NextStatusMailbox;
 	spin_unlock_irqrestore(&c->queue_lock, flags);
@@ -5504,9 +5500,9 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 			NextStatusMailbox = c->V1.FirstStatusMailbox;
 
 		if (id < 3)
-			DAC960_V1_HandleCommandBlock(c, cmd_blk);
+			myr_v1_handle_cmdblk(c, cmd_blk);
 		else
-			DAC960_V1_HandleSCSI(c, cmd_blk, scmd);
+			myr_v1_handle_scsi(c, cmd_blk, scmd);
 	}
 	c->V1.NextStatusMailbox = NextStatusMailbox;
 	spin_unlock_irqrestore(&c->queue_lock, flags);
@@ -5604,9 +5600,9 @@ static irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
 		DAC960_PD_AcknowledgeStatus(base);
 
 		if (id < 3)
-			DAC960_V1_HandleCommandBlock(c, cmd_blk);
+			myr_v1_handle_cmdblk(c, cmd_blk);
 		else
-			DAC960_V1_HandleSCSI(c, cmd_blk, scmd);
+			myr_v1_handle_scsi(c, cmd_blk, scmd);
 	}
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 	return IRQ_HANDLED;
@@ -5684,6 +5680,9 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 		unsigned char id = DAC960_PD_ReadStatusCommandIdentifier(base);
 		struct scsi_cmnd *scmd = NULL;
 		myr_v1_cmdblk *cmd_blk = NULL;
+		myr_v1_cmd_mbox *mbox;
+		myr_v1_cmd_opcode op;
+
 
 		if (id == DAC960_DirectCommandIdentifier)
 			cmd_blk = &c->V1.dcmd_blk;
@@ -5704,45 +5703,43 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 		DAC960_PD_AcknowledgeInterrupt(base);
 		DAC960_PD_AcknowledgeStatus(base);
 
-		if (cmd_blk) {
-			myr_v1_cmd_mbox *mbox;
-			myr_v1_cmd_opcode op;
+		if (!cmd_blk)
+			continue;
 
-			mbox = &cmd_blk->mbox;
-			op = mbox->Common.opcode;
-			switch (op) {
-			case DAC960_V1_Enquiry_Old:
-				mbox->Common.opcode = DAC960_V1_Enquiry;
-				DAC960_P_To_PD_TranslateEnquiry(c->V1.NewEnquiry);
-				break;
-			case DAC960_V1_GetDeviceState_Old:
-				mbox->Common.opcode = DAC960_V1_GetDeviceState;
-				DAC960_P_To_PD_TranslateDeviceState(c->V1.NewDeviceState);
-				break;
-			case DAC960_V1_Read_Old:
-				mbox->Common.opcode = DAC960_V1_Read;
-				DAC960_P_To_PD_TranslateReadWriteCommand(cmd_blk);
-				break;
-			case DAC960_V1_Write_Old:
-				mbox->Common.opcode = DAC960_V1_Write;
-				DAC960_P_To_PD_TranslateReadWriteCommand(cmd_blk);
-				break;
-			case DAC960_V1_ReadWithScatterGather_Old:
-				mbox->Common.opcode = DAC960_V1_ReadWithScatterGather;
-				DAC960_P_To_PD_TranslateReadWriteCommand(cmd_blk);
-				break;
-			case DAC960_V1_WriteWithScatterGather_Old:
-				mbox->Common.opcode = DAC960_V1_WriteWithScatterGather;
-				DAC960_P_To_PD_TranslateReadWriteCommand(cmd_blk);
-				break;
-			default:
-				break;
-			}
-			if (id < 3)
-				DAC960_V1_HandleCommandBlock(c, cmd_blk);
-			else
-				DAC960_V1_HandleSCSI(c, cmd_blk, scmd);
+		mbox = &cmd_blk->mbox;
+		op = mbox->Common.opcode;
+		switch (op) {
+		case DAC960_V1_Enquiry_Old:
+			mbox->Common.opcode = DAC960_V1_Enquiry;
+			DAC960_P_To_PD_TranslateEnquiry(c->V1.NewEnquiry);
+			break;
+		case DAC960_V1_GetDeviceState_Old:
+			mbox->Common.opcode = DAC960_V1_GetDeviceState;
+			DAC960_P_To_PD_TranslateDeviceState(c->V1.NewDeviceState);
+			break;
+		case DAC960_V1_Read_Old:
+			mbox->Common.opcode = DAC960_V1_Read;
+			DAC960_P_To_PD_TranslateReadWriteCommand(cmd_blk);
+			break;
+		case DAC960_V1_Write_Old:
+			mbox->Common.opcode = DAC960_V1_Write;
+			DAC960_P_To_PD_TranslateReadWriteCommand(cmd_blk);
+			break;
+		case DAC960_V1_ReadWithScatterGather_Old:
+			mbox->Common.opcode = DAC960_V1_ReadWithScatterGather;
+			DAC960_P_To_PD_TranslateReadWriteCommand(cmd_blk);
+			break;
+		case DAC960_V1_WriteWithScatterGather_Old:
+			mbox->Common.opcode = DAC960_V1_WriteWithScatterGather;
+			DAC960_P_To_PD_TranslateReadWriteCommand(cmd_blk);
+			break;
+		default:
+			break;
 		}
+		if (id < 3)
+			myr_v1_handle_cmdblk(c, cmd_blk);
+		else
+			myr_v1_handle_scsi(c, cmd_blk, scmd);
 	}
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 	return IRQ_HANDLED;
@@ -5761,7 +5758,7 @@ static unsigned char DAC960_V2_MonitoringGetHealthStatus(myr_hba *c)
 	myr_v2_sgl *sgl;
 	unsigned char status = cmd_blk->status;
 
-	DAC960_V2_ClearCommand(cmd_blk);
+	myr_v2_reset_cmd(cmd_blk);
 	mbox->Common.opcode = DAC960_V2_IOCTL;
 	mbox->Common.id = DAC960_MonitoringIdentifier;
 	mbox->Common.control.DataTransferControllerToHost = true;
