@@ -2125,7 +2125,7 @@ typedef struct DAC960_Controller
 			dma_addr_t PhysicalToLogicalDeviceDMA;
 		} V2;
 	} FW;
-} DAC960_Controller_T;
+} myr_hba;
 
 
 /*
@@ -4009,7 +4009,7 @@ void DAC960_P_To_PD_TranslateReadWriteCommand(DAC960_V1_CommandBlock_T *cmd_blk)
 	mbox->Bytes[3] |= ldev_num << 3;
 }
 
-static unsigned short mylex_translate_ldev(DAC960_Controller_T *c,
+static unsigned short mylex_translate_ldev(myr_hba *c,
 				     struct scsi_device *sdev)
 {
 	unsigned short ldev_num;
