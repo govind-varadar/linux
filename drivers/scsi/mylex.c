@@ -4452,9 +4452,7 @@ DAC960_DetectController(struct pci_dev *pdev,
 	struct Scsi_Host *shost;
 	DAC960_Controller_T *c = NULL;
 	unsigned char DeviceFunction = pdev->devfn;
-	unsigned char ErrorStatus, Parameter0, Parameter1;
 	void __iomem *base;
-	int timeout = 0;
 
 	if (privdata->FirmwareType == DAC960_V1_Controller)
 		shost = scsi_host_alloc(&mylex_v1_template,
@@ -4524,284 +4522,10 @@ DAC960_DetectController(struct pci_dev *pdev,
 		goto Failure;
 	}
 	base = c->BaseAddress;
-	switch (c->HardwareType) {
-	case DAC960_GEM_Controller:
-		DAC960_GEM_DisableInterrupts(base);
-		DAC960_GEM_AcknowledgeHardwareMailboxStatus(base);
-		udelay(1000);
-		while (DAC960_GEM_InitializationInProgressP(base) &&
-		       timeout < DAC960_MAILBOX_TIMEOUT) {
-			if (DAC960_GEM_ReadErrorStatus(base, &ErrorStatus,
-						       &Parameter0, &Parameter1) &&
-			    DAC960_ReportErrorStatus(c, ErrorStatus,
-						     Parameter0, Parameter1))
-				goto Failure;
-			udelay(10);
-			timeout++;
-		}
-		if (timeout == DAC960_MAILBOX_TIMEOUT) {
-			dev_err(&pdev->dev,
-				"Timeout waiting for "
-				"Controller Initialisation\n");
-			goto Failure;
-		}
-		if (!DAC960_V2_EnableMemoryMailboxInterface(c)) {
-			dev_err(&pdev->dev,
-				"Unable to Enable Memory Mailbox Interface\n");
-			DAC960_GEM_ControllerReset(base);
-			goto Failure;
-		}
-		DAC960_GEM_EnableInterrupts(base);
-		c->V2.QueueCommand = DAC960_V2_QueueCommand;
-		c->V2.WriteCommandMailbox = DAC960_GEM_WriteCommandMailbox;
-		c->V2.MailboxNewCommand = DAC960_GEM_MemoryMailboxNewCommand;
-		c->ReadControllerConfiguration =
-			DAC960_V2_ReadControllerConfiguration;
-		c->DisableInterrupts = DAC960_GEM_DisableInterrupts;
-		c->Reset = DAC960_GEM_ControllerReset;
-		break;
-	case DAC960_BA_Controller:
-		DAC960_BA_DisableInterrupts(base);
-		DAC960_BA_AcknowledgeHardwareMailboxStatus(base);
-		udelay(1000);
-		while (DAC960_BA_InitializationInProgressP(base) &&
-		       timeout < DAC960_MAILBOX_TIMEOUT) {
-			if (DAC960_BA_ReadErrorStatus(base, &ErrorStatus,
-						      &Parameter0, &Parameter1) &&
-			    DAC960_ReportErrorStatus(c, ErrorStatus,
-						     Parameter0, Parameter1))
-				goto Failure;
-			udelay(10);
-			timeout++;
-		}
-		if (timeout == DAC960_MAILBOX_TIMEOUT) {
-			dev_err(&pdev->dev, "Timeout waiting "
-				"for Controller Initialisation\n");
-			goto Failure;
-		}
-		if (!DAC960_V2_EnableMemoryMailboxInterface(c)) {
-			dev_err(&pdev->dev,
-				"Unable to Enable Memory Mailbox Interface\n");
-			DAC960_BA_ControllerReset(base);
-			goto Failure;
-		}
-		DAC960_BA_EnableInterrupts(base);
-		c->V2.QueueCommand = DAC960_V2_QueueCommand;
-		c->V2.WriteCommandMailbox = DAC960_BA_WriteCommandMailbox;
-		c->V2.MailboxNewCommand = DAC960_BA_MemoryMailboxNewCommand;
-		c->ReadControllerConfiguration =
-			DAC960_V2_ReadControllerConfiguration;
-		c->DisableInterrupts = DAC960_BA_DisableInterrupts;
-		c->Reset = DAC960_BA_ControllerReset;
-		break;
-	case DAC960_LP_Controller:
-		DAC960_LP_DisableInterrupts(base);
-		DAC960_LP_AcknowledgeHardwareMailboxStatus(base);
-		udelay(1000);
-		while (DAC960_LP_InitializationInProgressP(base) &&
-		       timeout < DAC960_MAILBOX_TIMEOUT) {
-			if (DAC960_LP_ReadErrorStatus(base, &ErrorStatus,
-						      &Parameter0, &Parameter1) &&
-			    DAC960_ReportErrorStatus(c, ErrorStatus,
-						     Parameter0, Parameter1))
-				goto Failure;
-			udelay(10);
-			timeout++;
-		}
-		if (timeout == DAC960_MAILBOX_TIMEOUT) {
-			dev_err(&pdev->dev, "Timeout waiting "
-				"for Controller Initialisation\n");
-			goto Failure;
-		}
-		if (!DAC960_V2_EnableMemoryMailboxInterface(c)) {
-			dev_err(&pdev->dev,
-				"Unable to Enable Memory Mailbox Interface\n");
-			DAC960_LP_ControllerReset(base);
-			goto Failure;
-		}
-		DAC960_LP_EnableInterrupts(base);
-		c->V2.QueueCommand = DAC960_V2_QueueCommand;
-		c->V2.WriteCommandMailbox = DAC960_LP_WriteCommandMailbox;
-		c->V2.MailboxNewCommand = DAC960_LP_MemoryMailboxNewCommand;
-		c->ReadControllerConfiguration =
-			DAC960_V2_ReadControllerConfiguration;
-		c->DisableInterrupts = DAC960_LP_DisableInterrupts;
-		c->Reset = DAC960_LP_ControllerReset;
-		break;
-	case DAC960_LA_Controller:
-		DAC960_LA_DisableInterrupts(base);
-		timeout = 0;
-		while (DAC960_LA_HardwareMailboxStatusAvailableP(base) &&
-		       timeout < DAC960_MAILBOX_TIMEOUT) {
-			DAC960_LA_AcknowledgeHardwareMailboxStatus(base);
-			udelay(10);
-			timeout++;
-		}
-		if (DAC960_LA_HardwareMailboxStatusAvailableP(base)) {
-			dev_err(&pdev->dev,
-				"Hardware Mailbox status still not cleared\n");
-			DAC960_LA_ControllerReset(base);
-		} else if (timeout)
-			dev_info(&pdev->dev,
-				 "Hardware Mailbox status cleared, %d attempts\n",
-				 timeout);
 
-		udelay(1000);
-		timeout = 0;
-		while (DAC960_LA_InitializationInProgressP(base) &&
-		       timeout < DAC960_MAILBOX_TIMEOUT) {
-			if (DAC960_LA_ReadErrorStatus(base, &ErrorStatus,
-						      &Parameter0, &Parameter1) &&
-			    DAC960_ReportErrorStatus(c, ErrorStatus,
-						     Parameter0, Parameter1))
-				goto Failure;
-			udelay(10);
-			timeout++;
-		}
-		if (timeout == DAC960_MAILBOX_TIMEOUT) {
-			dev_err(&pdev->dev, "Timeout waiting "
-				"for Controller Initialisation\n");
-			goto Failure;
-		}
-		if (!DAC960_V1_EnableMemoryMailboxInterface(c)) {
-			dev_err(&pdev->dev,
-				"Unable to Enable Memory Mailbox Interface\n");
-			DAC960_LA_ControllerReset(base);
-			goto Failure;
-		}
-		DAC960_LA_EnableInterrupts(base);
-		c->V1.QueueCommand = DAC960_V1_QueueCommand;
-		c->V1.WriteCommandMailbox = DAC960_LA_WriteCommandMailbox;
-		if (c->V1.DualModeMemoryMailboxInterface)
-			c->V1.MailboxNewCommand =
-				DAC960_LA_MemoryMailboxNewCommand;
-		else
-			c->V1.MailboxNewCommand =
-				DAC960_LA_HardwareMailboxNewCommand;
-		c->ReadControllerConfiguration =
-			DAC960_V1_ReadControllerConfiguration;
-		c->DisableInterrupts = DAC960_LA_DisableInterrupts;
-		c->Reset = DAC960_LA_ControllerReset;
-		break;
-	case DAC960_PG_Controller:
-		DAC960_PG_DisableInterrupts(base);
-		DAC960_PG_AcknowledgeHardwareMailboxStatus(base);
-		udelay(1000);
-		while (DAC960_PG_InitializationInProgressP(base) &&
-		       timeout < DAC960_MAILBOX_TIMEOUT) {
-			if (DAC960_PG_ReadErrorStatus(base, &ErrorStatus,
-						      &Parameter0, &Parameter1) &&
-			    DAC960_ReportErrorStatus(c, ErrorStatus,
-						     Parameter0, Parameter1))
-				goto Failure;
-			udelay(10);
-			timeout++;
-		}
-		if (timeout == DAC960_MAILBOX_TIMEOUT) {
-			dev_err(&pdev->dev, "Timeout waiting "
-				"for Controller Initialisation\n");
-			goto Failure;
-		}
-		if (!DAC960_V1_EnableMemoryMailboxInterface(c)) {
-			dev_err(&pdev->dev,
-				"Unable to Enable Memory Mailbox Interface\n");
-			DAC960_PG_ControllerReset(base);
-			goto Failure;
-		}
-		DAC960_PG_EnableInterrupts(base);
-		c->V1.QueueCommand = DAC960_V1_QueueCommand;
-		c->V1.WriteCommandMailbox = DAC960_PG_WriteCommandMailbox;
-		if (c->V1.DualModeMemoryMailboxInterface)
-			c->V1.MailboxNewCommand =
-				DAC960_PG_MemoryMailboxNewCommand;
-		else
-			c->V1.MailboxNewCommand =
-				DAC960_PG_HardwareMailboxNewCommand;
-		c->ReadControllerConfiguration =
-			DAC960_V1_ReadControllerConfiguration;
-		c->DisableInterrupts = DAC960_PG_DisableInterrupts;
-		c->Reset = DAC960_PG_ControllerReset;
-		break;
-	case DAC960_PD_Controller:
-		if (!request_region(c->IO_Address, 0x80,
-				    c->FullModelName)) {
-			dev_err(&pdev->dev,
-				"IO port 0x%lx busy\n",
-				(unsigned long)c->IO_Address);
-			goto Failure;
-		}
-		DAC960_PD_DisableInterrupts(base);
-		DAC960_PD_AcknowledgeStatus(base);
-		udelay(1000);
-		while (DAC960_PD_InitializationInProgressP(base) &&
-		       timeout < DAC960_MAILBOX_TIMEOUT) {
-			if (DAC960_PD_ReadErrorStatus(base, &ErrorStatus,
-						      &Parameter0, &Parameter1) &&
-			    DAC960_ReportErrorStatus(c, ErrorStatus,
-						     Parameter0, Parameter1))
-				goto Failure;
-			udelay(10);
-			timeout++;
-		}
-		if (timeout == DAC960_MAILBOX_TIMEOUT) {
-			dev_err(&pdev->dev, "Timeout waiting "
-				"for Controller Initialisation\n");
-			goto Failure;
-		}
-		if (!DAC960_V1_EnableMemoryMailboxInterface(c)) {
-			dev_err(&pdev->dev,
-				"Unable to Enable Memory Mailbox Interface\n");
-			DAC960_PD_ControllerReset(base);
-			goto Failure;
-		}
-		DAC960_PD_EnableInterrupts(base);
-		c->V1.QueueCommand = DAC960_PD_QueueCommand;
-		c->ReadControllerConfiguration =
-			DAC960_V1_ReadControllerConfiguration;
-		c->DisableInterrupts = DAC960_PD_DisableInterrupts;
-		c->Reset = DAC960_PD_ControllerReset;
-		break;
-	case DAC960_P_Controller:
-		if (!request_region(c->IO_Address, 0x80,
-				    c->FullModelName)){
-			dev_err(&pdev->dev,
-				"IO port 0x%lx busy\n",
-				(unsigned long)c->IO_Address);
-			goto Failure;
-		}
-		DAC960_PD_DisableInterrupts(base);
-		DAC960_PD_AcknowledgeStatus(base);
-		udelay(1000);
-		while (DAC960_PD_InitializationInProgressP(base) &&
-		       timeout < DAC960_MAILBOX_TIMEOUT) {
-			if (DAC960_PD_ReadErrorStatus(base, &ErrorStatus,
-						      &Parameter0, &Parameter1) &&
-			    DAC960_ReportErrorStatus(c, ErrorStatus,
-						     Parameter0, Parameter1))
-				goto Failure;
-			udelay(10);
-			timeout++;
-		}
-		if (timeout == DAC960_MAILBOX_TIMEOUT) {
-			dev_err(&pdev->dev,
-				"Timeout waiting for Controller "
-				"Initialisation\n");
-			goto Failure;
-		}
-		if (!DAC960_V1_EnableMemoryMailboxInterface(c)) {
-			dev_err(&pdev->dev,
-				"Unable to allocate DMA mapped memory\n");
-			DAC960_PD_ControllerReset(base);
-			goto Failure;
-		}
-		DAC960_PD_EnableInterrupts(base);
-		c->V1.QueueCommand = DAC960_P_QueueCommand;
-		c->ReadControllerConfiguration =
-			DAC960_V1_ReadControllerConfiguration;
-		c->DisableInterrupts = DAC960_PD_DisableInterrupts;
-		c->Reset = DAC960_PD_ControllerReset;
-		break;
-	}
+	if (privdata->HardwareInit(pdev, c, base))
+		goto Failure;
+
 	/*
 	  Acquire shared access to the IRQ Channel.
 	*/
@@ -5314,6 +5038,53 @@ static void DAC960_V2_HandleCommandBlock(DAC960_Controller_T *c,
 	}
 }
 
+
+/*
+  DAC960_GEM_HardwareInit initializes the hardware for DAC960 GEM Series
+  Controllers.
+*/
+
+static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
+				   DAC960_Controller_T *c, void __iomem *base)
+{
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	DAC960_GEM_DisableInterrupts(base);
+	DAC960_GEM_AcknowledgeHardwareMailboxStatus(base);
+	udelay(1000);
+	while (DAC960_GEM_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_GEM_ReadErrorStatus(base, &ErrorStatus,
+					       &Parameter0, &Parameter1) &&
+		    DAC960_ReportErrorStatus(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -EIO;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V2_EnableMemoryMailboxInterface(c)) {
+		dev_err(&pdev->dev,
+			"Unable to Enable Memory Mailbox Interface\n");
+		DAC960_GEM_ControllerReset(base);
+		return -EAGAIN;
+	}
+	DAC960_GEM_EnableInterrupts(base);
+	c->V2.QueueCommand = DAC960_V2_QueueCommand;
+	c->V2.WriteCommandMailbox = DAC960_GEM_WriteCommandMailbox;
+	c->V2.MailboxNewCommand = DAC960_GEM_MemoryMailboxNewCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V2_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_GEM_DisableInterrupts;
+	c->Reset = DAC960_GEM_ControllerReset;
+	return 0;
+}
+
 /*
   DAC960_GEM_InterruptHandler handles hardware interrupts from DAC960 GEM Series
   Controllers.
@@ -5365,6 +5136,54 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 	return IRQ_HANDLED;
 }
+
+
+/*
+  DAC960_BA_HardwareInit initializes the hardware for DAC960 BA Series
+  Controllers.
+*/
+
+static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
+				   DAC960_Controller_T *c, void __iomem *base)
+{
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	DAC960_BA_DisableInterrupts(base);
+	DAC960_BA_AcknowledgeHardwareMailboxStatus(base);
+	udelay(1000);
+	while (DAC960_BA_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_BA_ReadErrorStatus(base, &ErrorStatus,
+					      &Parameter0, &Parameter1) &&
+		    DAC960_ReportErrorStatus(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -EIO;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V2_EnableMemoryMailboxInterface(c)) {
+		dev_err(&pdev->dev,
+			"Unable to Enable Memory Mailbox Interface\n");
+		DAC960_BA_ControllerReset(base);
+		return -EAGAIN;
+	}
+	DAC960_BA_EnableInterrupts(base);
+	c->V2.QueueCommand = DAC960_V2_QueueCommand;
+	c->V2.WriteCommandMailbox = DAC960_BA_WriteCommandMailbox;
+	c->V2.MailboxNewCommand = DAC960_BA_MemoryMailboxNewCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V2_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_BA_DisableInterrupts;
+	c->Reset = DAC960_BA_ControllerReset;
+	return 0;
+}
+
 
 /*
   DAC960_BA_InterruptHandler handles hardware interrupts from DAC960 BA Series
@@ -5420,6 +5239,53 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 
 
 /*
+  DAC960_LP_HardwareInit initializes the hardware for DAC960 LP Series
+  Controllers.
+*/
+
+static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
+				  DAC960_Controller_T *c, void __iomem *base)
+{
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	DAC960_LP_DisableInterrupts(base);
+	DAC960_LP_AcknowledgeHardwareMailboxStatus(base);
+	udelay(1000);
+	while (DAC960_LP_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_LP_ReadErrorStatus(base, &ErrorStatus,
+					      &Parameter0, &Parameter1) &&
+		    DAC960_ReportErrorStatus(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -EIO;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V2_EnableMemoryMailboxInterface(c)) {
+		dev_err(&pdev->dev,
+			"Unable to Enable Memory Mailbox Interface\n");
+		DAC960_LP_ControllerReset(base);
+		return -ENODEV;
+	}
+	DAC960_LP_EnableInterrupts(base);
+	c->V2.QueueCommand = DAC960_V2_QueueCommand;
+	c->V2.WriteCommandMailbox = DAC960_LP_WriteCommandMailbox;
+	c->V2.MailboxNewCommand = DAC960_LP_MemoryMailboxNewCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V2_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_LP_DisableInterrupts;
+	c->Reset = DAC960_LP_ControllerReset;
+
+	return 0;
+}
+
+/*
   DAC960_LP_InterruptHandler handles hardware interrupts from DAC960 LP Series
   Controllers.
 */
@@ -5469,6 +5335,75 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 	c->V2.NextStatusMailbox = NextStatusMailbox;
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 	return IRQ_HANDLED;
+}
+
+
+/*
+  DAC960_LA_HardwareInit initializes the hardware for DAC960 LA Series
+  Controllers.
+*/
+
+static int DAC960_LA_HardwareInit(struct pci_dev *pdev,
+				   DAC960_Controller_T *c, void __iomem *base)
+{
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	DAC960_LA_DisableInterrupts(base);
+	timeout = 0;
+	while (DAC960_LA_HardwareMailboxStatusAvailableP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		DAC960_LA_AcknowledgeHardwareMailboxStatus(base);
+		udelay(10);
+		timeout++;
+	}
+	if (DAC960_LA_HardwareMailboxStatusAvailableP(base)) {
+		dev_err(&pdev->dev,
+			"Hardware Mailbox status still not cleared\n");
+		DAC960_LA_ControllerReset(base);
+	} else if (timeout)
+		dev_info(&pdev->dev,
+			 "Hardware Mailbox status cleared, %d attempts\n",
+			 timeout);
+
+	udelay(1000);
+	timeout = 0;
+	while (DAC960_LA_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_LA_ReadErrorStatus(base, &ErrorStatus,
+					      &Parameter0, &Parameter1) &&
+		    DAC960_ReportErrorStatus(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -ENODEV;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V1_EnableMemoryMailboxInterface(c)) {
+		dev_err(&pdev->dev,
+			"Unable to Enable Memory Mailbox Interface\n");
+		DAC960_LA_ControllerReset(base);
+		return -ENODEV;
+	}
+	DAC960_LA_EnableInterrupts(base);
+	c->V1.QueueCommand = DAC960_V1_QueueCommand;
+	c->V1.WriteCommandMailbox = DAC960_LA_WriteCommandMailbox;
+	if (c->V1.DualModeMemoryMailboxInterface)
+		c->V1.MailboxNewCommand =
+			DAC960_LA_MemoryMailboxNewCommand;
+	else
+		c->V1.MailboxNewCommand =
+			DAC960_LA_HardwareMailboxNewCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V1_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_LA_DisableInterrupts;
+	c->Reset = DAC960_LA_ControllerReset;
+
+	return 0;
 }
 
 
@@ -5524,6 +5459,58 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 
 
 /*
+  DAC960_PG_HardwareInit initializes the hardware for DAC960 PG Series
+  Controllers.
+*/
+
+static int DAC960_PG_HardwareInit(struct pci_dev *pdev,
+				  DAC960_Controller_T *c, void __iomem *base)
+{
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	DAC960_PG_DisableInterrupts(base);
+	DAC960_PG_AcknowledgeHardwareMailboxStatus(base);
+	udelay(1000);
+	while (DAC960_PG_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_PG_ReadErrorStatus(base, &ErrorStatus,
+					      &Parameter0, &Parameter1) &&
+		    DAC960_ReportErrorStatus(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -EIO;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V1_EnableMemoryMailboxInterface(c)) {
+		dev_err(&pdev->dev,
+			"Unable to Enable Memory Mailbox Interface\n");
+		DAC960_PG_ControllerReset(base);
+		return -ENODEV;
+	}
+	DAC960_PG_EnableInterrupts(base);
+	c->V1.QueueCommand = DAC960_V1_QueueCommand;
+	c->V1.WriteCommandMailbox = DAC960_PG_WriteCommandMailbox;
+	if (c->V1.DualModeMemoryMailboxInterface)
+		c->V1.MailboxNewCommand =
+			DAC960_PG_MemoryMailboxNewCommand;
+	else
+		c->V1.MailboxNewCommand =
+			DAC960_PG_HardwareMailboxNewCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V1_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_PG_DisableInterrupts;
+	c->Reset = DAC960_PG_ControllerReset;
+
+	return 0;
+}
+
+/*
   DAC960_PG_InterruptHandler handles hardware interrupts from DAC960 PG Series
   Controllers.
 */
@@ -5575,6 +5562,58 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 
 
 /*
+  DAC960_PD_HardwareInit initializes the hardware for DAC960 P Series
+  Controllers.
+*/
+
+static int DAC960_PD_HardwareInit(struct pci_dev *pdev,
+				  DAC960_Controller_T *c, void __iomem *base)
+{
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	if (!request_region(c->IO_Address, 0x80,
+			    c->FullModelName)) {
+		dev_err(&pdev->dev, "IO port 0x%lx busy\n",
+			(unsigned long)c->IO_Address);
+		return -EBUSY;
+	}
+	DAC960_PD_DisableInterrupts(base);
+	DAC960_PD_AcknowledgeStatus(base);
+	udelay(1000);
+	while (DAC960_PD_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_PD_ReadErrorStatus(base, &ErrorStatus,
+					      &Parameter0, &Parameter1) &&
+		    DAC960_ReportErrorStatus(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -EIO;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V1_EnableMemoryMailboxInterface(c)) {
+		dev_err(&pdev->dev,
+			"Unable to Enable Memory Mailbox Interface\n");
+		DAC960_PD_ControllerReset(base);
+		return -ENODEV;
+	}
+	DAC960_PD_EnableInterrupts(base);
+	c->V1.QueueCommand = DAC960_PD_QueueCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V1_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_PD_DisableInterrupts;
+	c->Reset = DAC960_PD_ControllerReset;
+
+	return 0;
+}
+
+
+/*
   DAC960_PD_InterruptHandler handles hardware interrupts from DAC960 PD Series
   Controllers.
 */
@@ -5620,6 +5659,56 @@ static irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
 	return IRQ_HANDLED;
 }
 
+
+/*
+  DAC960_P_HardwareInit initializes the hardware for DAC960 P Series
+  Controllers.
+*/
+
+static int DAC960_P_HardwareInit(struct pci_dev *pdev,
+				 DAC960_Controller_T *c, void __iomem *base)
+{
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	if (!request_region(c->IO_Address, 0x80, c->FullModelName)){
+		dev_err(&pdev->dev, "IO port 0x%lx busy\n",
+			(unsigned long)c->IO_Address);
+		return -EBUSY;
+	}
+	DAC960_PD_DisableInterrupts(base);
+	DAC960_PD_AcknowledgeStatus(base);
+	udelay(1000);
+	while (DAC960_PD_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_PD_ReadErrorStatus(base, &ErrorStatus,
+					      &Parameter0, &Parameter1) &&
+		    DAC960_ReportErrorStatus(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -EAGAIN;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V1_EnableMemoryMailboxInterface(c)) {
+		dev_err(&pdev->dev,
+			"Unable to allocate DMA mapped memory\n");
+		DAC960_PD_ControllerReset(base);
+		return -ETIMEDOUT;
+	}
+	DAC960_PD_EnableInterrupts(base);
+	c->V1.QueueCommand = DAC960_P_QueueCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V1_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_PD_DisableInterrupts;
+	c->Reset = DAC960_PD_ControllerReset;
+
+	return 0;
+}
 
 /*
   DAC960_P_InterruptHandler handles hardware interrupts from DAC960 P Series
@@ -5737,7 +5826,6 @@ static unsigned char DAC960_V2_MonitoringGetHealthStatus(DAC960_Controller_T *c)
 
 	return status;
 }
-
 
 /*
   DAC960_MonitoringTimerFunction is the timer function for monitoring
@@ -5879,6 +5967,7 @@ static void DAC960_MonitoringWork(struct work_struct *work)
 static struct DAC960_privdata DAC960_GEM_privdata = {
 	.HardwareType =		DAC960_GEM_Controller,
 	.FirmwareType =		DAC960_V2_Controller,
+	.HardwareInit =		DAC960_GEM_HardwareInit,
 	.InterruptHandler =	DAC960_GEM_InterruptHandler,
 	.MemoryWindowSize =	DAC960_GEM_RegisterWindowSize,
 };
@@ -5887,6 +5976,7 @@ static struct DAC960_privdata DAC960_GEM_privdata = {
 static struct DAC960_privdata DAC960_BA_privdata = {
 	.HardwareType =		DAC960_BA_Controller,
 	.FirmwareType =		DAC960_V2_Controller,
+	.HardwareInit =		DAC960_BA_HardwareInit,
 	.InterruptHandler =	DAC960_BA_InterruptHandler,
 	.MemoryWindowSize =	DAC960_BA_RegisterWindowSize,
 };
@@ -5894,6 +5984,7 @@ static struct DAC960_privdata DAC960_BA_privdata = {
 static struct DAC960_privdata DAC960_LP_privdata = {
 	.HardwareType =		DAC960_LP_Controller,
 	.FirmwareType =		DAC960_V2_Controller,
+	.HardwareInit =		DAC960_LP_HardwareInit,
 	.InterruptHandler =	DAC960_LP_InterruptHandler,
 	.MemoryWindowSize =	DAC960_LP_RegisterWindowSize,
 };
@@ -5901,6 +5992,7 @@ static struct DAC960_privdata DAC960_LP_privdata = {
 static struct DAC960_privdata DAC960_LA_privdata = {
 	.HardwareType =		DAC960_LA_Controller,
 	.FirmwareType =		DAC960_V1_Controller,
+	.HardwareInit =		DAC960_LA_HardwareInit,
 	.InterruptHandler =	DAC960_LA_InterruptHandler,
 	.MemoryWindowSize =	DAC960_LA_RegisterWindowSize,
 };
@@ -5908,6 +6000,7 @@ static struct DAC960_privdata DAC960_LA_privdata = {
 static struct DAC960_privdata DAC960_PG_privdata = {
 	.HardwareType =		DAC960_PG_Controller,
 	.FirmwareType =		DAC960_V1_Controller,
+	.HardwareInit =		DAC960_PG_HardwareInit,
 	.InterruptHandler =	DAC960_PG_InterruptHandler,
 	.MemoryWindowSize =	DAC960_PG_RegisterWindowSize,
 };
@@ -5915,6 +6008,7 @@ static struct DAC960_privdata DAC960_PG_privdata = {
 static struct DAC960_privdata DAC960_PD_privdata = {
 	.HardwareType =		DAC960_PD_Controller,
 	.FirmwareType =		DAC960_V1_Controller,
+	.HardwareInit =		DAC960_PD_HardwareInit,
 	.InterruptHandler =	DAC960_PD_InterruptHandler,
 	.MemoryWindowSize =	DAC960_PD_RegisterWindowSize,
 };
@@ -5922,6 +6016,7 @@ static struct DAC960_privdata DAC960_PD_privdata = {
 static struct DAC960_privdata DAC960_P_privdata = {
 	.HardwareType =		DAC960_P_Controller,
 	.FirmwareType =		DAC960_V1_Controller,
+	.HardwareInit =		DAC960_P_HardwareInit,
 	.InterruptHandler =	DAC960_P_InterruptHandler,
 	.MemoryWindowSize =	DAC960_PD_RegisterWindowSize,
 };

@@ -1882,9 +1882,15 @@ typedef enum
 }
 DAC960_HardwareType_T;
 
+struct DAC960_Controller;
+
+typedef int (*DAC960_HardwareInit_T)(struct pci_dev *pdev,
+		struct DAC960_Controller *c, void __iomem *base);
+
 struct DAC960_privdata {
 	DAC960_HardwareType_T	HardwareType;
 	DAC960_FirmwareType_T	FirmwareType;
+	DAC960_HardwareInit_T	HardwareInit;
 	irq_handler_t		InterruptHandler;
 	unsigned int		MemoryWindowSize;
 };
@@ -4014,16 +4020,6 @@ static unsigned short mylex_translate_ldev(DAC960_Controller_T *c,
 	return ldev_num;
 }
 
-/*
-  Define prototypes for the forward referenced DAC960 Driver Internal Functions.
-*/
-
-static irqreturn_t DAC960_BA_InterruptHandler(int, void *);
-static irqreturn_t DAC960_LP_InterruptHandler(int, void *);
-static irqreturn_t DAC960_LA_InterruptHandler(int, void *);
-static irqreturn_t DAC960_PG_InterruptHandler(int, void *);
-static irqreturn_t DAC960_PD_InterruptHandler(int, void *);
-static irqreturn_t DAC960_P_InterruptHandler(int, void *);
 static void DAC960_MonitoringWork(struct work_struct *work);
 
 #endif /* _MYLEX_H */
