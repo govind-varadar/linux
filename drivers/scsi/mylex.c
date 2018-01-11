@@ -529,7 +529,7 @@ static void DAC960_V2_ExecuteCommand(myr_hba *c,
 */
 
 static unsigned short DAC960_V1_ExecuteType3(myr_hba *c,
-					     DAC960_V1_CommandOpcode_T op,
+					     myr_v1_cmd_opcode op,
 					     dma_addr_t DataDMA)
 {
 	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.DirectCommandBlock;
@@ -555,7 +555,7 @@ static unsigned short DAC960_V1_ExecuteType3(myr_hba *c,
 */
 
 static unsigned short DAC960_V1_ExecuteType3B(myr_hba *c,
-					      DAC960_V1_CommandOpcode_T op,
+					      myr_v1_cmd_opcode op,
 					      unsigned char CommandOpcode2,
 					      dma_addr_t DataDMA)
 {
@@ -583,7 +583,7 @@ static unsigned short DAC960_V1_ExecuteType3B(myr_hba *c,
 */
 
 static unsigned short DAC960_V1_ExecuteType3D(myr_hba *c,
-					      DAC960_V1_CommandOpcode_T op,
+					      myr_v1_cmd_opcode op,
 					      struct scsi_device *sdev)
 {
 	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.DirectCommandBlock;
@@ -5753,7 +5753,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 
 		if (cmd_blk) {
 			DAC960_V1_CommandMailbox_T *mbox;
-			DAC960_V1_CommandOpcode_T op;
+			myr_v1_cmd_opcode op;
 
 			mbox = &cmd_blk->mbox;
 			op = mbox->Common.opcode;

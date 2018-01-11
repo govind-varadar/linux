@@ -155,7 +155,7 @@ typedef enum
 	DAC960_V1_WriteWithScatterGather_Old =		0x83
 }
 __attribute__ ((packed))
-DAC960_V1_CommandOpcode_T;
+myr_v1_cmd_opcode;
 
 
 /*
@@ -726,19 +726,19 @@ typedef union DAC960_V1_CommandMailbox
 	unsigned int Words[4];				/* Words 0-3 */
 	unsigned char Bytes[16];			/* Bytes 0-15 */
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned char Dummy[14];				/* Bytes 2-15 */
 	} __attribute__ ((packed)) Common;
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned char Dummy1[6];				/* Bytes 2-7 */
 		u32 BusAddress;						/* Bytes 8-11 */
 		unsigned char Dummy2[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3;
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned char CommandOpcode2;				/* Byte 2 */
 		unsigned char Dummy1[5];				/* Bytes 3-7 */
@@ -746,7 +746,7 @@ typedef union DAC960_V1_CommandMailbox
 		unsigned char Dummy2[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3B;
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned char Dummy1[5];				/* Bytes 2-6 */
 		unsigned char LogicalDriveNumber:6;			/* Byte 7 Bits 0-6 */
@@ -754,7 +754,7 @@ typedef union DAC960_V1_CommandMailbox
 		unsigned char Dummy2[8];				/* Bytes 8-15 */
 	} __attribute__ ((packed)) Type3C;
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned char Channel;					/* Byte 2 */
 		unsigned char TargetID;					/* Byte 3 */
@@ -764,7 +764,7 @@ typedef union DAC960_V1_CommandMailbox
 		unsigned char Dummy2[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3D;
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		DAC960_V1_PerformEventLogOpType_T OperationType;	/* Byte 2 */
 		unsigned char OperationQualifier;			/* Byte 3 */
@@ -774,7 +774,7 @@ typedef union DAC960_V1_CommandMailbox
 		unsigned char Dummy2[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3E;
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned char Dummy1[2];				/* Bytes 2-3 */
 		unsigned char RebuildRateConstant;			/* Byte 4 */
@@ -783,7 +783,7 @@ typedef union DAC960_V1_CommandMailbox
 		unsigned char Dummy3[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3R;
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned short TransferLength;				/* Bytes 2-3 */
 		unsigned int LogicalBlockAddress;			/* Bytes 4-7 */
@@ -792,7 +792,7 @@ typedef union DAC960_V1_CommandMailbox
 		unsigned char Dummy[3];					/* Bytes 13-15 */
 	} __attribute__ ((packed)) Type4;
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		struct {
 			unsigned short TransferLength:11;			/* Bytes 2-3 */
@@ -810,7 +810,7 @@ typedef union DAC960_V1_CommandMailbox
 		unsigned char Dummy[3];				/* Bytes 13-15 */
 	} __attribute__ ((packed)) Type5;
 	struct {
-		DAC960_V1_CommandOpcode_T opcode;		/* Byte 0 */
+		myr_v1_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned char CommandOpcode2;				/* Byte 2 */
 		unsigned char :8;					/* Byte 3 */
