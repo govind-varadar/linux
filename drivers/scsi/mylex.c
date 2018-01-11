@@ -19,7 +19,7 @@
  */
 
 
-#define DAC960_DriverName			"Mylex"
+#define DAC960_DriverName			"myr"
 
 #include <linux/module.h>
 #include <linux/types.h>
@@ -62,8 +62,8 @@
 static DEFINE_MUTEX(DAC960_mutex);
 static int DAC960_ControllerCount;
 
-static struct raid_template *mylex_v1_raid_template;
-static struct raid_template *mylex_v2_raid_template;
+static struct raid_template *myr_v1_raid_template;
+static struct raid_template *myr_v2_raid_template;
 
 static struct DAC960_V1_DriveStateTbl {
 	myr_v1_devstate state;
@@ -373,62 +373,55 @@ static inline void DAC960_V2_ClearCommand(myr_v2_cmdblk *cmd_blk)
 /*
  * DAC960_V2_QueueCommand queues Command for DAC960 V2 Series Controllers.
  */
-static void DAC960_V2_QueueCommand(myr_hba *c,
-				   myr_v2_cmdblk *cmd_blk)
+static void myr_v2_qcmd(myr_v2_hba *c, myr_v2_cmdblk *cmd_blk)
 {
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->io_addr;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
-	myr_v2_cmd_mbox *next_mbox =
-		c->V2.NextCommandMailbox;
+	myr_v2_cmd_mbox *next_mbox = c->NextCommandMailbox;
 
-	c->V2.WriteCommandMailbox(next_mbox, mbox);
+	c->WriteCommandMailbox(next_mbox, mbox);
 
-	if (c->V2.PreviousCommandMailbox1->Words[0] == 0 ||
-	    c->V2.PreviousCommandMailbox2->Words[0] == 0)
-		c->V2.MailboxNewCommand(base);
+	if (c->PreviousCommandMailbox1->Words[0] == 0 ||
+	    c->PreviousCommandMailbox2->Words[0] == 0)
+		c->MailboxNewCommand(base);
 
-	c->V2.PreviousCommandMailbox2 =
-		c->V2.PreviousCommandMailbox1;
-	c->V2.PreviousCommandMailbox1 = next_mbox;
+	c->PreviousCommandMailbox2 = c->PreviousCommandMailbox1;
+	c->PreviousCommandMailbox1 = next_mbox;
 
-	if (++next_mbox > c->V2.LastCommandMailbox)
-		next_mbox = c->V2.FirstCommandMailbox;
+	if (++next_mbox > c->LastCommandMailbox)
+		next_mbox = c->FirstCommandMailbox;
 
-	c->V2.NextCommandMailbox = next_mbox;
+	c->NextCommandMailbox = next_mbox;
 }
 
 /*
  * DAC960_V1_QueueCommand queues Command for DAC960 V1 Series Controller
  */
 
-static void DAC960_V1_QueueCommand(myr_hba *c,
-				   myr_v1_cmdblk *cmd_blk)
+static void myr_v1_qcmd(myr_v1_hba *c, myr_v1_cmdblk *cmd_blk)
 {
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->io_addr;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
-	myr_v1_cmd_mbox *next_mbox =
-		c->V1.NextCommandMailbox;
+	myr_v1_cmd_mbox *next_mbox = c->NextCommandMailbox;
 
-	c->V1.WriteCommandMailbox(next_mbox, mbox);
-	if (c->V1.PreviousCommandMailbox1->Words[0] == 0 ||
-	    c->V1.PreviousCommandMailbox2->Words[0] == 0)
-		c->V1.MailboxNewCommand(base);
-	c->V1.PreviousCommandMailbox2 =
-		c->V1.PreviousCommandMailbox1;
-	c->V1.PreviousCommandMailbox1 = next_mbox;
-	if (++next_mbox > c->V1.LastCommandMailbox)
-		next_mbox = c->V1.FirstCommandMailbox;
-	c->V1.NextCommandMailbox = next_mbox;
+	c->WriteCommandMailbox(next_mbox, mbox);
+	if (c->PreviousCommandMailbox1->Words[0] == 0 ||
+	    c->PreviousCommandMailbox2->Words[0] == 0)
+		c->MailboxNewCommand(base);
+	c->PreviousCommandMailbox2 = c->PreviousCommandMailbox1;
+	c->PreviousCommandMailbox1 = next_mbox;
+	if (++next_mbox > c->LastCommandMailbox)
+		next_mbox = c->FirstCommandMailbox;
+	c->NextCommandMailbox = next_mbox;
 }
 
 /*
   DAC960_PD_QueueCommand queues Command for DAC960 PD Series Controllers.
 */
 
-static void DAC960_PD_QueueCommand(myr_hba *c,
-				   myr_v1_cmdblk *cmd_blk)
+static void DAC960_PD_QueueCommand(myr_v1_hba *c, myr_v1_cmdblk *cmd_blk)
 {
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->io_addr;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 
 	while (DAC960_PD_MailboxFullP(base))
@@ -442,10 +435,9 @@ static void DAC960_PD_QueueCommand(myr_hba *c,
   DAC960_P_QueueCommand queues Command for DAC960 P Series Controllers.
 */
 
-static void DAC960_P_QueueCommand(myr_hba *c,
-				  myr_v1_cmdblk *cmd_blk)
+static void DAC960_P_QueueCommand(myr_v1_hba *c, myr_v1_cmdblk *cmd_blk)
 {
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->io_addr;
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
 
 	switch (mbox->Common.opcode) {
@@ -513,7 +505,7 @@ static void DAC960_V2_ExecuteCommand(myr_hba *c,
 
 	cmd_blk->Completion = &Completion;
 	spin_lock_irqsave(&c->queue_lock, flags);
-	c->V2.QueueCommand(c, cmd_blk);
+	c->V2.QueueCommand(&c->V2, cmd_blk);
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 
 	if (in_interrupt())
@@ -1480,7 +1472,7 @@ static unsigned char DAC960_V2_MonitorGetEvent(myr_hba *c)
 
 static bool DAC960_V1_EnableMemoryMailboxInterface(myr_hba *c)
 {
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->V1.io_addr;
 	DAC960_HardwareType_T hw_type = c->HardwareType;
 	struct pci_dev *pdev = c->PCIDevice;
 	struct dma_loaf *DmaPages = &c->DmaPages;
@@ -1694,7 +1686,7 @@ skip_mailboxes:
 
 static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 {
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->V2.io_addr;
 	struct pci_dev *pdev = c->PCIDevice;
 	struct dma_loaf *DmaPages = &c->DmaPages;
 	size_t DmaPagesSize;
@@ -2368,7 +2360,7 @@ static void DAC960_DetectCleanup(myr_hba *c)
 	/* Free the memory mailbox, status, and related structures */
 	free_dma_loaf(pdev, &c->DmaPages);
 	if (c->MemoryMappedAddress) {
-		DAC960_DisableInterrupts(c);
+		myr_disable_intr(c);
 		iounmap(c->MemoryMappedAddress);
 	}
 	if (c->IRQ_Channel)
@@ -2381,17 +2373,16 @@ static void DAC960_DetectCleanup(myr_hba *c)
 	scsi_host_put(c->host);
 }
 
-int DAC960_host_reset(struct scsi_cmnd *scmd)
+int myr_v1_host_reset(struct scsi_cmnd *scmd)
 {
 	struct Scsi_Host *shost = scmd->device->host;
-	myr_hba *c =
-		(myr_hba *)shost->hostdata;
+	myr_hba *c = (myr_hba *)shost->hostdata;
 
-	c->Reset(c->BaseAddress);
+	c->Reset(c->V1.io_addr);
 	return SUCCESS;
 }
 
-static int mylex_v1_pthru_queuecommand(struct Scsi_Host *shost,
+static int myr_v1_pthru_queuecommand(struct Scsi_Host *shost,
 					struct scsi_cmnd *scmd)
 {
 	myr_hba *c = (myr_hba *)shost->hostdata;
@@ -2468,7 +2459,7 @@ static int mylex_v1_pthru_queuecommand(struct Scsi_Host *shost,
 	return 0;
 }
 
-static void mylex_v1_inquiry(myr_hba *c,
+static void myr_v1_inquiry(myr_hba *c,
 			     struct scsi_cmnd *scmd)
 {
 	unsigned char inq[36] = {
@@ -2490,7 +2481,7 @@ static void mylex_v1_inquiry(myr_hba *c,
 }
 
 static void
-mylex_v1_mode_sense(myr_hba *c,
+myr_v1_mode_sense(myr_hba *c,
 		    struct scsi_cmnd *scmd,
 		    myr_v1_ldev_info *ldev_info)
 {
@@ -2526,7 +2517,7 @@ mylex_v1_mode_sense(myr_hba *c,
 	scsi_sg_copy_from_buffer(scmd, modes, mode_len);
 }
 
-static void mylex_v1_request_sense(myr_hba *c,
+static void myr_v1_request_sense(myr_hba *c,
 				   struct scsi_cmnd *scmd)
 {
 	scsi_build_sense_buffer(0, scmd->sense_buffer,
@@ -2536,7 +2527,7 @@ static void mylex_v1_request_sense(myr_hba *c,
 }
 
 static void
-mylex_v1_read_capacity(myr_hba *c,
+myr_v1_read_capacity(myr_hba *c,
 		       struct scsi_cmnd *scmd,
 		       myr_v1_ldev_info *ldev_info)
 {
@@ -2550,7 +2541,7 @@ mylex_v1_read_capacity(myr_hba *c,
 	scsi_sg_copy_from_buffer(scmd, data, 8);
 }
 
-static int mylex_v1_ldev_queuecommand(struct Scsi_Host *shost,
+static int myr_v1_ldev_queuecommand(struct Scsi_Host *shost,
 				       struct scsi_cmnd *scmd)
 {
 	myr_hba *c = (myr_hba *)shost->hostdata;
@@ -2583,7 +2574,7 @@ static int mylex_v1_ldev_queuecommand(struct Scsi_Host *shost,
 			scmd->result = (DRIVER_SENSE << 24) |
 				SAM_STAT_CHECK_CONDITION;
 		} else {
-			mylex_v1_inquiry(c, scmd);
+			myr_v1_inquiry(c, scmd);
 			scmd->result = (DID_OK << 16);
 		}
 		scmd->scsi_done(scmd);
@@ -2598,7 +2589,7 @@ static int mylex_v1_ldev_queuecommand(struct Scsi_Host *shost,
 			scmd->result = (DRIVER_SENSE << 24) |
 				SAM_STAT_CHECK_CONDITION;
 		} else {
-			mylex_v1_mode_sense(c, scmd, ldev_info);
+			myr_v1_mode_sense(c, scmd, ldev_info);
 			scmd->result = (DID_OK << 16);
 		}
 		scmd->scsi_done(scmd);
@@ -2625,11 +2616,11 @@ static int mylex_v1_ldev_queuecommand(struct Scsi_Host *shost,
 			scmd->scsi_done(scmd);
 			return 0;
 		}
-		mylex_v1_read_capacity(c, scmd, ldev_info);
+		myr_v1_read_capacity(c, scmd, ldev_info);
 		scmd->scsi_done(scmd);
 		return 0;
 	case REQUEST_SENSE:
-		mylex_v1_request_sense(c, scmd);
+		myr_v1_request_sense(c, scmd);
 		scmd->result = (DID_OK << 16);
 		return 0;
 		break;
@@ -2731,7 +2722,7 @@ submit:
 	return 0;
 }
 
-static int mylex_v1_queuecommand(struct Scsi_Host *shost,
+static int myr_v1_queuecommand(struct Scsi_Host *shost,
 				  struct scsi_cmnd *scmd)
 {
 	myr_hba *c =
@@ -2744,12 +2735,12 @@ static int mylex_v1_queuecommand(struct Scsi_Host *shost,
 		return 0;
 	}
 	if (sdev->channel >= c->PhysicalChannelCount)
-		return mylex_v1_ldev_queuecommand(shost, scmd);
+		return myr_v1_ldev_queuecommand(shost, scmd);
 
-	return mylex_v1_pthru_queuecommand(shost, scmd);
+	return myr_v1_pthru_queuecommand(shost, scmd);
 }
 
-static int mylex_v1_slave_alloc(struct scsi_device *sdev)
+static int myr_v1_slave_alloc(struct scsi_device *sdev)
 {
 	myr_hba *c =
 		(myr_hba *)sdev->host->hostdata;
@@ -2765,7 +2756,7 @@ static int mylex_v1_slave_alloc(struct scsi_device *sdev)
 		myr_v1_ldev_info *ldev_info;
 		unsigned short ldev_num;
 
-		ldev_num = mylex_translate_ldev(c, sdev);
+		ldev_num = myr_translate_ldev(c, sdev);
 		ldev_info = c->V1.LogicalDeviceInfo[ldev_num];
 		if (ldev_info) {
 			enum raid_level level;
@@ -2799,7 +2790,7 @@ static int mylex_v1_slave_alloc(struct scsi_device *sdev)
 				level = RAID_LEVEL_UNKNOWN;
 				break;
 			}
-			raid_set_level(mylex_v1_raid_template,
+			raid_set_level(myr_v1_raid_template,
 				       &sdev->sdev_gendev, level);
 		}
 		return 0;
@@ -2813,7 +2804,7 @@ static int mylex_v1_slave_alloc(struct scsi_device *sdev)
 	return 0;
 }
 
-int mylex_v1_slave_configure(struct scsi_device *sdev)
+int myr_v1_slave_configure(struct scsi_device *sdev)
 {
 	myr_hba *c =
 		(myr_hba *)sdev->host->hostdata;
@@ -2841,7 +2832,7 @@ int mylex_v1_slave_configure(struct scsi_device *sdev)
 	return 0;
 }
 
-static void mylex_v1_slave_destroy(struct scsi_device *sdev)
+static void myr_v1_slave_destroy(struct scsi_device *sdev)
 {
 	void *hostdata = sdev->hostdata;
 
@@ -2851,7 +2842,7 @@ static void mylex_v1_slave_destroy(struct scsi_device *sdev)
 	}
 }
 
-static ssize_t mylex_v1_show_dev_state(struct device *dev,
+static ssize_t myr_v1_show_dev_state(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -2897,7 +2888,7 @@ static ssize_t mylex_v1_show_dev_state(struct device *dev,
 	return ret;
 }
 
-static ssize_t mylex_v1_store_dev_state(struct device *dev,
+static ssize_t myr_v1_store_dev_state(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -2964,7 +2955,7 @@ static ssize_t mylex_v1_store_dev_state(struct device *dev,
 	return count;
 }
 
-static ssize_t mylex_v2_show_dev_state(struct device *dev,
+static ssize_t myr_v2_show_dev_state(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -2999,7 +2990,7 @@ static ssize_t mylex_v2_show_dev_state(struct device *dev,
 	return ret;
 }
 
-static ssize_t mylex_v2_store_dev_state(struct device *dev,
+static ssize_t myr_v2_store_dev_state(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -3083,34 +3074,34 @@ static ssize_t mylex_v2_store_dev_state(struct device *dev,
 	return -EINVAL;
 }
 
-static ssize_t mylex_show_dev_state(struct device *dev,
+static ssize_t myr_show_dev_state(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 
 	if (c->FirmwareType == DAC960_V1_Controller)
-		return mylex_v1_show_dev_state(dev, attr, buf);
+		return myr_v1_show_dev_state(dev, attr, buf);
 	else
-		return mylex_v2_show_dev_state(dev, attr, buf);
+		return myr_v2_show_dev_state(dev, attr, buf);
 }
 
-static ssize_t mylex_store_dev_state(struct device *dev,
+static ssize_t myr_store_dev_state(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 
 	if (c->FirmwareType == DAC960_V1_Controller)
-		return mylex_v1_store_dev_state(dev, attr, buf, count);
+		return myr_v1_store_dev_state(dev, attr, buf, count);
 	else
-		return mylex_v2_store_dev_state(dev, attr, buf, count);
+		return myr_v2_store_dev_state(dev, attr, buf, count);
 }
 
-static DEVICE_ATTR(raid_state, S_IRUGO | S_IWUSR, mylex_show_dev_state,
-		   mylex_store_dev_state);
+static DEVICE_ATTR(raid_state, S_IRUGO | S_IWUSR, myr_show_dev_state,
+		   myr_store_dev_state);
 
-static ssize_t mylex_v1_show_dev_level(struct device *dev,
+static ssize_t myr_v1_show_dev_level(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -3132,7 +3123,7 @@ static ssize_t mylex_v1_show_dev_level(struct device *dev,
 	return snprintf(buf, 32, "Physical Drive\n");
 }
 
-static ssize_t mylex_v2_show_dev_level(struct device *dev,
+static ssize_t myr_v2_show_dev_level(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -3157,28 +3148,28 @@ static ssize_t mylex_v2_show_dev_level(struct device *dev,
 	return snprintf(buf, 32, "%s\n", name);
 }
 
-static ssize_t mylex_show_dev_level(struct device *dev,
+static ssize_t myr_show_dev_level(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 
 	if (c->FirmwareType == DAC960_V1_Controller)
-		return mylex_v1_show_dev_level(dev, attr, buf);
+		return myr_v1_show_dev_level(dev, attr, buf);
 	else
-		return mylex_v2_show_dev_level(dev, attr, buf);
+		return myr_v2_show_dev_level(dev, attr, buf);
 }
-static DEVICE_ATTR(raid_level, S_IRUGO, mylex_show_dev_level, NULL);
+static DEVICE_ATTR(raid_level, S_IRUGO, myr_show_dev_level, NULL);
 
-static ssize_t mylex_show_dev_rebuild(struct device *,
+static ssize_t myr_show_dev_rebuild(struct device *,
 				      struct device_attribute *, char *);
-static ssize_t mylex_store_dev_rebuild(struct device *,
+static ssize_t myr_store_dev_rebuild(struct device *,
 				       struct device_attribute *,
 				       const char *, size_t);
-static DEVICE_ATTR(rebuild, S_IRUGO | S_IWUSR, mylex_show_dev_rebuild,
-		   mylex_store_dev_rebuild);
+static DEVICE_ATTR(rebuild, S_IRUGO | S_IWUSR, myr_show_dev_rebuild,
+		   myr_store_dev_rebuild);
 
-static ssize_t mylex_v1_show_dev_rebuild(struct device *dev,
+static ssize_t myr_v1_show_dev_rebuild(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -3210,7 +3201,7 @@ static ssize_t mylex_v1_show_dev_rebuild(struct device *dev,
 	}
 	mutex_unlock(&c->V1.dcmd_mutex);
 
-	if (ldev_num != mylex_translate_ldev(c, sdev) ||
+	if (ldev_num != myr_translate_ldev(c, sdev) ||
 	    status != DAC960_V1_NormalCompletion)
 		return snprintf(buf, 32, "not %s\n",
 				rebuild ? "rebuilding" : "checking");
@@ -3228,7 +3219,7 @@ static ssize_t mylex_v1_show_dev_rebuild(struct device *dev,
 			ldev_size - remaining, ldev_size);
 }
 
-static ssize_t mylex_v2_show_dev_rebuild(struct device *dev,
+static ssize_t myr_v2_show_dev_rebuild(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -3251,7 +3242,7 @@ static ssize_t mylex_v2_show_dev_rebuild(struct device *dev,
 		return snprintf(buf, 32, "not rebuilding\n");
 }
 
-static ssize_t mylex_v1_store_dev_rebuild(struct device *dev,
+static ssize_t myr_v1_store_dev_rebuild(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -3307,7 +3298,7 @@ static ssize_t mylex_v1_store_dev_rebuild(struct device *dev,
 			mbox->Type3D.Channel = sdev->channel;
 			mbox->Type3D.TargetID = sdev->id;
 		} else {
-			ldev_num = mylex_translate_ldev(c, sdev);
+			ldev_num = myr_translate_ldev(c, sdev);
 			mbox->Type3C.opcode = DAC960_V1_CheckConsistencyAsync;
 			mbox->Type3C.id = DAC960_DirectCommandIdentifier;
 			mbox->Type3C.LogicalDriveNumber = ldev_num;
@@ -3321,7 +3312,7 @@ static ssize_t mylex_v1_store_dev_rebuild(struct device *dev,
 		unsigned char *rate;
 		dma_addr_t rate_addr;
 
-		if (ldev_num != mylex_translate_ldev(c, sdev)) {
+		if (ldev_num != myr_translate_ldev(c, sdev)) {
 			sdev_printk(KERN_INFO, sdev,
 				    "%s Not Cancelled; not in progress\n",
 				    rebuild ? "Rebuild" : "Check Consistency");
@@ -3399,7 +3390,7 @@ static ssize_t mylex_v1_store_dev_rebuild(struct device *dev,
 	return -EIO;
 }
 
-static ssize_t mylex_v2_store_dev_rebuild(struct device *dev,
+static ssize_t myr_v2_store_dev_rebuild(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -3479,31 +3470,31 @@ static ssize_t mylex_v2_store_dev_rebuild(struct device *dev,
 	return ret;
 }
 
-static ssize_t mylex_show_dev_rebuild(struct device *dev,
+static ssize_t myr_show_dev_rebuild(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 
 	if (c->FirmwareType == DAC960_V1_Controller)
-		return mylex_v1_show_dev_rebuild(dev, attr, buf);
+		return myr_v1_show_dev_rebuild(dev, attr, buf);
 	else
-		return mylex_v2_show_dev_rebuild(dev, attr, buf);
+		return myr_v2_show_dev_rebuild(dev, attr, buf);
 }
 
-static ssize_t mylex_store_dev_rebuild(struct device *dev,
+static ssize_t myr_store_dev_rebuild(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 
 	if (c->FirmwareType == DAC960_V1_Controller)
-		return mylex_v1_store_dev_rebuild(dev, attr, buf, count);
+		return myr_v1_store_dev_rebuild(dev, attr, buf, count);
 	else
-		return mylex_v2_store_dev_rebuild(dev, attr, buf, count);
+		return myr_v2_store_dev_rebuild(dev, attr, buf, count);
 }
 
-static ssize_t mylex_v2_show_consistency_check(struct device *dev,
+static ssize_t myr_v2_show_consistency_check(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -3528,7 +3519,7 @@ static ssize_t mylex_v2_show_consistency_check(struct device *dev,
 		return snprintf(buf, 32, "not checking\n");
 }
 
-static ssize_t mylex_v2_store_consistency_check(struct device *dev,
+static ssize_t myr_v2_store_consistency_check(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -3611,34 +3602,34 @@ static ssize_t mylex_v2_store_consistency_check(struct device *dev,
 	return ret;
 }
 
-static ssize_t mylex_show_dev_consistency_check(struct device *dev,
+static ssize_t myr_show_dev_consistency_check(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 
 	if (c->FirmwareType == DAC960_V1_Controller)
-		return mylex_v1_show_dev_rebuild(dev, attr, buf);
+		return myr_v1_show_dev_rebuild(dev, attr, buf);
 	else
-		return mylex_v2_show_consistency_check(dev, attr, buf);
+		return myr_v2_show_consistency_check(dev, attr, buf);
 }
 
-static ssize_t mylex_store_dev_consistency_check(struct device *dev,
+static ssize_t myr_store_dev_consistency_check(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 
 	if (c->FirmwareType == DAC960_V1_Controller)
-		return mylex_v1_store_dev_rebuild(dev, attr, buf, count);
+		return myr_v1_store_dev_rebuild(dev, attr, buf, count);
 	else
-		return mylex_v2_store_consistency_check(dev, attr, buf, count);
+		return myr_v2_store_consistency_check(dev, attr, buf, count);
 }
 static DEVICE_ATTR(consistency_check, S_IRUGO | S_IWUSR,
-		   mylex_show_dev_consistency_check,
-		   mylex_store_dev_consistency_check);
+		   myr_show_dev_consistency_check,
+		   myr_store_dev_consistency_check);
 
-static ssize_t mylex_show_ctlr_num(struct device *dev,
+static ssize_t myr_show_ctlr_num(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -3646,9 +3637,9 @@ static ssize_t mylex_show_ctlr_num(struct device *dev,
 
 	return snprintf(buf, 20, "%d\n", c->ControllerNumber);
 }
-static DEVICE_ATTR(mylex_num, S_IRUGO, mylex_show_ctlr_num, NULL);
+static DEVICE_ATTR(myr_num, S_IRUGO, myr_show_ctlr_num, NULL);
 
-static ssize_t mylex_show_firmware_version(struct device *dev,
+static ssize_t myr_show_firmware_version(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -3656,9 +3647,9 @@ static ssize_t mylex_show_firmware_version(struct device *dev,
 
 	return snprintf(buf, 16, "%s\n", c->FirmwareVersion);
 }
-static DEVICE_ATTR(firmware, S_IRUGO, mylex_show_firmware_version, NULL);
+static DEVICE_ATTR(firmware, S_IRUGO, myr_show_firmware_version, NULL);
 
-static ssize_t mylex_v1_store_flush_cache(struct device *dev,
+static ssize_t myr_v1_store_flush_cache(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -3676,7 +3667,7 @@ static ssize_t mylex_v1_store_flush_cache(struct device *dev,
 	return -EIO;
 }
 
-static ssize_t mylex_v2_store_flush_cache(struct device *dev,
+static ssize_t myr_v2_store_flush_cache(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -3696,20 +3687,20 @@ static ssize_t mylex_v2_store_flush_cache(struct device *dev,
 	return -EIO;
 }
 
-static ssize_t mylex_store_flush_cache(struct device *dev,
+static ssize_t myr_store_flush_cache(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
 	myr_hba *c = (myr_hba *)shost->hostdata;
 
 	if (c->FirmwareType == DAC960_V1_Controller)
-		return mylex_v1_store_flush_cache(dev, attr, buf, count);
+		return myr_v1_store_flush_cache(dev, attr, buf, count);
 	else
-		return mylex_v2_store_flush_cache(dev, attr, buf, count);
+		return myr_v2_store_flush_cache(dev, attr, buf, count);
 }
-static DEVICE_ATTR(flush_cache, S_IWUSR, NULL, mylex_store_flush_cache);
+static DEVICE_ATTR(flush_cache, S_IWUSR, NULL, myr_store_flush_cache);
 
-static struct device_attribute *mylex_v1_sdev_attrs[] = {
+static struct device_attribute *myr_v1_sdev_attrs[] = {
 	&dev_attr_rebuild,
 	&dev_attr_consistency_check,
 	&dev_attr_raid_state,
@@ -3717,29 +3708,38 @@ static struct device_attribute *mylex_v1_sdev_attrs[] = {
 	NULL,
 };
 
-static struct device_attribute *mylex_v1_shost_attrs[] = {
-	&dev_attr_mylex_num,
+static struct device_attribute *myr_v1_shost_attrs[] = {
+	&dev_attr_myr_num,
 	&dev_attr_firmware,
 	&dev_attr_flush_cache,
 	NULL,
 };
 
-struct scsi_host_template mylex_v1_template = {
+struct scsi_host_template myr_v1_template = {
 	.module = THIS_MODULE,
 	.name = DAC960_DriverName,
-	.proc_name = "mylex",
-	.queuecommand = mylex_v1_queuecommand,
-	.eh_host_reset_handler = DAC960_host_reset,
-	.slave_alloc = mylex_v1_slave_alloc,
-	.slave_configure = mylex_v1_slave_configure,
-	.slave_destroy = mylex_v1_slave_destroy,
+	.proc_name = "myr_v1",
+	.queuecommand = myr_v1_queuecommand,
+	.eh_host_reset_handler = myr_v1_host_reset,
+	.slave_alloc = myr_v1_slave_alloc,
+	.slave_configure = myr_v1_slave_configure,
+	.slave_destroy = myr_v1_slave_destroy,
 	.cmd_size = sizeof(myr_v1_cmdblk),
-	.shost_attrs = mylex_v1_shost_attrs,
-	.sdev_attrs = mylex_v1_sdev_attrs,
+	.shost_attrs = myr_v1_shost_attrs,
+	.sdev_attrs = myr_v1_sdev_attrs,
 	.this_id = -1,
 };
 
-static int mylex_v2_queuecommand(struct Scsi_Host *shost,
+int myr_v2_host_reset(struct scsi_cmnd *scmd)
+{
+	struct Scsi_Host *shost = scmd->device->host;
+	myr_hba *c = (myr_hba *)shost->hostdata;
+
+	c->Reset(c->V2.io_addr);
+	return SUCCESS;
+}
+
+static int myr_v2_queuecommand(struct Scsi_Host *shost,
 				  struct scsi_cmnd *scmd)
 {
 	myr_hba *c = (myr_hba *)shost->hostdata;
@@ -3924,7 +3924,7 @@ submit:
 	return 0;
 }
 
-static int mylex_v2_slave_alloc(struct scsi_device *sdev)
+static int myr_v2_slave_alloc(struct scsi_device *sdev)
 {
 	myr_hba *c =
 		(myr_hba *)sdev->host->hostdata;
@@ -3940,7 +3940,7 @@ static int mylex_v2_slave_alloc(struct scsi_device *sdev)
 		if (sdev->lun > 0)
 			return -ENXIO;
 
-		ldev_num = mylex_translate_ldev(c, sdev);
+		ldev_num = myr_translate_ldev(c, sdev);
 		if (ldev_num >= c->LogicalDriveCount)
 			return -ENXIO;
 
@@ -3994,7 +3994,7 @@ static int mylex_v2_slave_alloc(struct scsi_device *sdev)
 				level = RAID_LEVEL_UNKNOWN;
 				break;
 			}
-			raid_set_level(mylex_v2_raid_template,
+			raid_set_level(myr_v2_raid_template,
 				       &sdev->sdev_gendev, level);
 			if (ldev_info->State != DAC960_V2_Device_Online) {
 				const char *name;
@@ -4025,7 +4025,7 @@ static int mylex_v2_slave_alloc(struct scsi_device *sdev)
 	return 0;
 }
 
-static int mylex_v2_slave_configure(struct scsi_device *sdev)
+static int myr_v2_slave_configure(struct scsi_device *sdev)
 {
 	myr_hba *c =
 		(myr_hba *)sdev->host->hostdata;
@@ -4056,7 +4056,7 @@ static int mylex_v2_slave_configure(struct scsi_device *sdev)
 	return 0;
 }
 
-static void mylex_v2_slave_destroy(struct scsi_device *sdev)
+static void myr_v2_slave_destroy(struct scsi_device *sdev)
 {
 	void *hostdata = sdev->hostdata;
 
@@ -4066,7 +4066,7 @@ static void mylex_v2_slave_destroy(struct scsi_device *sdev)
 	}
 }
 
-static struct device_attribute *mylex_sdev_attrs[] = {
+static struct device_attribute *myr_sdev_attrs[] = {
 	&dev_attr_consistency_check,
 	&dev_attr_rebuild,
 	&dev_attr_raid_state,
@@ -4074,7 +4074,7 @@ static struct device_attribute *mylex_sdev_attrs[] = {
 	NULL,
 };
 
-static ssize_t mylex_v2_show_ctlr_serial(struct device *dev,
+static ssize_t myr_v2_show_ctlr_serial(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -4085,7 +4085,7 @@ static ssize_t mylex_v2_show_ctlr_serial(struct device *dev,
 	serial[16] = '\0';
 	return snprintf(buf, 16, "%s\n", serial);
 }
-static DEVICE_ATTR(serial, S_IRUGO, mylex_v2_show_ctlr_serial, NULL);
+static DEVICE_ATTR(serial, S_IRUGO, myr_v2_show_ctlr_serial, NULL);
 
 static struct DAC960_V2_ProcessorTypeTbl {
 	DAC960_V2_ProcessorType_T type;
@@ -4101,7 +4101,7 @@ static struct DAC960_V2_ProcessorTypeTbl {
 	{ 0xff, NULL },
 };
 
-static ssize_t mylex_v2_show_processor(struct device *dev,
+static ssize_t myr_v2_show_processor(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -4151,9 +4151,9 @@ static ssize_t mylex_v2_show_processor(struct device *dev,
 
 	return ret;
 }
-static DEVICE_ATTR(processor, S_IRUGO, mylex_v2_show_processor, NULL);
+static DEVICE_ATTR(processor, S_IRUGO, myr_v2_show_processor, NULL);
 
-static ssize_t mylex_v2_store_discovery_command(struct device *dev,
+static ssize_t myr_v2_store_discovery_command(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -4189,9 +4189,9 @@ static ssize_t mylex_v2_store_discovery_command(struct device *dev,
 
 	return count;
 }
-static DEVICE_ATTR(discovery, S_IWUSR, NULL, mylex_v2_store_discovery_command);
+static DEVICE_ATTR(discovery, S_IWUSR, NULL, myr_v2_store_discovery_command);
 
-static ssize_t mylex_v2_show_suppress_enclosure_messages(struct device *dev,
+static ssize_t myr_v2_show_suppress_enclosure_messages(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -4200,7 +4200,7 @@ static ssize_t mylex_v2_show_suppress_enclosure_messages(struct device *dev,
 	return snprintf(buf, 3, "%d\n", c->SuppressEnclosureMessages);
 }
 
-static ssize_t mylex_v2_store_suppress_enclosure_messages(struct device *dev,
+static ssize_t myr_v2_store_suppress_enclosure_messages(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
@@ -4219,12 +4219,12 @@ static ssize_t mylex_v2_store_suppress_enclosure_messages(struct device *dev,
 	return count;
 }
 static DEVICE_ATTR(disable_enclosure_messages, S_IRUGO | S_IWUSR,
-		   mylex_v2_show_suppress_enclosure_messages,
-		   mylex_v2_store_suppress_enclosure_messages);
+		   myr_v2_show_suppress_enclosure_messages,
+		   myr_v2_store_suppress_enclosure_messages);
 
-static struct device_attribute *mylex_v2_shost_attrs[] = {
+static struct device_attribute *myr_v2_shost_attrs[] = {
 	&dev_attr_serial,
-	&dev_attr_mylex_num,
+	&dev_attr_myr_num,
 	&dev_attr_processor,
 	&dev_attr_firmware,
 	&dev_attr_discovery,
@@ -4233,27 +4233,27 @@ static struct device_attribute *mylex_v2_shost_attrs[] = {
 	NULL,
 };
 
-struct scsi_host_template mylex_v2_template = {
+struct scsi_host_template myr_v2_template = {
 	.module = THIS_MODULE,
 	.name = DAC960_DriverName,
-	.proc_name = "mylex",
-	.queuecommand = mylex_v2_queuecommand,
-	.eh_host_reset_handler = DAC960_host_reset,
-	.slave_alloc = mylex_v2_slave_alloc,
-	.slave_configure = mylex_v2_slave_configure,
-	.slave_destroy = mylex_v2_slave_destroy,
+	.proc_name = "myr_v2",
+	.queuecommand = myr_v2_queuecommand,
+	.eh_host_reset_handler = myr_v2_host_reset,
+	.slave_alloc = myr_v2_slave_alloc,
+	.slave_configure = myr_v2_slave_configure,
+	.slave_destroy = myr_v2_slave_destroy,
 	.cmd_size = sizeof(myr_v2_cmdblk),
-	.shost_attrs = mylex_v2_shost_attrs,
-	.sdev_attrs = mylex_sdev_attrs,
+	.shost_attrs = myr_v2_shost_attrs,
+	.sdev_attrs = myr_sdev_attrs,
 	.this_id = -1,
 };
 
 /**
- * mylex_is_raid - return boolean indicating device is raid volume
+ * myr_is_raid - return boolean indicating device is raid volume
  * @dev the device struct object
  */
 static int
-mylex_is_raid(struct device *dev)
+myr_is_raid(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
@@ -4262,11 +4262,11 @@ mylex_is_raid(struct device *dev)
 }
 
 /**
- * mylex_v1_get_resync - get raid volume resync percent complete
+ * myr_v1_get_resync - get raid volume resync percent complete
  * @dev the device struct object
  */
 static void
-mylex_v1_get_resync(struct device *dev)
+myr_v1_get_resync(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
@@ -4278,7 +4278,7 @@ mylex_v1_get_resync(struct device *dev)
 		return;
 	if (DAC960_V1_ControllerIsRebuilding(c)) {
 		ldev_num = c->V1.RebuildProgress->LogicalDriveNumber;
-		if (ldev_num == mylex_translate_ldev(c, sdev)) {
+		if (ldev_num == myr_translate_ldev(c, sdev)) {
 			ldev_size =
 				c->V1.RebuildProgress->LogicalDriveSize;
 			remaining =
@@ -4287,15 +4287,15 @@ mylex_v1_get_resync(struct device *dev)
 	}
 	if (remaining && ldev_size)
 		percent_complete = (ldev_size - remaining) * 100 / ldev_size;
-	raid_set_resync(mylex_v1_raid_template, dev, percent_complete);
+	raid_set_resync(myr_v1_raid_template, dev, percent_complete);
 }
 
 /**
- * mylex_v1_get_state - get raid volume status
+ * myr_v1_get_state - get raid volume status
  * @dev the device struct object
  */
 static void
-mylex_v1_get_state(struct device *dev)
+myr_v1_get_state(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
@@ -4319,22 +4319,22 @@ mylex_v1_get_state(struct device *dev)
 			state = RAID_STATE_OFFLINE;
 		}
 	}
-	raid_set_state(mylex_v1_raid_template, dev, state);
+	raid_set_state(myr_v1_raid_template, dev, state);
 }
 
-static struct raid_function_template mylex_v1_raid_functions = {
-	.cookie		= &mylex_v1_template,
-	.is_raid	= mylex_is_raid,
-	.get_resync	= mylex_v1_get_resync,
-	.get_state	= mylex_v1_get_state,
+static struct raid_function_template myr_v1_raid_functions = {
+	.cookie		= &myr_v1_template,
+	.is_raid	= myr_is_raid,
+	.get_resync	= myr_v1_get_resync,
+	.get_state	= myr_v1_get_state,
 };
 
 /**
- * mylex_v2_get_resync - get raid volume resync percent complete
+ * myr_v2_get_resync - get raid volume resync percent complete
  * @dev the device struct object
  */
 static void
-mylex_v2_get_resync(struct device *dev)
+myr_v2_get_resync(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
@@ -4351,15 +4351,15 @@ mylex_v2_get_resync(struct device *dev)
 		percent_complete = ldev_info->RebuildBlockNumber * 100 /
 			ldev_info->ConfigurableDeviceSize;
 	}
-	raid_set_resync(mylex_v2_raid_template, dev, percent_complete);
+	raid_set_resync(myr_v2_raid_template, dev, percent_complete);
 }
 
 /**
- * mylex_v2_get_state - get raid volume status
+ * myr_v2_get_state - get raid volume status
  * @dev the device struct object
  */
 static void
-mylex_v2_get_state(struct device *dev)
+myr_v2_get_state(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
@@ -4388,14 +4388,14 @@ mylex_v2_get_state(struct device *dev)
 			state = RAID_STATE_OFFLINE;
 		}
 	}
-	raid_set_state(mylex_v2_raid_template, dev, state);
+	raid_set_state(myr_v2_raid_template, dev, state);
 }
 
-static struct raid_function_template mylex_v2_raid_functions = {
-	.cookie		= &mylex_v2_template,
-	.is_raid	= mylex_is_raid,
-	.get_resync	= mylex_v2_get_resync,
-	.get_state	= mylex_v2_get_state,
+static struct raid_function_template myr_v2_raid_functions = {
+	.cookie		= &myr_v2_template,
+	.is_raid	= myr_is_raid,
+	.get_resync	= myr_v2_get_resync,
+	.get_state	= myr_v2_get_state,
 };
 
 /*
@@ -4418,10 +4418,10 @@ DAC960_DetectController(struct pci_dev *pdev,
 	void __iomem *base;
 
 	if (privdata->FirmwareType == DAC960_V1_Controller)
-		shost = scsi_host_alloc(&mylex_v1_template,
+		shost = scsi_host_alloc(&myr_v1_template,
 					sizeof(myr_hba));
 	else
-		shost = scsi_host_alloc(&mylex_v2_template,
+		shost = scsi_host_alloc(&myr_v2_template,
 					sizeof(myr_hba));
 	if (!shost) {
 		dev_err(&pdev->dev, "Unable to allocate Controller\n");
@@ -4449,7 +4449,7 @@ DAC960_DetectController(struct pci_dev *pdev,
 	}
 
 	snprintf(c->work_q_name, sizeof(c->work_q_name),
-		 "mylex_wq_%d", shost->host_no);
+		 "myr_wq_%d", shost->host_no);
 	c->work_q = create_singlethread_workqueue(c->work_q_name);
 	if (!c->work_q)
 		goto Failure;
@@ -4477,15 +4477,13 @@ DAC960_DetectController(struct pci_dev *pdev,
 		MemoryWindowSize = PAGE_SIZE;
 	c->MemoryMappedAddress =
 		ioremap_nocache(c->PCI_Address & PAGE_MASK, MemoryWindowSize);
-	c->BaseAddress =
-		c->MemoryMappedAddress + (c->PCI_Address & ~PAGE_MASK);
 	if (c->MemoryMappedAddress == NULL) {
 		dev_err(&pdev->dev,
 			"Unable to map Controller Register Window\n");
 		goto Failure;
 	}
-	base = c->BaseAddress;
 
+	base = c->MemoryMappedAddress + (c->PCI_Address & ~PAGE_MASK);
 	if (privdata->HardwareInit(pdev, c, base))
 		goto Failure;
 
@@ -4686,9 +4684,9 @@ static void DAC960_V1_HandleCommandBlock(myr_hba *c,
 */
 
 static struct {
-	int EventCode;
-	unsigned char *EventMessage;
-} EventList[] =
+	int ev_code;
+	unsigned char *ev_msg;
+} myr_v2_ev_list[] =
 { /* Physical Device Events (0x0000 - 0x007F) */
 	{ 0x0001, "P Online" },
 	{ 0x0002, "P Standby" },
@@ -4821,42 +4819,40 @@ static void DAC960_V2_ReportEvent(myr_hba *c, myr_v2_event *ev)
 	unsigned char *sense_info;
 	unsigned char *cmd_specific;
 
-	if (ev->EventCode == 0x1C) {
-		if (!scsi_normalize_sense(ev->RequestSenseData,
-					  40, &sshdr))
+	if (ev->ev_code == 0x1C) {
+		if (!scsi_normalize_sense(ev->sense_data, 40, &sshdr))
 			memset(&sshdr, 0x0, sizeof(sshdr));
 		else {
-			sense_info = &ev->RequestSenseData[3];
-			cmd_specific = &ev->RequestSenseData[7];
+			sense_info = &ev->sense_data[3];
+			cmd_specific = &ev->sense_data[7];
 		}
 	}
 	if (sshdr.sense_key == VENDOR_SPECIFIC &&
 	    (sshdr.asc == 0x80 || sshdr.asc == 0x81))
-		ev->EventCode = ((sshdr.asc - 0x80) << 8 || sshdr.ascq);
+		ev->ev_code = ((sshdr.asc - 0x80) << 8 || sshdr.ascq);
 	while (true) {
-		ev_code = EventList[ev_idx].EventCode;
-		if (ev_code == ev->EventCode || ev_code == 0)
+		ev_code = myr_v2_ev_list[ev_idx].ev_code;
+		if (ev_code == ev->ev_code || ev_code == 0)
 			break;
 		ev_idx++;
 	}
-	ev_type = EventList[ev_idx].EventMessage[0];
-	ev_msg = &EventList[ev_idx].EventMessage[2];
+	ev_type = myr_v2_ev_list[ev_idx].ev_msg[0];
+	ev_msg = &myr_v2_ev_list[ev_idx].ev_msg[2];
 	if (ev_code == 0) {
 		shost_printk(KERN_WARNING, c->host,
 			     "Unknown Controller Event Code %04X\n",
-			     ev->EventCode);
+			     ev->ev_code);
 		return;
 	}
 	switch (ev_type) {
 	case 'P':
-		sdev = scsi_device_lookup(c->host, ev->Channel,
-					  ev->TargetID, 0);
+		sdev = scsi_device_lookup(c->host, ev->channel,
+					  ev->target, 0);
 		sdev_printk(KERN_INFO, sdev, "%s\n", ev_msg);
 		if (sdev && sdev->hostdata &&
 		    sdev->channel < c->PhysicalChannelCount) {
-			myr_v2_pdev_info *pdev_info =
-				sdev->hostdata;
-			switch (ev->EventCode) {
+			myr_v2_pdev_info *pdev_info = sdev->hostdata;
+			switch (ev->ev_code) {
 			case 0x0001:
 			case 0x0007:
 				pdev_info->State = DAC960_V2_Device_Online;
@@ -4879,12 +4875,12 @@ static void DAC960_V2_ReportEvent(myr_hba *c, myr_v2_event *ev)
 		break;
 	case 'L':
 		shost_printk(KERN_INFO, c->host, "Logical Drive %d %s\n",
-			     ev->LogicalUnit, ev_msg);
+			     ev->lun, ev_msg);
 		c->V2.NeedControllerInformation = true;
 		break;
 	case 'M':
 		shost_printk(KERN_INFO, c->host, "Logical Drive %d %s\n",
-			     ev->LogicalUnit, ev_msg);
+			     ev->lun, ev_msg);
 		c->V2.NeedControllerInformation = true;
 		break;
 	case 'S':
@@ -4894,17 +4890,17 @@ static void DAC960_V2_ReportEvent(myr_hba *c, myr_v2_event *ev)
 					    sshdr.ascq == 0x02)))
 			break;
 		shost_printk(KERN_INFO, c->host, "Physical Device %d:%d %s\n",
-			     ev->Channel, ev->TargetID, ev_msg);
+			     ev->channel, ev->target, ev_msg);
 		shost_printk(KERN_INFO, c->host,
 			     "Physical Device %d:%d Request Sense: "
 			     "Sense Key = %X, ASC = %02X, ASCQ = %02X\n",
-			     ev->Channel, ev->TargetID,
+			     ev->channel, ev->target,
 			     sshdr.sense_key, sshdr.asc, sshdr.ascq);
 		shost_printk(KERN_INFO, c->host,
 			     "Physical Device %d:%d Request Sense: "
 			     "Information = %02X%02X%02X%02X "
 			     "%02X%02X%02X%02X\n",
-			     ev->Channel, ev->TargetID,
+			     ev->channel, ev->target,
 			     sense_info[0], sense_info[1],
 			     sense_info[2], sense_info[3],
 			     cmd_specific[0], cmd_specific[1],
@@ -4913,9 +4909,9 @@ static void DAC960_V2_ReportEvent(myr_hba *c, myr_v2_event *ev)
 	case 'E':
 		if (c->SuppressEnclosureMessages)
 			break;
-		sprintf(MessageBuffer, ev_msg, ev->LogicalUnit);
+		sprintf(MessageBuffer, ev_msg, ev->lun);
 		shost_printk(KERN_INFO, c->host, "Enclosure %d %s\n",
-			     ev->TargetID, MessageBuffer);
+			     ev->target, MessageBuffer);
 		break;
 	case 'C':
 		shost_printk(KERN_INFO, c->host, "Controller %s\n", ev_msg);
@@ -4923,7 +4919,7 @@ static void DAC960_V2_ReportEvent(myr_hba *c, myr_v2_event *ev)
 	default:
 		shost_printk(KERN_INFO, c->host,
 			     "Unknown Controller Event Code %04X\n",
-			     ev->EventCode);
+			     ev->ev_code);
 		break;
 	}
 }
@@ -5032,7 +5028,7 @@ static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
 		return -EAGAIN;
 	}
 	DAC960_GEM_EnableInterrupts(base);
-	c->V2.QueueCommand = DAC960_V2_QueueCommand;
+	c->V2.QueueCommand = myr_v2_qcmd;
 	c->V2.WriteCommandMailbox = DAC960_GEM_WriteCommandMailbox;
 	c->V2.MailboxNewCommand = DAC960_GEM_MemoryMailboxNewCommand;
 	c->ReadControllerConfiguration =
@@ -5051,7 +5047,7 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 					       void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->V2.io_addr;
 	myr_v2_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
@@ -5131,7 +5127,7 @@ static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
 		return -EAGAIN;
 	}
 	DAC960_BA_EnableInterrupts(base);
-	c->V2.QueueCommand = DAC960_V2_QueueCommand;
+	c->V2.QueueCommand = myr_v2_qcmd;
 	c->V2.WriteCommandMailbox = DAC960_BA_WriteCommandMailbox;
 	c->V2.MailboxNewCommand = DAC960_BA_MemoryMailboxNewCommand;
 	c->ReadControllerConfiguration =
@@ -5151,7 +5147,7 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 					      void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->V2.io_addr;
 	myr_v2_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
@@ -5231,7 +5227,7 @@ static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
 		return -ENODEV;
 	}
 	DAC960_LP_EnableInterrupts(base);
-	c->V2.QueueCommand = DAC960_V2_QueueCommand;
+	c->V2.QueueCommand = myr_v2_qcmd;
 	c->V2.WriteCommandMailbox = DAC960_LP_WriteCommandMailbox;
 	c->V2.MailboxNewCommand = DAC960_LP_MemoryMailboxNewCommand;
 	c->ReadControllerConfiguration =
@@ -5251,7 +5247,7 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 					      void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->V2.io_addr;
 	myr_v2_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
@@ -5347,7 +5343,7 @@ static int DAC960_LA_HardwareInit(struct pci_dev *pdev,
 		return -ENODEV;
 	}
 	DAC960_LA_EnableInterrupts(base);
-	c->V1.QueueCommand = DAC960_V1_QueueCommand;
+	c->V1.QueueCommand = myr_v1_qcmd;
 	c->V1.WriteCommandMailbox = DAC960_LA_WriteCommandMailbox;
 	if (c->V1.DualModeMemoryMailboxInterface)
 		c->V1.MailboxNewCommand =
@@ -5373,7 +5369,7 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 					      void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->V1.io_addr;
 	myr_v1_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
@@ -5451,7 +5447,7 @@ static int DAC960_PG_HardwareInit(struct pci_dev *pdev,
 		return -ENODEV;
 	}
 	DAC960_PG_EnableInterrupts(base);
-	c->V1.QueueCommand = DAC960_V1_QueueCommand;
+	c->V1.QueueCommand = myr_v1_qcmd;
 	c->V1.WriteCommandMailbox = DAC960_PG_WriteCommandMailbox;
 	if (c->V1.DualModeMemoryMailboxInterface)
 		c->V1.MailboxNewCommand =
@@ -5476,7 +5472,7 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 					      void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->V1.io_addr;
 	myr_v1_stat_mbox *NextStatusMailbox;
 	unsigned long flags;
 
@@ -5579,7 +5575,7 @@ static irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
 					      void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->V1.io_addr;
 	unsigned long flags;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
@@ -5680,7 +5676,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 					     void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
-	void __iomem *base = c->BaseAddress;
+	void __iomem *base = c->V1.io_addr;
 	unsigned long flags;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
@@ -6041,19 +6037,19 @@ static int __init DAC960_init_module(void)
 {
 	int ret;
 
-	mylex_v1_raid_template = raid_class_attach(&mylex_v1_raid_functions);
-	if (!mylex_v1_raid_template)
+	myr_v1_raid_template = raid_class_attach(&myr_v1_raid_functions);
+	if (!myr_v1_raid_template)
 		return -ENODEV;
-	mylex_v2_raid_template = raid_class_attach(&mylex_v2_raid_functions);
-	if (!mylex_v2_raid_template) {
-		raid_class_release(mylex_v1_raid_template);
+	myr_v2_raid_template = raid_class_attach(&myr_v2_raid_functions);
+	if (!myr_v2_raid_template) {
+		raid_class_release(myr_v1_raid_template);
 		return -ENODEV;
 	}
 
 	ret = pci_register_driver(&DAC960_pci_driver);
 	if (ret) {
-		raid_class_release(mylex_v2_raid_template);
-		raid_class_release(mylex_v1_raid_template);
+		raid_class_release(myr_v2_raid_template);
+		raid_class_release(myr_v1_raid_template);
 	}
 	return ret;
 }
@@ -6061,8 +6057,8 @@ static int __init DAC960_init_module(void)
 static void __exit DAC960_cleanup_module(void)
 {
 	pci_unregister_driver(&DAC960_pci_driver);
-	raid_class_release(mylex_v2_raid_template);
-	raid_class_release(mylex_v1_raid_template);
+	raid_class_release(myr_v2_raid_template);
+	raid_class_release(myr_v1_raid_template);
 }
 
 module_init(DAC960_init_module);

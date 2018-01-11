@@ -1397,20 +1397,19 @@ typedef struct myr_v2_fwstat_s
   Define the DAC960 V2 Firmware Get Event reply structure.
 */
 
-typedef struct DAC960_V2_Event
+typedef struct myr_v2_event_s
 {
-	unsigned int EventSequenceNumber;			/* Bytes 0-3 */
-	unsigned int EventTime;				/* Bytes 4-7 */
-	unsigned int EventCode;				/* Bytes 8-11 */
-	unsigned char :8;					/* Byte 12 */
-	unsigned char Channel;				/* Byte 13 */
-	unsigned char TargetID;				/* Byte 14 */
-	unsigned char LogicalUnit;				/* Byte 15 */
-	unsigned int :32;					/* Bytes 16-19 */
-	unsigned int EventSpecificParameter;			/* Bytes 20-23 */
-	unsigned char RequestSenseData[40];			/* Bytes 24-63 */
-}
-myr_v2_event;
+	unsigned int ev_seq;				/* Bytes 0-3 */
+	unsigned int ev_time;				/* Bytes 4-7 */
+	unsigned int ev_code;				/* Bytes 8-11 */
+	unsigned char rsvd1:8;				/* Byte 12 */
+	unsigned char channel;				/* Byte 13 */
+	unsigned char target;				/* Byte 14 */
+	unsigned char lun;				/* Byte 15 */
+	unsigned int rsvd2:32;				/* Bytes 16-19 */
+	unsigned int ev_parm;				/* Bytes 20-23 */
+	unsigned char sense_data[40];			/* Bytes 24-63 */
+} myr_v2_event;
 
 
 /*
@@ -1939,9 +1938,135 @@ typedef struct myr_v2_cmdblk_s
   Define the DAC960 Driver Controller structure.
 */
 
+typedef struct myr_v1_hba_s
+{
+	void __iomem *io_addr;
+
+	unsigned int LogicalBlockSize;
+	unsigned char GeometryTranslationHeads;
+	unsigned char GeometryTranslationSectors;
+	unsigned char PendingRebuildFlag;
+	unsigned char BusWidth;
+	unsigned short StripeSize;
+	unsigned short SegmentSize;
+	unsigned short NewEventLogSequenceNumber;
+	unsigned short OldEventLogSequenceNumber;
+	bool DualModeMemoryMailboxInterface;
+	bool BackgroundInitializationStatusSupported;
+	bool SAFTE_EnclosureManagementEnabled;
+	bool NeedLogicalDeviceInfo;
+	bool NeedErrorTableInformation;
+	bool NeedRebuildProgress;
+	bool NeedConsistencyCheckProgress;
+	bool NeedBackgroundInitializationStatus;
+	bool RebuildProgressFirst;
+	bool RebuildFlagPending;
+	bool RebuildStatusPending;
+	struct pci_pool *DCDBPool;
+
+	void (*QueueCommand)(struct myr_v1_hba_s *, myr_v1_cmdblk *);
+	void (*WriteCommandMailbox)(myr_v1_cmd_mbox *, myr_v1_cmd_mbox *);
+	void (*MailboxNewCommand)(void __iomem *);
+
+	dma_addr_t	FirstCommandMailboxDMA;
+	myr_v1_cmd_mbox *FirstCommandMailbox;
+	myr_v1_cmd_mbox *LastCommandMailbox;
+	myr_v1_cmd_mbox *NextCommandMailbox;
+	myr_v1_cmd_mbox *PreviousCommandMailbox1;
+	myr_v1_cmd_mbox *PreviousCommandMailbox2;
+
+	dma_addr_t	FirstStatusMailboxDMA;
+	myr_v1_stat_mbox *FirstStatusMailbox;
+	myr_v1_stat_mbox *LastStatusMailbox;
+	myr_v1_stat_mbox *NextStatusMailbox;
+
+	myr_v1_cmdblk dcmd_blk;
+	myr_v1_cmdblk mcmd_blk;
+	struct mutex dcmd_mutex;
+
+	DAC960_V1_Enquiry_T Enquiry;
+	DAC960_V1_Enquiry_T *NewEnquiry;
+	dma_addr_t NewEnquiryDMA;
+
+	DAC960_V1_ErrorTable_T ErrorTable;
+	DAC960_V1_ErrorTable_T *NewErrorTable;
+	dma_addr_t NewErrorTableDMA;
+
+	DAC960_V1_EventLogEntry_T *EventLogEntry;
+	dma_addr_t EventLogEntryDMA;
+
+	DAC960_V1_RebuildProgress_T *RebuildProgress;
+	dma_addr_t RebuildProgressDMA;
+	unsigned short LastRebuildStatus;
+
+	DAC960_V1_LogicalDeviceInfoArray_T *LogicalDeviceInfo;
+	dma_addr_t LogicalDeviceInfoDMA;
+
+	DAC960_V1_BackgroundInitializationStatus_T
+	*BackgroundInitializationStatus;
+	dma_addr_t BackgroundInitializationStatusDMA;
+	DAC960_V1_BackgroundInitializationStatus_T
+	LastBackgroundInitializationStatus;
+
+	myr_v1_pdev_state *NewDeviceState;
+	dma_addr_t	NewDeviceStateDMA;
+	struct mutex dma_mutex;
+} myr_v1_hba;
+
+typedef struct myr_v2_hba_s
+{
+	void __iomem *io_addr;
+
+	unsigned int StatusChangeCounter;
+	unsigned int NextEventSequenceNumber;
+	/* Monitor flags */
+	bool NeedControllerInformation;
+	struct pci_pool *RequestSensePool;
+	struct pci_pool *DCDBPool;
+
+	void (*QueueCommand)(struct myr_v2_hba_s *, myr_v2_cmdblk *);
+	void (*WriteCommandMailbox)(myr_v2_cmd_mbox *, myr_v2_cmd_mbox *);
+	void (*MailboxNewCommand)(void __iomem *);
+
+	dma_addr_t	FirstCommandMailboxDMA;
+	myr_v2_cmd_mbox *FirstCommandMailbox;
+	myr_v2_cmd_mbox *LastCommandMailbox;
+	myr_v2_cmd_mbox *NextCommandMailbox;
+	myr_v2_cmd_mbox *PreviousCommandMailbox1;
+	myr_v2_cmd_mbox *PreviousCommandMailbox2;
+
+	dma_addr_t	FirstStatusMailboxDMA;
+	myr_v2_stat_mbox *FirstStatusMailbox;
+	myr_v2_stat_mbox *LastStatusMailbox;
+	myr_v2_stat_mbox *NextStatusMailbox;
+
+	myr_v2_cmdblk dcmd_blk;
+	myr_v2_cmdblk mcmd_blk;
+	struct mutex dcmd_mutex;
+
+	myr_v2_fwstat *fwstat_buf;
+	dma_addr_t fwstat_addr;
+
+	myr_v2_ctlr_info ctlr_info;
+	myr_v2_ctlr_info *ctlr_info_buf;
+	dma_addr_t ctlr_info_addr;
+	struct mutex cinfo_mutex;
+
+	myr_v2_ldev_info *ldev_info_buf;
+	dma_addr_t ldev_info_addr;
+
+	myr_v2_pdev_info *pdev_info_buf;
+	dma_addr_t pdev_info_addr;
+
+	myr_v2_event *event_buf;
+	dma_addr_t event_addr;
+
+	myr_v2_devmap *devmap_buf;
+	dma_addr_t devmap_addr;
+} myr_v2_hba;
+
 typedef struct myr_hba_s
 {
-	void __iomem *BaseAddress;
 	void __iomem *MemoryMappedAddress;
 	DAC960_FirmwareType_T FirmwareType;
 	DAC960_HardwareType_T HardwareType;
@@ -1984,129 +2109,8 @@ typedef struct myr_hba_s
 	void (*DisableInterrupts)(void __iomem *);
 	void (*Reset)(void __iomem *);
 	union {
-		struct {
-			unsigned int LogicalBlockSize;
-			unsigned char GeometryTranslationHeads;
-			unsigned char GeometryTranslationSectors;
-			unsigned char PendingRebuildFlag;
-			unsigned char BusWidth;
-			unsigned short StripeSize;
-			unsigned short SegmentSize;
-			unsigned short NewEventLogSequenceNumber;
-			unsigned short OldEventLogSequenceNumber;
-			bool DualModeMemoryMailboxInterface;
-			bool BackgroundInitializationStatusSupported;
-			bool SAFTE_EnclosureManagementEnabled;
-			bool NeedLogicalDeviceInfo;
-			bool NeedErrorTableInformation;
-			bool NeedRebuildProgress;
-			bool NeedConsistencyCheckProgress;
-			bool NeedBackgroundInitializationStatus;
-			bool RebuildProgressFirst;
-			bool RebuildFlagPending;
-			bool RebuildStatusPending;
-			struct pci_pool *DCDBPool;
-
-			void (*QueueCommand)(struct myr_hba_s *,
-					     myr_v1_cmdblk *);
-			void (*WriteCommandMailbox)(myr_v1_cmd_mbox *,
-						    myr_v1_cmd_mbox *);
-			void (*MailboxNewCommand)(void __iomem *);
-
-			dma_addr_t	FirstCommandMailboxDMA;
-			myr_v1_cmd_mbox *FirstCommandMailbox;
-			myr_v1_cmd_mbox *LastCommandMailbox;
-			myr_v1_cmd_mbox *NextCommandMailbox;
-			myr_v1_cmd_mbox *PreviousCommandMailbox1;
-			myr_v1_cmd_mbox *PreviousCommandMailbox2;
-
-			dma_addr_t	FirstStatusMailboxDMA;
-			myr_v1_stat_mbox *FirstStatusMailbox;
-			myr_v1_stat_mbox *LastStatusMailbox;
-			myr_v1_stat_mbox *NextStatusMailbox;
-
-			myr_v1_cmdblk dcmd_blk;
-			myr_v1_cmdblk mcmd_blk;
-			struct mutex dcmd_mutex;
-
-			DAC960_V1_Enquiry_T Enquiry;
-			DAC960_V1_Enquiry_T *NewEnquiry;
-			dma_addr_t NewEnquiryDMA;
-
-			DAC960_V1_ErrorTable_T ErrorTable;
-			DAC960_V1_ErrorTable_T *NewErrorTable;
-			dma_addr_t NewErrorTableDMA;
-
-			DAC960_V1_EventLogEntry_T *EventLogEntry;
-			dma_addr_t EventLogEntryDMA;
-
-			DAC960_V1_RebuildProgress_T *RebuildProgress;
-			dma_addr_t RebuildProgressDMA;
-			unsigned short LastRebuildStatus;
-
-			DAC960_V1_LogicalDeviceInfoArray_T *LogicalDeviceInfo;
-			dma_addr_t LogicalDeviceInfoDMA;
-
-			DAC960_V1_BackgroundInitializationStatus_T
-			*BackgroundInitializationStatus;
-			dma_addr_t BackgroundInitializationStatusDMA;
-			DAC960_V1_BackgroundInitializationStatus_T
-			LastBackgroundInitializationStatus;
-
-			myr_v1_pdev_state *NewDeviceState;
-			dma_addr_t	NewDeviceStateDMA;
-			struct mutex dma_mutex;
-		} V1;
-		struct {
-			unsigned int StatusChangeCounter;
-			unsigned int NextEventSequenceNumber;
-			/* Monitor flags */
-			bool NeedControllerInformation;
-			struct pci_pool *RequestSensePool;
-			struct pci_pool *DCDBPool;
-
-			void (*QueueCommand)(struct myr_hba_s *,
-					     myr_v2_cmdblk *);
-			void (*WriteCommandMailbox)(myr_v2_cmd_mbox *,
-						    myr_v2_cmd_mbox *);
-			void (*MailboxNewCommand)(void __iomem *);
-
-			dma_addr_t	FirstCommandMailboxDMA;
-			myr_v2_cmd_mbox *FirstCommandMailbox;
-			myr_v2_cmd_mbox *LastCommandMailbox;
-			myr_v2_cmd_mbox *NextCommandMailbox;
-			myr_v2_cmd_mbox *PreviousCommandMailbox1;
-			myr_v2_cmd_mbox *PreviousCommandMailbox2;
-
-			dma_addr_t	FirstStatusMailboxDMA;
-			myr_v2_stat_mbox *FirstStatusMailbox;
-			myr_v2_stat_mbox *LastStatusMailbox;
-			myr_v2_stat_mbox *NextStatusMailbox;
-
-			myr_v2_cmdblk dcmd_blk;
-			myr_v2_cmdblk mcmd_blk;
-			struct mutex dcmd_mutex;
-
-			myr_v2_fwstat *fwstat_buf;
-			dma_addr_t fwstat_addr;
-
-			myr_v2_ctlr_info ctlr_info;
-			myr_v2_ctlr_info *ctlr_info_buf;
-			dma_addr_t ctlr_info_addr;
-			struct mutex cinfo_mutex;
-
-			myr_v2_ldev_info *ldev_info_buf;
-			dma_addr_t ldev_info_addr;
-
-			myr_v2_pdev_info *pdev_info_buf;
-			dma_addr_t pdev_info_addr;
-
-			myr_v2_event *event_buf;
-			dma_addr_t event_addr;
-
-			myr_v2_devmap *devmap_buf;
-			dma_addr_t devmap_addr;
-		} V2;
+		myr_v1_hba V1;
+		myr_v2_hba V2;
 	} FW;
 } myr_hba;
 
@@ -2120,8 +2124,9 @@ typedef struct myr_hba_s
 #define V2				FW.V2
 #define DAC960_ReadControllerConfiguration(Controller) \
 	(Controller->ReadControllerConfiguration)(Controller)
-#define DAC960_DisableInterrupts(Controller) \
-	(Controller->DisableInterrupts)(Controller->BaseAddress)
+#define myr_disable_intr(c) \
+	(c->DisableInterrupts)(c->FirmwareType == DAC960_V1_Controller ? \
+			       c->V1.io_addr : c->V2.io_addr)
 
 /*
  * dma_addr_writeql is provided to write dma_addr_t types
@@ -3992,8 +3997,8 @@ void DAC960_P_To_PD_TranslateReadWriteCommand(myr_v1_cmdblk *cmd_blk)
 	mbox->Bytes[3] |= ldev_num << 3;
 }
 
-static unsigned short mylex_translate_ldev(myr_hba *c,
-				     struct scsi_device *sdev)
+static unsigned short myr_translate_ldev(myr_hba *c,
+					 struct scsi_device *sdev)
 {
 	unsigned short ldev_num;
 
