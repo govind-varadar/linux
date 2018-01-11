@@ -442,15 +442,14 @@ DAC960_V1_RAIDLevel_T;
   Define the DAC960 V1 Firmware Logical Drive Information structure.
 */
 
-typedef struct DAC960_V1_LogicalDeviceInfo
+typedef struct myr_v1_ldev_info_s
 {
 	unsigned int Size;				/* Bytes 0-3 */
 	myr_v1_devstate State;			/* Byte 4 */
 	unsigned char RAIDLevel:7;			/* Byte 5 Bits 0-6 */
 	bool WriteBack:1;				/* Byte 5 Bit 7 */
 	unsigned short :16;				/* Bytes 6-7 */
-}
-DAC960_V1_LogicalDeviceInfo_T;
+} myr_v1_ldev_info;
 
 
 /*
@@ -458,7 +457,7 @@ DAC960_V1_LogicalDeviceInfo_T;
   reply structure.
 */
 
-typedef DAC960_V1_LogicalDeviceInfo_T
+typedef myr_v1_ldev_info
 DAC960_V1_LogicalDeviceInfoArray_T[DAC960_MaxLogicalDrives];
 
 
@@ -668,7 +667,7 @@ DAC960_V1_Config2_T;
   Define the DAC960 V1 Firmware DCDB request structure.
 */
 
-typedef struct DAC960_V1_DCDB
+typedef struct myr_v1_dcdb_s
 {
 	unsigned char TargetID:4;			 /* Byte 0 Bits 0-3 */
 	unsigned char Channel:4;			 /* Byte 0 Bits 4-7 */
@@ -697,8 +696,7 @@ typedef struct DAC960_V1_DCDB
 	unsigned char SenseData[64];			/* Bytes 22-85 */
 	unsigned char Status;				/* Byte 86 */
 	unsigned char :8;				/* Byte 87 */
-}
-DAC960_V1_DCDB_T;
+} myr_v1_dcdb;
 
 
 /*
@@ -706,12 +704,11 @@ DAC960_V1_DCDB_T;
   32 Bit Byte Count structure.
 */
 
-typedef struct DAC960_V1_ScatterGatherSegment
+typedef struct myr_v1_sge_s
 {
 	u32 SegmentDataPointer;		/* Bytes 0-3 */
 	u32 SegmentByteCount;		/* Bytes 4-7 */
-}
-DAC960_V1_ScatterGatherSegment_T;
+} myr_v1_sge;
 
 
 /*
@@ -875,7 +872,7 @@ typedef enum
 	DAC960_V2_ClearConfiguration =			0xCA,
 }
 __attribute__ ((packed))
-DAC960_V2_IOCTL_Opcode_T;
+myr_v2_ioctl_opcode;
 
 
 /*
@@ -1167,7 +1164,7 @@ typedef enum
 	DAC960_V2_Device_InvalidState =		0xFF
 }
 __attribute__ ((packed))
-DAC960_V2_DriveState_T;
+myr_v2_devstate;
 
 /*
  * Define the DAC960 V2 RAID Levels
@@ -1224,13 +1221,13 @@ DAC960_V2_CachelineSize_T;
   Define the DAC960 V2 Firmware Get Logical Device Info reply structure.
 */
 
-typedef struct DAC960_V2_LogicalDeviceInfo
+typedef struct myr_v2_ldev_info_s
 {
 	unsigned char :8;				/* Byte 0 */
 	unsigned char Channel;				/* Byte 1 */
 	unsigned char TargetID;				/* Byte 2 */
 	unsigned char LogicalUnit;			/* Byte 3 */
-	DAC960_V2_DriveState_T State;			/* Byte 4 */
+	myr_v2_devstate State;			/* Byte 4 */
 	unsigned char RAIDLevel;			/* Byte 5 */
 	unsigned char StripeSize;			/* Byte 6 */
 	unsigned char CacheLineSize;			/* Byte 7 */
@@ -1302,15 +1299,14 @@ typedef struct DAC960_V2_LogicalDeviceInfo
 	u64 DataMigrationBlockNumber;			/* Bytes 176-183 */
 	u64 PatrolOperationBlockNumber;			/* Bytes 184-191 */
 	unsigned char rsvd8[64];			/* Bytes 192-255 */
-}
-DAC960_V2_LogicalDeviceInfo_T;
+} myr_v2_ldev_info;
 
 
 /*
   Define the DAC960 V2 Firmware Get Physical Device Info reply structure.
 */
 
-typedef struct DAC960_V2_PhysicalDeviceInfo
+typedef struct myr_v2_pdev_info_s
 {
 	unsigned char :8;				/* Byte 0 */
 	unsigned char Channel;				/* Byte 1 */
@@ -1325,7 +1321,7 @@ typedef struct DAC960_V2_PhysicalDeviceInfo
 	bool RemoteHostSystemDead:1;			/* Byte 5 Bit 0 */
 	bool RemoteControllerDead:1;			/* Byte 5 Bit 1 */
 	unsigned char :6;				/* Byte 5 Bits 2-7 */
-	DAC960_V2_DriveState_T State;			/* Byte 6 */
+	myr_v2_devstate State;			/* Byte 6 */
 	unsigned char NegotiatedDataWidthBits;		/* Byte 7 */
 	unsigned short NegotiatedSynchronousMegaTransfers; /* Bytes 8-9 */
 	/* Multiported Physical Device Information */
@@ -1372,8 +1368,7 @@ typedef struct DAC960_V2_PhysicalDeviceInfo
 	u64 DataMigrationBlockNumber;			/* Bytes 240-247 */
 	u64 PatrolOperationBlockNumber;			/* Bytes 248-255 */
 	unsigned char Reserved5[256];			/* Bytes 256-511 */
-}
-DAC960_V2_PhysicalDeviceInfo_T;
+} myr_v2_pdev_info;
 
 
 /*
@@ -1424,7 +1419,7 @@ DAC960_V2_Event_T;
   Define the DAC960 V2 Firmware Command Control Bits structure.
 */
 
-typedef struct DAC960_V2_CommandControlBits
+typedef struct myr_v2_cmd_ctrl_s
 {
 	bool ForceUnitAccess:1;				/* Byte 0 Bit 0 */
 	bool DisablePageOut:1;				/* Byte 0 Bit 1 */
@@ -1434,15 +1429,14 @@ typedef struct DAC960_V2_CommandControlBits
 	bool rsvd2:1;						/* Byte 0 Bit 5 */
 	bool NoAutoRequestSense:1;				/* Byte 0 Bit 6 */
 	bool DisconnectProhibited:1;				/* Byte 0 Bit 7 */
-}
-DAC960_V2_CommandControlBits_T;
+} myr_v2_cmd_ctrl;
 
 
 /*
   Define the DAC960 V2 Firmware Command Timeout structure.
 */
 
-typedef struct DAC960_V2_CommandTimeout
+typedef struct myr_v2_cmd_tmo_s
 {
 	unsigned char TimeoutValue:6;				/* Byte 0 Bits 0-5 */
 	enum {
@@ -1451,15 +1445,14 @@ typedef struct DAC960_V2_CommandTimeout
 		DAC960_V2_TimeoutScale_Hours =		2,
 		DAC960_V2_TimeoutScale_Reserved =		3
 	} __attribute__ ((packed)) TimeoutScale:2;		/* Byte 0 Bits 6-7 */
-}
-DAC960_V2_CommandTimeout_T;
+} myr_v2_cmd_tmo;
 
 
 /*
   Define the DAC960 V2 Firmware Physical Device structure.
 */
 
-typedef struct DAC960_V2_PhysicalDevice
+typedef struct myr_v2_pdev_s
 {
 	unsigned char LogicalUnit;				/* Byte 0 */
 	unsigned char TargetID;				/* Byte 1 */
@@ -1467,7 +1460,7 @@ typedef struct DAC960_V2_PhysicalDevice
 	unsigned char Controller:5;				/* Byte 2 Bits 3-7 */
 }
 __attribute__ ((packed))
-DAC960_V2_PhysicalDevice_T;
+myr_v2_pdev;
 
 
 /*
@@ -1481,7 +1474,7 @@ typedef struct DAC960_V2_LogicalDevice
 	unsigned char Controller:5;				/* Byte 2 Bits 3-7 */
 }
 __attribute__ ((packed))
-DAC960_V2_LogicalDevice_T;
+myr_v2_ldev;
 
 
 /*
@@ -1524,32 +1517,30 @@ DAC960_V2_PhysicalToLogicalDevice_T;
   Define the DAC960 V2 Firmware Scatter/Gather List Entry structure.
 */
 
-typedef struct DAC960_V2_ScatterGatherSegment
+typedef struct myr_v2_sge_s
 {
-	u64 SegmentDataPointer;			/* Bytes 0-7 */
-	u64 SegmentByteCount;			/* Bytes 8-15 */
-}
-DAC960_V2_ScatterGatherSegment_T;
+	u64 sge_addr;			/* Bytes 0-7 */
+	u64 sge_count;			/* Bytes 8-15 */
+} myr_v2_sge;
 
 
 /*
   Define the DAC960 V2 Firmware Data Transfer Memory Address structure.
 */
 
-typedef union DAC960_V2_DataTransferMemoryAddress
+typedef union  myr_v2_sgl
 {
-	DAC960_V2_ScatterGatherSegment_T ScatterGatherSegments[2]; /* Bytes 0-31 */
+	myr_v2_sge sge[2]; /* Bytes 0-31 */
 	struct {
-		unsigned short ScatterGatherList0Length;	/* Bytes 0-1 */
-		unsigned short ScatterGatherList1Length;	/* Bytes 2-3 */
-		unsigned short ScatterGatherList2Length;	/* Bytes 4-5 */
-		unsigned short :16;				/* Bytes 6-7 */
-		u64 ScatterGatherList0Address;			/* Bytes 8-15 */
-		u64 ScatterGatherList1Address;			/* Bytes 16-23 */
-		u64 ScatterGatherList2Address;			/* Bytes 24-31 */
-	} ExtendedScatterGather;
-}
-DAC960_V2_DataTransferMemoryAddress_T;
+		unsigned short sge0_len;	/* Bytes 0-1 */
+		unsigned short sge1_len;	/* Bytes 2-3 */
+		unsigned short sge2_len;	/* Bytes 4-5 */
+		unsigned short rsvd:16;		/* Bytes 6-7 */
+		u64 sge0_addr;			/* Bytes 8-15 */
+		u64 sge1_addr;			/* Bytes 16-23 */
+		u64 sge2_addr;			/* Bytes 24-31 */
+	} ext;
+} myr_v2_sgl;
 
 
 /*
@@ -1562,149 +1553,149 @@ typedef union myr_v2_cmd_mbox_s
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
 		u64 sense_addr;					/* Bytes 8-15 */
 		unsigned int :24;				/* Bytes 16-18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char IOCTL_Opcode;			/* Byte 21 */
 		unsigned char Reserved[10];			/* Bytes 22-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} Common;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size;					/* Bytes 4-7 */
 		u64 sense_addr;					/* Bytes 8-15 */
-		DAC960_V2_PhysicalDevice_T PhysicalDevice;	/* Bytes 16-18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_pdev pdev;	/* Bytes 16-18 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char CDBLength;			/* Byte 21 */
 		unsigned char SCSI_CDB[10];			/* Bytes 22-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} SCSI_10;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size;					/* Bytes 4-7 */
 		u64 sense_addr;					/* Bytes 8-15 */
-		DAC960_V2_PhysicalDevice_T PhysicalDevice;	/* Bytes 16-18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_pdev pdev;	/* Bytes 16-18 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char CDBLength;			/* Byte 21 */
 		unsigned short :16;				/* Bytes 22-23 */
 		u64 SCSI_CDB_BusAddress;			/* Bytes 24-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} SCSI_255;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
 		u64 sense_addr;					/* Bytes 8-15 */
 		unsigned short :16;				/* Bytes 16-17 */
 		unsigned char ControllerNumber;			/* Byte 18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char IOCTL_Opcode;			/* Byte 21 */
 		unsigned char Reserved[10];			/* Bytes 22-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} ControllerInfo;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
 		u64 sense_addr;					/* Bytes 8-15 */
-		DAC960_V2_LogicalDevice_T LogicalDevice;	/* Bytes 16-18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_ldev ldev;	/* Bytes 16-18 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char IOCTL_Opcode;			/* Byte 21 */
 		unsigned char Reserved[10];			/* Bytes 22-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} LogicalDeviceInfo;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
 		u64 sense_addr;					/* Bytes 8-15 */
-		DAC960_V2_PhysicalDevice_T PhysicalDevice;	/* Bytes 16-18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_pdev pdev;	/* Bytes 16-18 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char IOCTL_Opcode;			/* Byte 21 */
 		unsigned char Reserved[10];			/* Bytes 22-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} PhysicalDeviceInfo;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
 		u64 sense_addr;					/* Bytes 8-15 */
 		unsigned short EventSequenceNumberHigh16;	/* Bytes 16-17 */
 		unsigned char ControllerNumber;			/* Byte 18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char IOCTL_Opcode;			/* Byte 21 */
 		unsigned short EventSequenceNumberLow16;	/* Bytes 22-23 */
 		unsigned char Reserved[8];			/* Bytes 24-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} GetEvent;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
 		u64 sense_addr;					/* Bytes 8-15 */
 		union {
-			DAC960_V2_LogicalDevice_T LogicalDevice;	/* Bytes 16-18 */
-			DAC960_V2_PhysicalDevice_T PhysicalDevice;	/* Bytes 16-18 */
+			myr_v2_ldev ldev;	/* Bytes 16-18 */
+			myr_v2_pdev pdev;	/* Bytes 16-18 */
 		};
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char IOCTL_Opcode;			/* Byte 21 */
-		DAC960_V2_DriveState_T State;
+		myr_v2_devstate State;
 		unsigned char Reserved[9];			/* Bytes 23-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} SetDeviceState;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
 		u64 sense_addr;					/* Bytes 8-15 */
-		DAC960_V2_LogicalDevice_T LogicalDevice;	/* Bytes 16-18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_ldev ldev;	/* Bytes 16-18 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char IOCTL_Opcode;			/* Byte 21 */
 		bool RestoreConsistency:1;			/* Byte 22 Bit 0 */
 		bool InitializedAreaOnly:1;			/* Byte 22 Bit 1 */
 		unsigned char :6;				/* Byte 22 Bits 2-7 */
 		unsigned char Reserved[9];			/* Bytes 23-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} ConsistencyCheck;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		unsigned char FirstCommandMailboxSizeKB;	/* Byte 4 */
 		unsigned char FirstStatusMailboxSizeKB;		/* Byte 5 */
 		unsigned char SecondCommandMailboxSizeKB;	/* Byte 6 */
 		unsigned char SecondStatusMailboxSizeKB;	/* Byte 7 */
 		u64 sense_addr;					/* Bytes 8-15 */
 		unsigned int :24;				/* Bytes 16-18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char IOCTL_Opcode;			/* Byte 21 */
 		unsigned char HealthStatusBufferSizeKB;		/* Byte 22 */
@@ -1718,17 +1709,17 @@ typedef union myr_v2_cmd_mbox_s
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
 		myr_v2_cmd_opcode opcode;			/* Byte 2 */
-		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
+		myr_v2_cmd_ctrl control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
 		u64 sense_addr;					/* Bytes 8-15 */
-		DAC960_V2_PhysicalDevice_T PhysicalDevice;	/* Bytes 16-18 */
-		DAC960_V2_CommandTimeout_T tmo;			/* Byte 19 */
+		myr_v2_pdev pdev;	/* Bytes 16-18 */
+		myr_v2_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;			/* Byte 20 */
 		unsigned char IOCTL_Opcode;			/* Byte 21 */
 		DAC960_V2_OperationDevice_T OperationDevice;	/* Byte 22 */
 		unsigned char Reserved[9];			/* Bytes 23-31 */
-		DAC960_V2_DataTransferMemoryAddress_T dma_addr;	/* Bytes 32-63 */
+		myr_v2_sgl dma_addr;	/* Bytes 32-63 */
 	} DeviceOperation;
 } myr_v2_cmd_mbox;
 
@@ -1926,9 +1917,9 @@ typedef struct myr_v1_cmdblk_s
 	myr_v1_cmd_mbox mbox;
 	unsigned short status;
 	struct completion *Completion;
-	DAC960_V1_DCDB_T *DCDB;
+	myr_v1_dcdb *DCDB;
 	dma_addr_t DCDB_dma;
-	DAC960_V1_ScatterGatherSegment_T *sgl;
+	myr_v1_sge *sgl;
 	dma_addr_t sgl_addr;
 } myr_v1_cmdblk;
 
@@ -1939,7 +1930,7 @@ typedef struct myr_v2_cmdblk_s
 	unsigned char sense_len;
 	int residual;
 	struct completion *Completion;
-	DAC960_V2_ScatterGatherSegment_T *sgl;
+	myr_v2_sge *sgl;
 	dma_addr_t sgl_addr;
 	unsigned char *DCDB;
 	dma_addr_t DCDB_dma;
@@ -2107,10 +2098,10 @@ typedef struct myr_hba_s
 			dma_addr_t	NewControllerInformationDMA;
 			struct mutex cinfo_mutex;
 
-			DAC960_V2_LogicalDeviceInfo_T *NewLogicalDeviceInformation;
+			myr_v2_ldev_info *NewLogicalDeviceInformation;
 			dma_addr_t	 NewLogicalDeviceInformationDMA;
 
-			DAC960_V2_PhysicalDeviceInfo_T *NewPhysicalDeviceInformation;
+			myr_v2_pdev_info *NewPhysicalDeviceInformation;
 			dma_addr_t	NewPhysicalDeviceInformationDMA;
 
 			DAC960_V2_Event_T *Event;

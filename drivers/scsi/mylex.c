@@ -117,7 +117,7 @@ static char *DAC960_V1_RAIDLevelName(DAC960_V1_RAIDLevel_T level)
 }
 
 static struct DAC960_V2_DriveStateTbl {
-	DAC960_V2_DriveState_T state;
+	myr_v2_devstate state;
 	char *name;
 } DAC960_V2_DriveStateNames[] = {
 	{ DAC960_V2_Device_Unconfigured, "Unconfigured" },
@@ -133,7 +133,7 @@ static struct DAC960_V2_DriveStateTbl {
 	{ DAC960_V2_Device_InvalidState, NULL },
 };
 
-static char *DAC960_V2_DriveStateName(DAC960_V2_DriveState_T state)
+static char *DAC960_V2_DriveStateName(myr_v2_devstate state)
 {
 	struct DAC960_V2_DriveStateTbl *entry =
 		DAC960_V2_DriveStateNames;
@@ -257,7 +257,7 @@ static bool DAC960_CreateAuxiliaryStructures(myr_hba *c)
 	size_t elem_size, elem_align;
 
 	if (c->FirmwareType == DAC960_V1_Controller) {
-		elem_align = sizeof(DAC960_V1_ScatterGatherSegment_T);
+		elem_align = sizeof(myr_v1_sge);
 		elem_size = c->host->sg_tablesize * elem_align;
 		ScatterGatherPool = pci_pool_create("DAC960_V1_ScatterGather",
 						    pdev, elem_size,
@@ -267,7 +267,7 @@ static bool DAC960_CreateAuxiliaryStructures(myr_hba *c)
 				     "Failed to allocate SG pool\n");
 			return false;
 		}
-		elem_size = sizeof(DAC960_V1_DCDB_T);
+		elem_size = sizeof(myr_v1_dcdb);
 		elem_align = sizeof(unsigned int);
 		DCDBPool = pci_pool_create("DAC960_V1_DCDB",
 					   pdev, elem_size, elem_align, 0);
@@ -280,7 +280,7 @@ static bool DAC960_CreateAuxiliaryStructures(myr_hba *c)
 		c->ScatterGatherPool = ScatterGatherPool;
 		c->V1.DCDBPool = DCDBPool;
 	} else {
-		elem_align = sizeof(DAC960_V2_ScatterGatherSegment_T);
+		elem_align = sizeof(myr_v2_sge);
 		elem_size = c->host->sg_tablesize * elem_align;
 		ScatterGatherPool = pci_pool_create("DAC960_V2_ScatterGather",
 						    pdev, elem_size,
@@ -769,8 +769,8 @@ static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 	if (status == DAC960_V1_NormalCompletion) {
 		int ldev_num;
 		for (ldev_num = 0; ldev_num < c->LogicalDriveCount; ldev_num++) {
-			DAC960_V1_LogicalDeviceInfo_T *old = NULL;
-			DAC960_V1_LogicalDeviceInfo_T *new =
+			myr_v1_ldev_info *old = NULL;
+			myr_v1_ldev_info *new =
 				c->V1.LogicalDeviceInfo[ldev_num];
 			struct scsi_device *sdev;
 			unsigned short ldev_num;
@@ -1172,7 +1172,7 @@ static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
-	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
+	myr_v2_sgl *sgl;
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
@@ -1185,11 +1185,9 @@ static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 		sizeof(DAC960_V2_ControllerInfo_T);
 	mbox->ControllerInfo.ControllerNumber = 0;
 	mbox->ControllerInfo.IOCTL_Opcode = DAC960_V2_GetControllerInfo;
-	dma_addr = &mbox->ControllerInfo.dma_addr;
-	dma_addr->ScatterGatherSegments[0].SegmentDataPointer =
-		c->V2.NewControllerInformationDMA;
-	dma_addr->ScatterGatherSegments[0].SegmentByteCount =
-		mbox->ControllerInfo.dma_size;
+	sgl = &mbox->ControllerInfo.dma_addr;
+	sgl->sge[0].sge_addr = c->V2.NewControllerInformationDMA;
+	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetControllerInfo\n");
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
@@ -1235,11 +1233,11 @@ static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 static unsigned char
 DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 			       unsigned short ldev_num,
-			       DAC960_V2_LogicalDeviceInfo_T *ldev_info)
+			       myr_v2_ldev_info *ldev_info)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
-	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
+	myr_v2_sgl *sgl;
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
@@ -1249,24 +1247,22 @@ DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 	mbox->LogicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->LogicalDeviceInfo.control.NoAutoRequestSense = true;
 	mbox->LogicalDeviceInfo.dma_size =
-		sizeof(DAC960_V2_LogicalDeviceInfo_T);
-	mbox->LogicalDeviceInfo.LogicalDevice.LogicalDeviceNumber = ldev_num;
+		sizeof(myr_v2_ldev_info);
+	mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
 	mbox->LogicalDeviceInfo.IOCTL_Opcode =
 		DAC960_V2_GetLogicalDeviceInfoValid;
-	dma_addr = &mbox->LogicalDeviceInfo.dma_addr;
-	dma_addr->ScatterGatherSegments[0].SegmentDataPointer =
-		c->V2.NewLogicalDeviceInformationDMA;
-	dma_addr->ScatterGatherSegments[0].SegmentByteCount =
-		mbox->LogicalDeviceInfo.dma_size;
+	sgl = &mbox->LogicalDeviceInfo.dma_addr;
+	sgl->sge[0].sge_addr = c->V2.NewLogicalDeviceInformationDMA;
+	sgl->sge[0].sge_count = mbox->LogicalDeviceInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetLogicalDeviceInfoValid for ldev %d\n", ldev_num);
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V2_NormalCompletion) {
 		unsigned short ldev_num = ldev_info->LogicalDeviceNumber;
-		DAC960_V2_LogicalDeviceInfo_T *new =
+		myr_v2_ldev_info *new =
 			c->V2.NewLogicalDeviceInformation;
-		DAC960_V2_LogicalDeviceInfo_T *old = ldev_info;
+		myr_v2_ldev_info *old = ldev_info;
 
 		if (old != NULL) {
 			unsigned long ldev_size =
@@ -1350,11 +1346,11 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 				unsigned char Channel,
 				unsigned char TargetID,
 				unsigned char LogicalUnit,
-				DAC960_V2_PhysicalDeviceInfo_T *pdev_info)
+				myr_v2_pdev_info *pdev_info)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
-	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
+	myr_v2_sgl *sgl;
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
@@ -1364,17 +1360,15 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 	mbox->PhysicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->PhysicalDeviceInfo.control.NoAutoRequestSense = true;
 	mbox->PhysicalDeviceInfo.dma_size =
-		sizeof(DAC960_V2_PhysicalDeviceInfo_T);
-	mbox->PhysicalDeviceInfo.PhysicalDevice.LogicalUnit = LogicalUnit;
-	mbox->PhysicalDeviceInfo.PhysicalDevice.TargetID = TargetID;
-	mbox->PhysicalDeviceInfo.PhysicalDevice.Channel = Channel;
+		sizeof(myr_v2_pdev_info);
+	mbox->PhysicalDeviceInfo.pdev.LogicalUnit = LogicalUnit;
+	mbox->PhysicalDeviceInfo.pdev.TargetID = TargetID;
+	mbox->PhysicalDeviceInfo.pdev.Channel = Channel;
 	mbox->PhysicalDeviceInfo.IOCTL_Opcode =
 		DAC960_V2_GetPhysicalDeviceInfoValid;
-	dma_addr = &mbox->PhysicalDeviceInfo.dma_addr;
-	dma_addr->ScatterGatherSegments[0].SegmentDataPointer =
-		c->V2.NewPhysicalDeviceInformationDMA;
-	dma_addr->ScatterGatherSegments[0].SegmentByteCount =
-		mbox->PhysicalDeviceInfo.dma_size;
+	sgl = &mbox->PhysicalDeviceInfo.dma_addr;
+	sgl->sge[0].sge_addr = c->V2.NewPhysicalDeviceInformationDMA;
+	sgl->sge[0].sge_count = mbox->PhysicalDeviceInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetPhysicalDeviceInfoValid for pdev %d:%d:%d\n",
 		Channel, TargetID, LogicalUnit);
@@ -1395,7 +1389,7 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 
 static unsigned char
 DAC960_V2_DeviceOperation(myr_hba *c,
-			  DAC960_V2_IOCTL_Opcode_T opcode,
+			  myr_v2_ioctl_opcode opcode,
 			  DAC960_V2_OperationDevice_T opdev)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
@@ -1431,7 +1425,7 @@ DAC960_V2_TranslatePhysicalDevice(myr_hba *c,
 {
 	myr_v2_cmdblk *cmd_blk;
 	myr_v2_cmd_mbox *mbox;
-	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
+	myr_v2_sgl *sgl;
 	unsigned char status;
 
 	mutex_lock(&c->V2.dcmd_mutex);
@@ -1442,16 +1436,14 @@ DAC960_V2_TranslatePhysicalDevice(myr_hba *c,
 	mbox->PhysicalDeviceInfo.control.NoAutoRequestSense = true;
 	mbox->PhysicalDeviceInfo.dma_size =
 		sizeof(DAC960_V2_PhysicalToLogicalDevice_T);
-	mbox->PhysicalDeviceInfo.PhysicalDevice.TargetID = TargetID;
-	mbox->PhysicalDeviceInfo.PhysicalDevice.Channel = Channel;
-	mbox->PhysicalDeviceInfo.PhysicalDevice.LogicalUnit = LogicalUnit;
+	mbox->PhysicalDeviceInfo.pdev.TargetID = TargetID;
+	mbox->PhysicalDeviceInfo.pdev.Channel = Channel;
+	mbox->PhysicalDeviceInfo.pdev.LogicalUnit = LogicalUnit;
 	mbox->PhysicalDeviceInfo.IOCTL_Opcode =
 		DAC960_V2_TranslatePhysicalToLogicalDevice;
-	dma_addr = &mbox->PhysicalDeviceInfo.dma_addr;
-	dma_addr->ScatterGatherSegments[0].SegmentDataPointer =
-		c->V2.PhysicalToLogicalDeviceDMA;
-	dma_addr->ScatterGatherSegments[0].SegmentByteCount =
-		mbox->PhysicalDeviceInfo.dma_size;
+	sgl = &mbox->PhysicalDeviceInfo.dma_addr;
+	sgl->sge[0].sge_addr = c->V2.PhysicalToLogicalDeviceDMA;
+	sgl->sge[0].sge_addr = mbox->PhysicalDeviceInfo.dma_size;
 
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
@@ -1467,7 +1459,7 @@ static unsigned char DAC960_V2_MonitorGetEvent(myr_hba *c)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.MonitoringCommandBlock;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
-	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
+	myr_v2_sgl *sgl;
 	unsigned char status;
 
 	mbox->GetEvent.opcode = DAC960_V2_IOCTL;
@@ -1478,11 +1470,9 @@ static unsigned char DAC960_V2_MonitorGetEvent(myr_hba *c)
 	mbox->GetEvent.IOCTL_Opcode = DAC960_V2_GetEvent;
 	mbox->GetEvent.EventSequenceNumberLow16 =
 		c->V2.NextEventSequenceNumber & 0xFFFF;
-	dma_addr = &mbox->GetEvent.dma_addr;
-	dma_addr->ScatterGatherSegments[0].SegmentDataPointer =
-		c->V2.EventDMA;
-	dma_addr->ScatterGatherSegments[0].SegmentByteCount =
-		mbox->GetEvent.dma_size;
+	sgl = &mbox->GetEvent.dma_addr;
+	sgl->sge[0].sge_addr = c->V2.EventDMA;
+	sgl->sge[0].sge_count = mbox->GetEvent.dma_size;
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
 
@@ -1534,7 +1524,7 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myr_hba *c)
 		StatusMailboxesSize = DAC960_V1_StatusMailboxCount * sizeof(myr_v1_stat_mbox);
 	}
 	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
-		sizeof(DAC960_V1_DCDB_T) + sizeof(DAC960_V1_Enquiry_T) +
+		sizeof(myr_v1_dcdb) + sizeof(DAC960_V1_Enquiry_T) +
 		sizeof(DAC960_V1_ErrorTable_T) + sizeof(DAC960_V1_EventLogEntry_T) +
 		sizeof(DAC960_V1_RebuildProgress_T) +
 		sizeof(DAC960_V1_LogicalDeviceInfoArray_T) +
@@ -1752,8 +1742,8 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 		CommandMailboxesSize + StatusMailboxesSize +
 		sizeof(DAC960_V2_HealthStatusBuffer_T) +
 		sizeof(DAC960_V2_ControllerInfo_T) +
-		sizeof(DAC960_V2_LogicalDeviceInfo_T) +
-		sizeof(DAC960_V2_PhysicalDeviceInfo_T) +
+		sizeof(myr_v2_ldev_info) +
+		sizeof(myr_v2_pdev_info) +
 		sizeof(DAC960_V2_Event_T) +
 		sizeof(DAC960_V2_PhysicalToLogicalDevice_T);
 
@@ -1795,11 +1785,11 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myr_hba *c)
 								 &c->V2.NewControllerInformationDMA);
 
 	c->V2.NewLogicalDeviceInformation =  slice_dma_loaf(DmaPages,
-								     sizeof(DAC960_V2_LogicalDeviceInfo_T),
+								     sizeof(myr_v2_ldev_info),
 								     &c->V2.NewLogicalDeviceInformationDMA);
 
 	c->V2.NewPhysicalDeviceInformation = slice_dma_loaf(DmaPages,
-								     sizeof(DAC960_V2_PhysicalDeviceInfo_T),
+								     sizeof(myr_v2_pdev_info),
 								     &c->V2.NewPhysicalDeviceInformationDMA);
 
 	c->V2.Event = slice_dma_loaf(DmaPages,
@@ -2423,7 +2413,7 @@ static int mylex_v1_pthru_queuecommand(struct Scsi_Host *shost,
 	myr_hba *c = (myr_hba *)shost->hostdata;
 	myr_v1_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
-	DAC960_V1_DCDB_T *DCDB;
+	myr_v1_dcdb *DCDB;
 	dma_addr_t DCDB_dma;
 	struct scsi_device *sdev = scmd->device;
 	struct scatterlist *sgl;
@@ -2518,7 +2508,7 @@ static void mylex_v1_inquiry(myr_hba *c,
 static void
 mylex_v1_mode_sense(myr_hba *c,
 		    struct scsi_cmnd *scmd,
-		    DAC960_V1_LogicalDeviceInfo_T *ldev_info)
+		    myr_v1_ldev_info *ldev_info)
 {
 	unsigned char modes[32], *mode_pg;
 	bool dbd;
@@ -2564,7 +2554,7 @@ static void mylex_v1_request_sense(myr_hba *c,
 static void
 mylex_v1_read_capacity(myr_hba *c,
 		       struct scsi_cmnd *scmd,
-		       DAC960_V1_LogicalDeviceInfo_T *ldev_info)
+		       myr_v1_ldev_info *ldev_info)
 {
 	unsigned char data[8];
 
@@ -2582,7 +2572,7 @@ static int mylex_v1_ldev_queuecommand(struct Scsi_Host *shost,
 	myr_hba *c = (myr_hba *)shost->hostdata;
 	myr_v1_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
 	myr_v1_cmd_mbox *mbox = &cmd_blk->mbox;
-	DAC960_V1_LogicalDeviceInfo_T *ldev_info;
+	myr_v1_ldev_info *ldev_info;
 	struct scsi_device *sdev = scmd->device;
 	struct scatterlist *sgl;
 	unsigned long flags;
@@ -2720,7 +2710,7 @@ static int mylex_v1_ldev_queuecommand(struct Scsi_Host *shost,
 		mbox->Type5.LogicalBlockAddress = lba;
 		mbox->Type5.BusAddress = (u32)sg_dma_address(sgl);
 	} else {
-		DAC960_V1_ScatterGatherSegment_T *hw_sgl;
+		myr_v1_sge *hw_sgl;
 		dma_addr_t hw_sgl_addr;
 		int i;
 
@@ -2788,7 +2778,7 @@ static int mylex_v1_slave_alloc(struct scsi_device *sdev)
 		return -ENXIO;
 
 	if (sdev->channel >= c->PhysicalChannelCount) {
-		DAC960_V1_LogicalDeviceInfo_T *ldev_info;
+		myr_v1_ldev_info *ldev_info;
 		unsigned short ldev_num;
 
 		ldev_num = mylex_translate_ldev(c, sdev);
@@ -2843,7 +2833,7 @@ int mylex_v1_slave_configure(struct scsi_device *sdev)
 {
 	myr_hba *c =
 		(myr_hba *)sdev->host->hostdata;
-	DAC960_V1_LogicalDeviceInfo_T *ldev_info;
+	myr_v1_ldev_info *ldev_info;
 
 	if (sdev->channel > c->host->max_id)
 		return -ENXIO;
@@ -2888,7 +2878,7 @@ static ssize_t mylex_v1_show_dev_state(struct device *dev,
 		return snprintf(buf, 16, "Unknown\n");
 
 	if (sdev->channel >= c->PhysicalChannelCount) {
-		DAC960_V1_LogicalDeviceInfo_T *ldev_info =
+		myr_v1_ldev_info *ldev_info =
 			sdev->hostdata;
 		const char *name;
 
@@ -3001,7 +2991,7 @@ static ssize_t mylex_v2_show_dev_state(struct device *dev,
 		return snprintf(buf, 16, "Unknown\n");
 
 	if (sdev->channel >= c->PhysicalChannelCount) {
-		DAC960_V2_LogicalDeviceInfo_T *ldev_info = sdev->hostdata;
+		myr_v2_ldev_info *ldev_info = sdev->hostdata;
 		const char *name;
 
 		name = DAC960_V2_DriveStateName(ldev_info->State);
@@ -3011,7 +3001,7 @@ static ssize_t mylex_v2_show_dev_state(struct device *dev,
 			ret = snprintf(buf, 32, "Invalid (%02X)\n",
 				       ldev_info->State);
 	} else {
-		DAC960_V2_PhysicalDeviceInfo_T *pdev_info;
+		myr_v2_pdev_info *pdev_info;
 		const char *name;
 
 		pdev_info = sdev->hostdata;
@@ -3032,7 +3022,7 @@ static ssize_t mylex_v2_store_dev_state(struct device *dev,
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 	myr_v2_cmdblk *cmd_blk;
 	myr_v2_cmd_mbox *mbox;
-	DAC960_V2_DriveState_T new_state;
+	myr_v2_devstate new_state;
 	unsigned short ldev_num;
 	unsigned char status;
 
@@ -3047,7 +3037,7 @@ static ssize_t mylex_v2_store_dev_state(struct device *dev,
 		return -EINVAL;
 
 	if (sdev->channel < c->PhysicalChannelCount) {
-		DAC960_V2_PhysicalDeviceInfo_T *pdev_info = sdev->hostdata;
+		myr_v2_pdev_info *pdev_info = sdev->hostdata;
 
 		if (pdev_info->State == new_state) {
 			sdev_printk(KERN_INFO, sdev,
@@ -3061,7 +3051,7 @@ static ssize_t mylex_v2_store_dev_state(struct device *dev,
 		if (status != DAC960_V2_NormalCompletion)
 			return -ENXIO;
 	} else {
-		DAC960_V2_LogicalDeviceInfo_T *ldev_info = sdev->hostdata;
+		myr_v2_ldev_info *ldev_info = sdev->hostdata;
 
 		if (ldev_info->State == new_state) {
 			sdev_printk(KERN_INFO, sdev,
@@ -3081,18 +3071,18 @@ static ssize_t mylex_v2_store_dev_state(struct device *dev,
 	mbox->Common.control.NoAutoRequestSense = true;
 	mbox->SetDeviceState.IOCTL_Opcode = DAC960_V2_SetDeviceState;
 	mbox->SetDeviceState.State = new_state;
-	mbox->SetDeviceState.LogicalDevice.LogicalDeviceNumber = ldev_num;
+	mbox->SetDeviceState.ldev.LogicalDeviceNumber = ldev_num;
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&c->V2.dcmd_mutex);
 	if (status == DAC960_V2_NormalCompletion) {
 		if (sdev->channel < c->PhysicalChannelCount) {
-			DAC960_V2_PhysicalDeviceInfo_T *pdev_info =
+			myr_v2_pdev_info *pdev_info =
 				sdev->hostdata;
 
 			pdev_info->State = new_state;
 		} else {
-			DAC960_V2_LogicalDeviceInfo_T *ldev_info =
+			myr_v2_ldev_info *ldev_info =
 				sdev->hostdata;
 
 			ldev_info->State = new_state;
@@ -3143,7 +3133,7 @@ static ssize_t mylex_v1_show_dev_level(struct device *dev,
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 
 	if (sdev->channel >= c->PhysicalChannelCount) {
-		DAC960_V1_LogicalDeviceInfo_T *ldev_info = sdev->hostdata;
+		myr_v1_ldev_info *ldev_info = sdev->hostdata;
 		const char *name;
 
 		if (!ldev_info)
@@ -3169,7 +3159,7 @@ static ssize_t mylex_v2_show_dev_level(struct device *dev,
 		return snprintf(buf, 16, "Unknown\n");
 
 	if (sdev->channel >= c->PhysicalChannelCount) {
-		DAC960_V2_LogicalDeviceInfo_T *ldev_info;
+		myr_v2_ldev_info *ldev_info;
 
 		ldev_info = sdev->hostdata;
 		name = DAC960_V2_RAIDLevelName(ldev_info->RAIDLevel);
@@ -3259,7 +3249,7 @@ static ssize_t mylex_v2_show_dev_rebuild(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V2_LogicalDeviceInfo_T *ldev_info;
+	myr_v2_ldev_info *ldev_info;
 	unsigned short ldev_num;
 	unsigned char status;
 
@@ -3430,7 +3420,7 @@ static ssize_t mylex_v2_store_dev_rebuild(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V2_LogicalDeviceInfo_T *ldev_info;
+	myr_v2_ldev_info *ldev_info;
 	myr_v2_cmdblk *cmd_blk;
 	myr_v2_cmd_mbox *mbox;
 	char tmpbuf[8];
@@ -3482,13 +3472,11 @@ static ssize_t mylex_v2_store_dev_rebuild(struct device *dev,
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	if (rebuild) {
-		mbox->LogicalDeviceInfo.LogicalDevice.LogicalDeviceNumber =
-			ldev_num;
+		mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
 		mbox->LogicalDeviceInfo.IOCTL_Opcode =
 			DAC960_V2_RebuildDeviceStart;
 	} else {
-		mbox->LogicalDeviceInfo.LogicalDevice.LogicalDeviceNumber =
-			ldev_num;
+		mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
 		mbox->LogicalDeviceInfo.IOCTL_Opcode =
 			DAC960_V2_RebuildDeviceStop;
 	}
@@ -3536,7 +3524,7 @@ static ssize_t mylex_v2_show_consistency_check(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V2_LogicalDeviceInfo_T *ldev_info;
+	myr_v2_ldev_info *ldev_info;
 	unsigned short ldev_num;
 	unsigned char status;
 
@@ -3561,7 +3549,7 @@ static ssize_t mylex_v2_store_consistency_check(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V2_LogicalDeviceInfo_T *ldev_info;
+	myr_v2_ldev_info *ldev_info;
 	myr_v2_cmdblk *cmd_blk;
 	myr_v2_cmd_mbox *mbox;
 	char tmpbuf[8];
@@ -3614,15 +3602,13 @@ static ssize_t mylex_v2_store_consistency_check(struct device *dev,
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	if (check) {
-		mbox->LogicalDeviceInfo.LogicalDevice.LogicalDeviceNumber =
-			ldev_num;
+		mbox->ConsistencyCheck.ldev.LogicalDeviceNumber = ldev_num;
 		mbox->ConsistencyCheck.IOCTL_Opcode =
 			DAC960_V2_ConsistencyCheckStart;
 		mbox->ConsistencyCheck.RestoreConsistency = true;
 		mbox->ConsistencyCheck.InitializedAreaOnly = false;
 	} else {
-		mbox->LogicalDeviceInfo.LogicalDevice.LogicalDeviceNumber =
-			ldev_num;
+		mbox->ConsistencyCheck.ldev.LogicalDeviceNumber = ldev_num;
 		mbox->ConsistencyCheck.IOCTL_Opcode =
 			DAC960_V2_ConsistencyCheckStop;
 	}
@@ -3776,7 +3762,7 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 	myr_v2_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
 	struct scsi_device *sdev = scmd->device;
-	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
+	myr_v2_sgl *hw_sge;
 	dma_addr_t sense_addr;
 	struct scatterlist *sgl;
 	unsigned long flags, timeout;
@@ -3806,23 +3792,21 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 	timeout = scmd->request->timeout;
 	if (scmd->cmd_len <= 10) {
 		if (scmd->device->channel >= c->PhysicalChannelCount) {
-			DAC960_V2_LogicalDeviceInfo_T *ldev_info =
+			myr_v2_ldev_info *ldev_info =
 				sdev->hostdata;
 
 			mbox->SCSI_10.opcode = DAC960_V2_SCSI_10;
-			mbox->SCSI_10.PhysicalDevice.LogicalUnit =
+			mbox->SCSI_10.pdev.LogicalUnit =
 				ldev_info->LogicalUnit;
-			mbox->SCSI_10.PhysicalDevice.TargetID =
-				ldev_info->TargetID;
-			mbox->SCSI_10.PhysicalDevice.Channel =
-				ldev_info->Channel;
-			mbox->SCSI_10.PhysicalDevice.Controller = 0;
+			mbox->SCSI_10.pdev.TargetID = ldev_info->TargetID;
+			mbox->SCSI_10.pdev.Channel = ldev_info->Channel;
+			mbox->SCSI_10.pdev.Controller = 0;
 		} else {
 			mbox->SCSI_10.opcode =
 				DAC960_V2_SCSI_10_Passthru;
-			mbox->SCSI_10.PhysicalDevice.LogicalUnit = sdev->lun;
-			mbox->SCSI_10.PhysicalDevice.TargetID = sdev->id;
-			mbox->SCSI_10.PhysicalDevice.Channel = sdev->channel;
+			mbox->SCSI_10.pdev.LogicalUnit = sdev->lun;
+			mbox->SCSI_10.pdev.TargetID = sdev->id;
+			mbox->SCSI_10.pdev.Channel = sdev->channel;
 		}
 		mbox->SCSI_10.id = scmd->request->tag + 3;
 		mbox->SCSI_10.control.DataTransferControllerToHost =
@@ -3841,7 +3825,7 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 			mbox->SCSI_10.tmo.TimeoutValue = timeout;
 		}
 		memcpy(&mbox->SCSI_10.SCSI_CDB, scmd->cmnd, scmd->cmd_len);
-		dma_addr = &mbox->SCSI_10.dma_addr;
+		hw_sge = &mbox->SCSI_10.dma_addr;
 		cmd_blk->DCDB = NULL;
 	} else {
 		dma_addr_t DCDB_dma;
@@ -3857,23 +3841,21 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 		}
 		cmd_blk->DCDB_dma = DCDB_dma;
 		if (scmd->device->channel >= c->PhysicalChannelCount) {
-			DAC960_V2_LogicalDeviceInfo_T *ldev_info =
+			myr_v2_ldev_info *ldev_info =
 				sdev->hostdata;
 
 			mbox->SCSI_255.opcode = DAC960_V2_SCSI_256;
-			mbox->SCSI_255.PhysicalDevice.LogicalUnit =
+			mbox->SCSI_255.pdev.LogicalUnit =
 				ldev_info->LogicalUnit;
-			mbox->SCSI_255.PhysicalDevice.TargetID =
-				ldev_info->TargetID;
-			mbox->SCSI_255.PhysicalDevice.Channel =
-				ldev_info->Channel;
-			mbox->SCSI_255.PhysicalDevice.Controller = 0;
+			mbox->SCSI_255.pdev.TargetID = ldev_info->TargetID;
+			mbox->SCSI_255.pdev.Channel = ldev_info->Channel;
+			mbox->SCSI_255.pdev.Controller = 0;
 		} else {
 			mbox->SCSI_255.opcode =
 				DAC960_V2_SCSI_255_Passthru;
-			mbox->SCSI_255.PhysicalDevice.LogicalUnit = sdev->lun;
-			mbox->SCSI_255.PhysicalDevice.TargetID = sdev->id;
-			mbox->SCSI_255.PhysicalDevice.Channel = sdev->channel;
+			mbox->SCSI_255.pdev.LogicalUnit = sdev->lun;
+			mbox->SCSI_255.pdev.TargetID = sdev->id;
+			mbox->SCSI_255.pdev.Channel = sdev->channel;
 		}
 		mbox->SCSI_255.id = scmd->request->tag + 3;
 		mbox->SCSI_255.control.DataTransferControllerToHost =
@@ -3893,19 +3875,17 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 			mbox->SCSI_255.tmo.TimeoutValue = timeout;
 		}
 		memcpy(cmd_blk->DCDB, scmd->cmnd, scmd->cmd_len);
-		dma_addr = &mbox->SCSI_255.dma_addr;
+		hw_sge = &mbox->SCSI_255.dma_addr;
 	}
 	if (scmd->sc_data_direction == DMA_NONE)
 		goto submit;
 	nsge = scsi_dma_map(scmd);
 	if (nsge == 1) {
 		sgl = scsi_sglist(scmd);
-		dma_addr->ScatterGatherSegments[0].SegmentDataPointer =
-			(u64)sg_dma_address(sgl);
-		dma_addr->ScatterGatherSegments[0].SegmentByteCount =
-			(u64)sg_dma_len(sgl);
+		hw_sge->sge[0].sge_addr = (u64)sg_dma_address(sgl);
+		hw_sge->sge[0].sge_count = (u64)sg_dma_len(sgl);
 	} else {
-		DAC960_V2_ScatterGatherSegment_T *hw_sgl;
+		myr_v2_sge *hw_sgl;
 		dma_addr_t hw_sgl_addr;
 		int i;
 
@@ -3935,11 +3915,10 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 			else
 				mbox->SCSI_255.control
 					.AdditionalScatterGatherListMemory = true;
-			dma_addr->ExtendedScatterGather.ScatterGatherList0Length = nsge;
-			dma_addr->ExtendedScatterGather.ScatterGatherList0Address =
-				cmd_blk->sgl_addr;
+			hw_sge->ext.sge0_len = nsge;
+			hw_sge->ext.sge0_addr = cmd_blk->sgl_addr;
 		} else
-			hw_sgl = dma_addr->ScatterGatherSegments;
+			hw_sgl = hw_sge->sge;
 
 		scsi_for_each_sg(scmd, sgl, nsge, i) {
 			if (WARN_ON(!hw_sgl)) {
@@ -3948,8 +3927,8 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 				scmd->scsi_done(scmd);
 				return 0;
 			}
-			hw_sgl->SegmentDataPointer = (u64)sg_dma_address(sgl);
-			hw_sgl->SegmentByteCount = (u64)sg_dma_len(sgl);
+			hw_sgl->sge_addr = (u64)sg_dma_address(sgl);
+			hw_sgl->sge_count = (u64)sg_dma_len(sgl);
 			hw_sgl++;
 		}
 	}
@@ -3971,7 +3950,7 @@ static int mylex_v2_slave_alloc(struct scsi_device *sdev)
 		return 0;
 
 	if (sdev->channel >= c->PhysicalChannelCount) {
-		DAC960_V2_LogicalDeviceInfo_T *ldev_info;
+		myr_v2_ldev_info *ldev_info;
 		unsigned short ldev_num;
 
 		if (sdev->lun > 0)
@@ -4043,7 +4022,7 @@ static int mylex_v2_slave_alloc(struct scsi_device *sdev)
 			}
 		}
 	} else {
-		DAC960_V2_PhysicalDeviceInfo_T *pdev_info;
+		myr_v2_pdev_info *pdev_info;
 
 		pdev_info = kzalloc(sizeof(*pdev_info), GFP_KERNEL);
 		if (!pdev_info)
@@ -4066,7 +4045,7 @@ static int mylex_v2_slave_configure(struct scsi_device *sdev)
 {
 	myr_hba *c =
 		(myr_hba *)sdev->host->hostdata;
-	DAC960_V2_LogicalDeviceInfo_T *ldev_info;
+	myr_v2_ldev_info *ldev_info;
 
 	if (sdev->channel > c->host->max_channel)
 		return -ENXIO;
@@ -4336,7 +4315,7 @@ mylex_v1_get_state(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V1_LogicalDeviceInfo_T *ldev_info = sdev->hostdata;
+	myr_v1_ldev_info *ldev_info = sdev->hostdata;
 	enum raid_state state = RAID_STATE_UNKNOWN;
 
 	if (sdev->channel < c->PhysicalChannelCount || !ldev_info)
@@ -4375,7 +4354,7 @@ mylex_v2_get_resync(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V2_LogicalDeviceInfo_T *ldev_info = sdev->hostdata;
+	myr_v2_ldev_info *ldev_info = sdev->hostdata;
 	u8 percent_complete = 0, status;
 
 	if (sdev->channel < c->PhysicalChannelCount || !ldev_info)
@@ -4400,7 +4379,7 @@ mylex_v2_get_state(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V2_LogicalDeviceInfo_T *ldev_info = sdev->hostdata;
+	myr_v2_ldev_info *ldev_info = sdev->hostdata;
 	enum raid_state state = RAID_STATE_UNKNOWN;
 
 	if (sdev->channel < c->PhysicalChannelCount || !ldev_info)
@@ -4893,7 +4872,7 @@ static void DAC960_V2_ReportEvent(myr_hba *c,
 		if (sdev && sdev->hostdata &&
 		    sdev->channel < c->PhysicalChannelCount) {
 			if (c->FirmwareType == DAC960_V2_Controller) {
-				DAC960_V2_PhysicalDeviceInfo_T *pdev_info =
+				myr_v2_pdev_info *pdev_info =
 					sdev->hostdata;
 				switch (Event->EventCode) {
 				case 0x0001:
@@ -5805,7 +5784,7 @@ static unsigned char DAC960_V2_MonitoringGetHealthStatus(myr_hba *c)
 {
 	myr_v2_cmdblk *cmd_blk = &c->V2.MonitoringCommandBlock;
 	myr_v2_cmd_mbox *mbox = &cmd_blk->mbox;
-	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
+	myr_v2_sgl *sgl;
 	unsigned char status = cmd_blk->status;
 
 	DAC960_V2_ClearCommand(cmd_blk);
@@ -5815,11 +5794,9 @@ static unsigned char DAC960_V2_MonitoringGetHealthStatus(myr_hba *c)
 	mbox->Common.control.NoAutoRequestSense = true;
 	mbox->Common.dma_size = sizeof(DAC960_V2_HealthStatusBuffer_T);
 	mbox->Common.IOCTL_Opcode = DAC960_V2_GetHealthStatus;
-	dma_addr = &mbox->Common.dma_addr;
-	dma_addr->ScatterGatherSegments[0].SegmentDataPointer =
-		c->V2.HealthStatusBufferDMA;
-	dma_addr->ScatterGatherSegments[0].SegmentByteCount =
-		mbox->ControllerInfo.dma_size;
+	sgl = &mbox->Common.dma_addr;
+	sgl->sge[0].sge_addr = c->V2.HealthStatusBufferDMA;
+	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev, "Sending GetHealthStatus\n");
 	DAC960_V2_ExecuteCommand(c, cmd_blk);
 	status = cmd_blk->status;
@@ -5938,7 +5915,7 @@ static void DAC960_MonitoringWork(struct work_struct *work)
 		    info->OnlineExpansionsActive != 0) {
 			struct scsi_device *sdev;
 			shost_for_each_device(sdev, c->host) {
-				DAC960_V2_LogicalDeviceInfo_T *ldev_info;
+				myr_v2_ldev_info *ldev_info;
 				if (sdev->channel < c->PhysicalChannelCount)
 					continue;
 				ldev_info = sdev->hostdata;
