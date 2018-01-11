@@ -66,7 +66,7 @@ static struct raid_template *mylex_v1_raid_template;
 static struct raid_template *mylex_v2_raid_template;
 
 static struct DAC960_V1_DriveStateTbl {
-	DAC960_V1_DriveState_T state;
+	myr_v1_devstate state;
 	char *name;
 } DAC960_V1_DriveStateNames[] = {
 	{ DAC960_V1_Device_Dead, "Dead" },
@@ -77,7 +77,7 @@ static struct DAC960_V1_DriveStateTbl {
 	{ DAC960_V1_Device_Offline, NULL },
 };
 
-static char *DAC960_V1_DriveStateName(DAC960_V1_DriveState_T state)
+static char *DAC960_V1_DriveStateName(myr_v1_devstate state)
 {
 	struct DAC960_V1_DriveStateTbl *entry =
 		DAC960_V1_DriveStateNames;
@@ -347,7 +347,7 @@ static void DAC960_DestroyAuxiliaryStructures(myr_hba *c)
   Firmware Controllers.
 */
 
-static inline void DAC960_V1_ClearCommand(DAC960_V1_CommandBlock_T *cmd_blk)
+static inline void DAC960_V1_ClearCommand(myr_v1_cmdblk *cmd_blk)
 {
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 
@@ -361,7 +361,7 @@ static inline void DAC960_V1_ClearCommand(DAC960_V1_CommandBlock_T *cmd_blk)
   Firmware Controllers.
 */
 
-static inline void DAC960_V2_ClearCommand(DAC960_V2_CommandBlock_T *cmd_blk)
+static inline void DAC960_V2_ClearCommand(myr_v2_cmdblk *cmd_blk)
 {
 	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
 
@@ -374,7 +374,7 @@ static inline void DAC960_V2_ClearCommand(DAC960_V2_CommandBlock_T *cmd_blk)
  * DAC960_V2_QueueCommand queues Command for DAC960 V2 Series Controllers.
  */
 static void DAC960_V2_QueueCommand(myr_hba *c,
-				   DAC960_V2_CommandBlock_T *cmd_blk)
+				   myr_v2_cmdblk *cmd_blk)
 {
 	void __iomem *base = c->BaseAddress;
 	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
@@ -402,7 +402,7 @@ static void DAC960_V2_QueueCommand(myr_hba *c,
  */
 
 static void DAC960_V1_QueueCommand(myr_hba *c,
-				   DAC960_V1_CommandBlock_T *cmd_blk)
+				   myr_v1_cmdblk *cmd_blk)
 {
 	void __iomem *base = c->BaseAddress;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
@@ -426,7 +426,7 @@ static void DAC960_V1_QueueCommand(myr_hba *c,
 */
 
 static void DAC960_PD_QueueCommand(myr_hba *c,
-				   DAC960_V1_CommandBlock_T *cmd_blk)
+				   myr_v1_cmdblk *cmd_blk)
 {
 	void __iomem *base = c->BaseAddress;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
@@ -443,7 +443,7 @@ static void DAC960_PD_QueueCommand(myr_hba *c,
 */
 
 static void DAC960_P_QueueCommand(myr_hba *c,
-				  DAC960_V1_CommandBlock_T *cmd_blk)
+				  myr_v1_cmdblk *cmd_blk)
 {
 	void __iomem *base = c->BaseAddress;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
@@ -485,7 +485,7 @@ static void DAC960_P_QueueCommand(myr_hba *c,
  */
 
 static void DAC960_V1_ExecuteCommand(myr_hba *c,
-				     DAC960_V1_CommandBlock_T *cmd_blk)
+				     myr_v1_cmdblk *cmd_blk)
 {
 	DECLARE_COMPLETION_ONSTACK(Completion);
 	unsigned long flags;
@@ -506,7 +506,7 @@ static void DAC960_V1_ExecuteCommand(myr_hba *c,
  */
 
 static void DAC960_V2_ExecuteCommand(myr_hba *c,
-				     DAC960_V2_CommandBlock_T *cmd_blk)
+				     myr_v2_cmdblk *cmd_blk)
 {
 	DECLARE_COMPLETION_ONSTACK(Completion);
 	unsigned long flags;
@@ -532,7 +532,7 @@ static unsigned short DAC960_V1_ExecuteType3(myr_hba *c,
 					     myr_v1_cmd_opcode op,
 					     dma_addr_t DataDMA)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -559,7 +559,7 @@ static unsigned short DAC960_V1_ExecuteType3B(myr_hba *c,
 					      unsigned char CommandOpcode2,
 					      dma_addr_t DataDMA)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -586,9 +586,9 @@ static unsigned short DAC960_V1_ExecuteType3D(myr_hba *c,
 					      myr_v1_cmd_opcode op,
 					      struct scsi_device *sdev)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
-	DAC960_V1_DeviceState_T *pdev_info = sdev->hostdata;
+	myr_v1_pdev_state *pdev_info = sdev->hostdata;
 	unsigned short status;
 
 	if (!pdev_info) {
@@ -630,7 +630,7 @@ static unsigned short DAC960_V1_ExecuteType3D(myr_hba *c,
 static unsigned short DAC960_V1_MonitorGetEventLog(myr_hba *c,
 						   unsigned int event)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short status;
 	static char *DAC960_EventMessages[] =
@@ -701,7 +701,7 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myr_hba *c,
 
 static void DAC960_V1_MonitorGetErrorTable(myr_hba *c)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -754,7 +754,7 @@ static void DAC960_V1_MonitorGetErrorTable(myr_hba *c)
 
 static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -774,7 +774,7 @@ static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 				c->V1.LogicalDeviceInfo[ldev_num];
 			struct scsi_device *sdev;
 			unsigned short ldev_num;
-			DAC960_V1_DriveState_T old_state =
+			myr_v1_devstate old_state =
 				DAC960_V1_Device_Offline;
 
 			sdev = scsi_device_lookup(c->host,
@@ -819,7 +819,7 @@ static unsigned short DAC960_V1_GetLogicalDriveInfo(myr_hba *c)
 
 static void DAC960_V1_MonitorRebuildProgress(myr_hba *c)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -890,7 +890,7 @@ static void DAC960_V1_MonitorRebuildProgress(myr_hba *c)
 
 static void DAC960_V1_ConsistencyCheckProgress(myr_hba *c)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -926,7 +926,7 @@ static void DAC960_V1_ConsistencyCheckProgress(myr_hba *c)
 
 static void DAC960_V1_BackgroundInitialization(myr_hba *c)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	DAC960_V1_BackgroundInitializationStatus_T *bgi, *last_bgi;
 	struct scsi_device *sdev;
@@ -1004,7 +1004,7 @@ static void DAC960_V1_BackgroundInitialization(myr_hba *c)
 
 static unsigned short DAC960_V1_NewEnquiry(myr_hba *c)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -1140,9 +1140,9 @@ static unsigned short DAC960_V1_NewEnquiry(myr_hba *c)
 
 static unsigned short DAC960_V1_SetDeviceState(myr_hba *c,
 					       struct scsi_device *sdev,
-					       DAC960_V1_DriveState_T State)
+					       myr_v1_devstate State)
 {
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.DirectCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.DirectCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
@@ -1170,7 +1170,7 @@ static unsigned short DAC960_V1_SetDeviceState(myr_hba *c,
 
 static unsigned char DAC960_V2_NewControllerInfo(myr_hba *c)
 {
-	DAC960_V2_CommandBlock_T *cmd_blk = &c->V2.DirectCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
 	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
@@ -1237,7 +1237,7 @@ DAC960_V2_NewLogicalDeviceInfo(myr_hba *c,
 			       unsigned short ldev_num,
 			       DAC960_V2_LogicalDeviceInfo_T *ldev_info)
 {
-	DAC960_V2_CommandBlock_T *cmd_blk = &c->V2.DirectCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
 	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
@@ -1352,7 +1352,7 @@ DAC960_V2_NewPhysicalDeviceInfo(myr_hba *c,
 				unsigned char LogicalUnit,
 				DAC960_V2_PhysicalDeviceInfo_T *pdev_info)
 {
-	DAC960_V2_CommandBlock_T *cmd_blk = &c->V2.DirectCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
 	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
@@ -1398,7 +1398,7 @@ DAC960_V2_DeviceOperation(myr_hba *c,
 			  DAC960_V2_IOCTL_Opcode_T opcode,
 			  DAC960_V2_OperationDevice_T opdev)
 {
-	DAC960_V2_CommandBlock_T *cmd_blk = &c->V2.DirectCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.DirectCommandBlock;
 	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned char status;
 
@@ -1429,7 +1429,7 @@ DAC960_V2_TranslatePhysicalDevice(myr_hba *c,
 				  unsigned char LogicalUnit,
 				  unsigned short *ldev_num)
 {
-	DAC960_V2_CommandBlock_T *cmd_blk;
+	myr_v2_cmdblk *cmd_blk;
 	DAC960_V2_CommandMailbox_T *mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
@@ -1465,7 +1465,7 @@ DAC960_V2_TranslatePhysicalDevice(myr_hba *c,
 
 static unsigned char DAC960_V2_MonitorGetEvent(myr_hba *c)
 {
-	DAC960_V2_CommandBlock_T *cmd_blk = &c->V2.MonitoringCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.MonitoringCommandBlock;
 	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status;
@@ -1539,7 +1539,7 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myr_hba *c)
 		sizeof(DAC960_V1_RebuildProgress_T) +
 		sizeof(DAC960_V1_LogicalDeviceInfoArray_T) +
 		sizeof(DAC960_V1_BackgroundInitializationStatus_T) +
-		sizeof(DAC960_V1_DeviceState_T);
+		sizeof(myr_v1_pdev_state);
 
 	if (!init_dma_loaf(pdev, DmaPages, DmaPagesSize))
 		return false;
@@ -1597,7 +1597,7 @@ skip_mailboxes:
 							      &c->V1.BackgroundInitializationStatusDMA);
 
 	c->V1.NewDeviceState = slice_dma_loaf(DmaPages,
-					      sizeof(DAC960_V1_DeviceState_T),
+					      sizeof(myr_v1_pdev_state),
 					      &c->V1.NewDeviceStateDMA);
 
 	if ((hw_type == DAC960_PD_Controller) || (hw_type == DAC960_P_Controller))
@@ -2421,7 +2421,7 @@ static int mylex_v1_pthru_queuecommand(struct Scsi_Host *shost,
 					struct scsi_cmnd *scmd)
 {
 	myr_hba *c = (myr_hba *)shost->hostdata;
-	DAC960_V1_CommandBlock_T *cmd_blk = scsi_cmd_priv(scmd);
+	myr_v1_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	DAC960_V1_DCDB_T *DCDB;
 	dma_addr_t DCDB_dma;
@@ -2580,7 +2580,7 @@ static int mylex_v1_ldev_queuecommand(struct Scsi_Host *shost,
 				       struct scsi_cmnd *scmd)
 {
 	myr_hba *c = (myr_hba *)shost->hostdata;
-	DAC960_V1_CommandBlock_T *cmd_blk = scsi_cmd_priv(scmd);
+	myr_v1_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	DAC960_V1_LogicalDeviceInfo_T *ldev_info;
 	struct scsi_device *sdev = scmd->device;
@@ -2899,7 +2899,7 @@ static ssize_t mylex_v1_show_dev_state(struct device *dev,
 			ret = snprintf(buf, 32, "Invalid (%02X)\n",
 				       ldev_info->State);
 	} else {
-		DAC960_V1_DeviceState_T *pdev_info = sdev->hostdata;
+		myr_v1_pdev_state *pdev_info = sdev->hostdata;
 		unsigned short status;
 		const char *name;
 
@@ -2928,8 +2928,8 @@ static ssize_t mylex_v1_store_dev_state(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V1_DeviceState_T *pdev_info;
-	DAC960_V1_DriveState_T new_state;
+	myr_v1_pdev_state *pdev_info;
+	myr_v1_devstate new_state;
 	unsigned short status;
 
 	if (!strncmp(buf, "kill", 4) ||
@@ -3030,7 +3030,7 @@ static ssize_t mylex_v2_store_dev_state(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V2_CommandBlock_T *cmd_blk;
+	myr_v2_cmdblk *cmd_blk;
 	DAC960_V2_CommandMailbox_T *mbox;
 	DAC960_V2_DriveState_T new_state;
 	unsigned short ldev_num;
@@ -3209,7 +3209,7 @@ static ssize_t mylex_v1_show_dev_rebuild(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V1_CommandBlock_T *cmd_blk = &c->V1.MonitoringCommandBlock;
+	myr_v1_cmdblk *cmd_blk = &c->V1.MonitoringCommandBlock;
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	unsigned short ldev_num = 0xffff;
 	unsigned char status;
@@ -3282,7 +3282,7 @@ static ssize_t mylex_v1_store_dev_rebuild(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
-	DAC960_V1_CommandBlock_T *cmd_blk;
+	myr_v1_cmdblk *cmd_blk;
 	DAC960_V1_CommandMailbox_T *mbox;
 	char tmpbuf[8];
 	ssize_t len;
@@ -3431,7 +3431,7 @@ static ssize_t mylex_v2_store_dev_rebuild(struct device *dev,
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 	DAC960_V2_LogicalDeviceInfo_T *ldev_info;
-	DAC960_V2_CommandBlock_T *cmd_blk;
+	myr_v2_cmdblk *cmd_blk;
 	DAC960_V2_CommandMailbox_T *mbox;
 	char tmpbuf[8];
 	ssize_t len;
@@ -3562,7 +3562,7 @@ static ssize_t mylex_v2_store_consistency_check(struct device *dev,
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myr_hba *c = (myr_hba *)sdev->host->hostdata;
 	DAC960_V2_LogicalDeviceInfo_T *ldev_info;
-	DAC960_V2_CommandBlock_T *cmd_blk;
+	myr_v2_cmdblk *cmd_blk;
 	DAC960_V2_CommandMailbox_T *mbox;
 	char tmpbuf[8];
 	ssize_t len;
@@ -3763,7 +3763,7 @@ struct scsi_host_template mylex_v1_template = {
 	.slave_alloc = mylex_v1_slave_alloc,
 	.slave_configure = mylex_v1_slave_configure,
 	.slave_destroy = mylex_v1_slave_destroy,
-	.cmd_size = sizeof(DAC960_V1_CommandBlock_T),
+	.cmd_size = sizeof(myr_v1_cmdblk),
 	.shost_attrs = mylex_v1_shost_attrs,
 	.sdev_attrs = mylex_v1_sdev_attrs,
 	.this_id = -1,
@@ -3773,7 +3773,7 @@ static int mylex_v2_queuecommand(struct Scsi_Host *shost,
 				  struct scsi_cmnd *scmd)
 {
 	myr_hba *c = (myr_hba *)shost->hostdata;
-	DAC960_V2_CommandBlock_T *cmd_blk = scsi_cmd_priv(scmd);
+	myr_v2_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
 	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	struct scsi_device *sdev = scmd->device;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
@@ -4195,7 +4195,7 @@ static ssize_t mylex_v2_store_discovery_command(struct device *dev,
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
 	myr_hba *c = (myr_hba *)shost->hostdata;
-	DAC960_V2_CommandBlock_T *cmd_blk;
+	myr_v2_cmdblk *cmd_blk;
 	DAC960_V2_CommandMailbox_T *mbox;
 	unsigned char status;
 
@@ -4279,7 +4279,7 @@ struct scsi_host_template mylex_v2_template = {
 	.slave_alloc = mylex_v2_slave_alloc,
 	.slave_configure = mylex_v2_slave_configure,
 	.slave_destroy = mylex_v2_slave_destroy,
-	.cmd_size = sizeof(DAC960_V2_CommandBlock_T),
+	.cmd_size = sizeof(myr_v2_cmdblk),
 	.shost_attrs = mylex_v2_shost_attrs,
 	.sdev_attrs = mylex_sdev_attrs,
 	.this_id = -1,
@@ -4625,7 +4625,7 @@ static void DAC960_Remove(struct pci_dev *pdev)
 */
 
 static void DAC960_V1_HandleSCSI(myr_hba *c,
-				 DAC960_V1_CommandBlock_T *cmd_blk,
+				 myr_v1_cmdblk *cmd_blk,
 				 struct scsi_cmnd *scmd)
 {
 	unsigned short status;
@@ -4705,7 +4705,7 @@ static void DAC960_V1_HandleSCSI(myr_hba *c,
 }
 
 static void DAC960_V1_HandleCommandBlock(myr_hba *c,
-					 DAC960_V1_CommandBlock_T *cmd_blk)
+					 myr_v1_cmdblk *cmd_blk)
 {
 	if (!cmd_blk)
 		return;
@@ -4978,7 +4978,7 @@ static void DAC960_V2_ReportEvent(myr_hba *c,
 */
 
 static void DAC960_V2_HandleSCSI(myr_hba *c,
-				 DAC960_V2_CommandBlock_T *cmd_blk,
+				 myr_v2_cmdblk *cmd_blk,
 				 struct scsi_cmnd *scmd)
 {
 	unsigned char status;
@@ -5027,7 +5027,7 @@ static void DAC960_V2_HandleSCSI(myr_hba *c,
 }
 
 static void DAC960_V2_HandleCommandBlock(myr_hba *c,
-					 DAC960_V2_CommandBlock_T *cmd_blk)
+					 myr_v2_cmdblk *cmd_blk)
 {
 	if (!cmd_blk)
 		return;
@@ -5104,7 +5104,7 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 	while (NextStatusMailbox->id > 0) {
 		unsigned short id = NextStatusMailbox->id;
 		struct scsi_cmnd *scmd = NULL;
-		DAC960_V2_CommandBlock_T *cmd_blk = NULL;
+		myr_v2_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
 			cmd_blk = &c->V2.DirectCommandBlock;
@@ -5204,7 +5204,7 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 	while (NextStatusMailbox->id > 0) {
 		unsigned short id = NextStatusMailbox->id;
 		struct scsi_cmnd *scmd = NULL;
-		DAC960_V2_CommandBlock_T *cmd_blk = NULL;
+		myr_v2_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
 			cmd_blk = &c->V2.DirectCommandBlock;
@@ -5304,7 +5304,7 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 	while (NextStatusMailbox->id > 0) {
 		unsigned short id = NextStatusMailbox->id;
 		struct scsi_cmnd *scmd = NULL;
-		DAC960_V2_CommandBlock_T *cmd_blk = NULL;
+		myr_v2_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
 			cmd_blk = &c->V2.DirectCommandBlock;
@@ -5426,7 +5426,7 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 	while (NextStatusMailbox->valid) {
 		unsigned char id = NextStatusMailbox->id;
 		struct scsi_cmnd *scmd = NULL;
-		DAC960_V1_CommandBlock_T *cmd_blk = NULL;
+		myr_v1_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
 			cmd_blk = &c->V1.DirectCommandBlock;
@@ -5529,7 +5529,7 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 	while (NextStatusMailbox->valid) {
 		unsigned char id = NextStatusMailbox->id;
 		struct scsi_cmnd *scmd = NULL;
-		DAC960_V1_CommandBlock_T *cmd_blk = NULL;
+		myr_v1_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
 			cmd_blk = &c->V1.DirectCommandBlock;
@@ -5629,7 +5629,7 @@ static irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
 	while (DAC960_PD_StatusAvailableP(base)) {
 		unsigned char id = DAC960_PD_ReadStatusCommandIdentifier(base);
 		struct scsi_cmnd *scmd = NULL;
-		DAC960_V1_CommandBlock_T *cmd_blk;
+		myr_v1_cmdblk *cmd_blk;
 
 		if (id == DAC960_DirectCommandIdentifier)
 			cmd_blk = &c->V1.DirectCommandBlock;
@@ -5730,7 +5730,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 	while (DAC960_PD_StatusAvailableP(base)) {
 		unsigned char id = DAC960_PD_ReadStatusCommandIdentifier(base);
 		struct scsi_cmnd *scmd = NULL;
-		DAC960_V1_CommandBlock_T *cmd_blk = NULL;
+		myr_v1_cmdblk *cmd_blk = NULL;
 
 		if (id == DAC960_DirectCommandIdentifier)
 			cmd_blk = &c->V1.DirectCommandBlock;
@@ -5803,7 +5803,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 
 static unsigned char DAC960_V2_MonitoringGetHealthStatus(myr_hba *c)
 {
-	DAC960_V2_CommandBlock_T *cmd_blk = &c->V2.MonitoringCommandBlock;
+	myr_v2_cmdblk *cmd_blk = &c->V2.MonitoringCommandBlock;
 	DAC960_V2_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	DAC960_V2_DataTransferMemoryAddress_T *dma_addr;
 	unsigned char status = cmd_blk->status;

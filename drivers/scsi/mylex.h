@@ -421,7 +421,7 @@ typedef enum
 	DAC960_V1_Device_Offline =		0xFF
 }
 __attribute__ ((packed))
-DAC960_V1_DriveState_T;
+myr_v1_devstate;
 
 
 /*
@@ -445,7 +445,7 @@ DAC960_V1_RAIDLevel_T;
 typedef struct DAC960_V1_LogicalDeviceInfo
 {
 	unsigned int Size;				/* Bytes 0-3 */
-	DAC960_V1_DriveState_T State;			/* Byte 4 */
+	myr_v1_devstate State;			/* Byte 4 */
 	unsigned char RAIDLevel:7;			/* Byte 5 Bits 0-6 */
 	bool WriteBack:1;				/* Byte 5 Bit 7 */
 	unsigned short :16;				/* Bytes 6-7 */
@@ -498,7 +498,7 @@ DAC960_V1_EventLogEntry_T;
   Firmware.
 */
 
-typedef struct DAC960_V1_DeviceState
+typedef struct myr_v1_pdev_state_s
 {
 	bool Present:1;					/* Byte 0 Bit 0 */
 	unsigned char :7;				/* Byte 0 Bits 1-7 */
@@ -514,15 +514,14 @@ typedef struct DAC960_V1_DeviceState
 	bool Fast:1;					/* Byte 1 Bit 5 */
 	bool Wide:1;					/* Byte 1 Bit 6 */
 	bool TaggedQueuingSupported:1;			/* Byte 1 Bit 7 */
-	DAC960_V1_DriveState_T State;			/* Byte 2 */
+	myr_v1_devstate State;			/* Byte 2 */
 	unsigned char rsvd2:8;				/* Byte 3 */
 	unsigned char SynchronousMultiplier;		/* Byte 4 */
 	unsigned char SynchronousOffset:5;		/* Byte 5 Bits 0-4 */
 	unsigned char rsvd3:3;				/* Byte 5 Bits 5-7 */
 	unsigned int Size __attribute__ ((packed));	/* Bytes 6-9 */
 	unsigned short rsvd4:16;			/* Bytes 10-11 */
-}
-DAC960_V1_DeviceState_T;
+} myr_v1_pdev_state;
 
 
 /*
@@ -758,7 +757,7 @@ typedef union DAC960_V1_CommandMailbox
 		unsigned char id;	/* Byte 1 */
 		unsigned char Channel;					/* Byte 2 */
 		unsigned char TargetID;					/* Byte 3 */
-		DAC960_V1_DriveState_T State;				/* Byte 4 Bits */
+		myr_v1_devstate State;				/* Byte 4 Bits */
 		unsigned char Dummy1[3];				/* Bytes 5-7 */
 		u32 BusAddress;						/* Bytes 8-11 */
 		unsigned char Dummy2[4];				/* Bytes 12-15 */
@@ -836,7 +835,7 @@ typedef enum
 	DAC960_V2_IOCTL =				0x20
 }
 __attribute__ ((packed))
-DAC960_V2_CommandOpcode_T;
+myr_v2_cmd_opcode;
 
 
 /*
@@ -1563,7 +1562,7 @@ typedef union DAC960_V2_CommandMailbox
 	unsigned int Words[16];				/* Words 0-15 */
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
@@ -1577,7 +1576,7 @@ typedef union DAC960_V2_CommandMailbox
 	} Common;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size;					/* Bytes 4-7 */
 		u64 sense_addr;					/* Bytes 8-15 */
@@ -1590,7 +1589,7 @@ typedef union DAC960_V2_CommandMailbox
 	} SCSI_10;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size;					/* Bytes 4-7 */
 		u64 sense_addr;					/* Bytes 8-15 */
@@ -1604,7 +1603,7 @@ typedef union DAC960_V2_CommandMailbox
 	} SCSI_255;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
@@ -1619,7 +1618,7 @@ typedef union DAC960_V2_CommandMailbox
 	} ControllerInfo;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
@@ -1633,7 +1632,7 @@ typedef union DAC960_V2_CommandMailbox
 	} LogicalDeviceInfo;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
@@ -1647,7 +1646,7 @@ typedef union DAC960_V2_CommandMailbox
 	} PhysicalDeviceInfo;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
@@ -1663,7 +1662,7 @@ typedef union DAC960_V2_CommandMailbox
 	} GetEvent;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
@@ -1681,7 +1680,7 @@ typedef union DAC960_V2_CommandMailbox
 	} SetDeviceState;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
@@ -1698,7 +1697,7 @@ typedef union DAC960_V2_CommandMailbox
 	} ConsistencyCheck;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		unsigned char FirstCommandMailboxSizeKB;	/* Byte 4 */
 		unsigned char FirstStatusMailboxSizeKB;		/* Byte 5 */
@@ -1719,7 +1718,7 @@ typedef union DAC960_V2_CommandMailbox
 	} SetMemoryMailbox;
 	struct {
 		unsigned short id;				/* Bytes 0-1 */
-		DAC960_V2_CommandOpcode_T opcode;		/* Byte 2 */
+		myr_v2_cmd_opcode opcode;			/* Byte 2 */
 		DAC960_V2_CommandControlBits_T control;		/* Byte 3 */
 		u32 dma_size:24;				/* Bytes 4-6 */
 		unsigned char dma_num;				/* Byte 7 */
@@ -1882,10 +1881,10 @@ typedef enum
 }
 DAC960_HardwareType_T;
 
-struct DAC960_Controller;
+struct myr_hba_s;
 
 typedef int (*DAC960_HardwareInit_T)(struct pci_dev *pdev,
-		struct DAC960_Controller *c, void __iomem *base);
+				     struct myr_hba_s *c, void __iomem *base);
 
 struct DAC960_privdata {
 	DAC960_HardwareType_T	HardwareType;
@@ -1926,7 +1925,7 @@ DAC960_V2_StatusMailbox_T;
 #define DAC960_DirectCommandIdentifier 1
 #define DAC960_MonitoringIdentifier 2
 
-typedef struct DAC960_V1_CommandBlock
+typedef struct myr_v1_cmdblk_s
 {
 	DAC960_V1_CommandMailbox_T mbox;
 	unsigned short status;
@@ -1935,7 +1934,7 @@ typedef struct DAC960_V1_CommandBlock
 	dma_addr_t DCDB_dma;
 	DAC960_V1_ScatterGatherSegment_T *sgl;
 	dma_addr_t sgl_addr;
-} DAC960_V1_CommandBlock_T;
+} myr_v1_cmdblk;
 
 typedef struct DAC960_V2_CommandBlock
 {
@@ -1950,13 +1949,13 @@ typedef struct DAC960_V2_CommandBlock
 	dma_addr_t DCDB_dma;
 	unsigned char *sense;
 	dma_addr_t sense_addr;
-} DAC960_V2_CommandBlock_T;
+} myr_v2_cmdblk;
 
 /*
   Define the DAC960 Driver Controller structure.
 */
 
-typedef struct DAC960_Controller
+typedef struct myr_hba_s
 {
 	void __iomem *BaseAddress;
 	void __iomem *MemoryMappedAddress;
@@ -1997,7 +1996,7 @@ typedef struct DAC960_Controller
 	struct pci_pool *ScatterGatherPool;
 	spinlock_t queue_lock;
 	char work_q_name[20];
-	int (*ReadControllerConfiguration)(struct DAC960_Controller *);
+	int (*ReadControllerConfiguration)(struct myr_hba_s *);
 	void (*DisableInterrupts)(void __iomem *);
 	void (*Reset)(void __iomem *);
 	union {
@@ -2024,8 +2023,8 @@ typedef struct DAC960_Controller
 			bool RebuildStatusPending;
 			struct pci_pool *DCDBPool;
 
-			void (*QueueCommand)(struct DAC960_Controller *,
-					     DAC960_V1_CommandBlock_T *);
+			void (*QueueCommand)(struct myr_hba_s *,
+					     myr_v1_cmdblk *);
 			void (*WriteCommandMailbox)(DAC960_V1_CommandMailbox_T *,
 						    DAC960_V1_CommandMailbox_T *);
 			void (*MailboxNewCommand)(void __iomem *);
@@ -2042,8 +2041,8 @@ typedef struct DAC960_Controller
 			DAC960_V1_StatusMailbox_T *LastStatusMailbox;
 			DAC960_V1_StatusMailbox_T *NextStatusMailbox;
 
-			DAC960_V1_CommandBlock_T DirectCommandBlock;
-			DAC960_V1_CommandBlock_T MonitoringCommandBlock;
+			myr_v1_cmdblk DirectCommandBlock;
+			myr_v1_cmdblk MonitoringCommandBlock;
 			struct mutex dcmd_mutex;
 
 			DAC960_V1_Enquiry_T Enquiry;
@@ -2070,7 +2069,7 @@ typedef struct DAC960_Controller
 			DAC960_V1_BackgroundInitializationStatus_T
 			LastBackgroundInitializationStatus;
 
-			DAC960_V1_DeviceState_T *NewDeviceState;
+			myr_v1_pdev_state *NewDeviceState;
 			dma_addr_t	NewDeviceStateDMA;
 			struct mutex dma_mutex;
 		} V1;
@@ -2082,8 +2081,8 @@ typedef struct DAC960_Controller
 			struct pci_pool *RequestSensePool;
 			struct pci_pool *DCDBPool;
 
-			void (*QueueCommand)(struct DAC960_Controller *,
-					     DAC960_V2_CommandBlock_T *);
+			void (*QueueCommand)(struct myr_hba_s *,
+					     myr_v2_cmdblk *);
 			void (*WriteCommandMailbox)(DAC960_V2_CommandMailbox_T *,
 						    DAC960_V2_CommandMailbox_T *);
 			void (*MailboxNewCommand)(void __iomem *);
@@ -2100,8 +2099,8 @@ typedef struct DAC960_Controller
 			DAC960_V2_StatusMailbox_T *LastStatusMailbox;
 			DAC960_V2_StatusMailbox_T *NextStatusMailbox;
 
-			DAC960_V2_CommandBlock_T DirectCommandBlock;
-			DAC960_V2_CommandBlock_T MonitoringCommandBlock;
+			myr_v2_cmdblk DirectCommandBlock;
+			myr_v2_cmdblk MonitoringCommandBlock;
 			struct mutex dcmd_mutex;
 
 			dma_addr_t	HealthStatusBufferDMA;
@@ -3988,7 +3987,7 @@ static inline void DAC960_P_To_PD_TranslateDeviceState(void *DeviceState)
 }
 
 static inline
-void DAC960_PD_To_P_TranslateReadWriteCommand(DAC960_V1_CommandBlock_T *cmd_blk)
+void DAC960_PD_To_P_TranslateReadWriteCommand(myr_v1_cmdblk *cmd_blk)
 {
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	int ldev_num = mbox->Type5.LD.LogicalDriveNumber;
@@ -3999,7 +3998,7 @@ void DAC960_PD_To_P_TranslateReadWriteCommand(DAC960_V1_CommandBlock_T *cmd_blk)
 }
 
 static inline
-void DAC960_P_To_PD_TranslateReadWriteCommand(DAC960_V1_CommandBlock_T *cmd_blk)
+void DAC960_P_To_PD_TranslateReadWriteCommand(myr_v1_cmdblk *cmd_blk)
 {
 	DAC960_V1_CommandMailbox_T *mbox = &cmd_blk->mbox;
 	int ldev_num = mbox->Bytes[7];
