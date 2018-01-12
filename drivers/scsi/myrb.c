@@ -30,7 +30,7 @@
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_tcq.h>
-#include "mylex.h"
+#include "myr.h"
 #include "myrb.h"
 
 static struct myrb_devstate_name_entry {
@@ -1737,6 +1737,17 @@ static int myrb_queuecommand(struct Scsi_Host *shost,
 	return myrb_pthru_queuecommand(shost, scmd);
 }
 
+static unsigned short myrb_translate_ldev(myr_hba *c,
+					  struct scsi_device *sdev)
+{
+	unsigned short ldev_num;
+
+	ldev_num = sdev->id +
+		(sdev->channel - c->PhysicalChannelCount) * c->host->max_id;
+
+	return ldev_num;
+}
+
 static int myrb_slave_alloc(struct scsi_device *sdev)
 {
 	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
@@ -1752,7 +1763,7 @@ static int myrb_slave_alloc(struct scsi_device *sdev)
 		myrb_ldev_info *ldev_info;
 		unsigned short ldev_num;
 
-		ldev_num = myr_translate_ldev(&cb->common, sdev);
+		ldev_num = myrb_translate_ldev(&cb->common, sdev);
 		ldev_info = cb->LogicalDeviceInfo[ldev_num];
 		if (ldev_info) {
 			enum raid_level level;
@@ -2004,7 +2015,7 @@ static ssize_t myrb_show_dev_rebuild(struct device *dev,
 	}
 	mutex_unlock(&cb->dcmd_mutex);
 
-	if (ldev_num != myr_translate_ldev(&cb->common, sdev) ||
+	if (ldev_num != myrb_translate_ldev(&cb->common, sdev) ||
 	    status != DAC960_V1_NormalCompletion)
 		return snprintf(buf, 32, "not %s\n",
 				rebuild ? "rebuilding" : "checking");
@@ -2076,7 +2087,7 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 			mbox->Type3D.Channel = sdev->channel;
 			mbox->Type3D.TargetID = sdev->id;
 		} else {
-			ldev_num = myr_translate_ldev(&cb->common, sdev);
+			ldev_num = myrb_translate_ldev(&cb->common, sdev);
 			mbox->Type3C.opcode = DAC960_V1_CheckConsistencyAsync;
 			mbox->Type3C.id = DAC960_DirectCommandIdentifier;
 			mbox->Type3C.LogicalDriveNumber = ldev_num;
@@ -2090,7 +2101,7 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 		unsigned char *rate;
 		dma_addr_t rate_addr;
 
-		if (ldev_num != myr_translate_ldev(&cb->common, sdev)) {
+		if (ldev_num != myrb_translate_ldev(&cb->common, sdev)) {
 			sdev_printk(KERN_INFO, sdev,
 				    "%s Not Cancelled; not in progress\n",
 				    rebuild ? "Rebuild" : "Check Consistency");
@@ -2268,7 +2279,7 @@ myrb_get_resync(struct device *dev)
 		return;
 	if (DAC960_V1_ControllerIsRebuilding(cb)) {
 		ldev_num = cb->RebuildProgress->LogicalDriveNumber;
-		if (ldev_num == myr_translate_ldev(&cb->common, sdev)) {
+		if (ldev_num == myrb_translate_ldev(&cb->common, sdev)) {
 			ldev_size = cb->RebuildProgress->LogicalDriveSize;
 			remaining = cb->RebuildProgress->RemainingBlocks;
 		}

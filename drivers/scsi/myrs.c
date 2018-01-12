@@ -30,7 +30,7 @@
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_tcq.h>
-#include "mylex.h"
+#include "myr.h"
 #include "myrs.h"
 
 static struct myrs_devstate_name_entry {
@@ -62,10 +62,10 @@ static char *myrs_devstate_name(myrs_devstate state)
 	return NULL;
 }
 
-static struct DAC960_V2_RAIDLevelTbl {
-	DAC960_V2_RAIDLevel_T level;
+static struct myrs_raid_level_name_entry {
+	myrs_raid_level level;
 	char *name;
-} DAC960_V2_RAIDLevelNames[] = {
+} myrs_raid_level_name_list[] = {
 	{ DAC960_V2_RAID_Level0, "RAID0" },
 	{ DAC960_V2_RAID_Level1, "RAID1" },
 	{ DAC960_V2_RAID_Level3, "RAID3 right asymmetric parity" },
@@ -82,10 +82,9 @@ static struct DAC960_V2_RAIDLevelTbl {
 	{ 0xff, NULL }
 };
 
-static char *DAC960_V2_RAIDLevelName(DAC960_V2_RAIDLevel_T level)
+static char *myrs_raid_level_name(myrs_raid_level level)
 {
-	struct DAC960_V2_RAIDLevelTbl *entry =
-		DAC960_V2_RAIDLevelNames;
+	struct myrs_raid_level_name_entry *entry = myrs_raid_level_name_list;
 
 	while (entry && entry->name) {
 		if (entry->level == level)
@@ -211,10 +210,10 @@ static void myrs_qcmd(myrs_hba *cs, myrs_cmdblk *cmd_blk)
 }
 
 /*
- * DAC960_V2_ExecuteCommand executes V2 Command and waits for completion.
+ * myrs_exec_cmd executes V2 Command and waits for completion.
  */
 
-static void DAC960_V2_ExecuteCommand(myrs_hba *cs,
+static void myrs_exec_cmd(myrs_hba *cs,
 				     myrs_cmdblk *cmd_blk)
 {
 	DECLARE_COMPLETION_ONSTACK(Completion);
@@ -262,7 +261,7 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetControllerInfo\n");
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
 	if (status == DAC960_V2_NormalCompletion) {
@@ -326,7 +325,7 @@ DAC960_V2_NewLogicalDeviceInfo(myrs_hba *cs,
 	sgl->sge[0].sge_count = mbox->LogicalDeviceInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetLogicalDeviceInfoValid for ldev %d\n", ldev_num);
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V2_NormalCompletion) {
 		unsigned short ldev_num = ldev_info->LogicalDeviceNumber;
@@ -441,7 +440,7 @@ DAC960_V2_NewPhysicalDeviceInfo(myrs_hba *cs,
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetPhysicalDeviceInfoValid for pdev %d:%d:%d\n",
 		Channel, TargetID, LogicalUnit);
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V2_NormalCompletion)
 		memcpy(pdev_info, &cs->pdev_info_buf, sizeof(*pdev_info));
@@ -472,7 +471,7 @@ DAC960_V2_DeviceOperation(myrs_hba *cs,
 	mbox->DeviceOperation.control.NoAutoRequestSense = true;
 	mbox->DeviceOperation.ioctl_opcode = opcode;
 	mbox->DeviceOperation.opdev = opdev;
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
 	return status;
@@ -512,7 +511,7 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 	sgl->sge[0].sge_addr = cs->devmap_addr;
 	sgl->sge[0].sge_addr = mbox->PhysicalDeviceInfo.dma_size;
 
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
 	if (status == DAC960_V2_NormalCompletion)
@@ -538,7 +537,7 @@ static unsigned char DAC960_V2_MonitorGetEvent(myrs_hba *cs)
 	sgl = &mbox->GetEvent.dma_addr;
 	sgl->sge[0].sge_addr = cs->event_addr;
 	sgl->sge[0].sge_count = mbox->GetEvent.dma_size;
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 
 	return status;
@@ -1175,7 +1174,7 @@ static ssize_t myrs_store_dev_state(struct device *dev,
 	mbox->SetDeviceState.ioctl_opcode = DAC960_V2_SetDeviceState;
 	mbox->SetDeviceState.state = new_state;
 	mbox->SetDeviceState.ldev.LogicalDeviceNumber = ldev_num;
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
 	if (status == DAC960_V2_NormalCompletion) {
@@ -1216,13 +1215,13 @@ static ssize_t myrs_show_dev_level(struct device *dev,
 		myrs_ldev_info *ldev_info;
 
 		ldev_info = sdev->hostdata;
-		name = DAC960_V2_RAIDLevelName(ldev_info->RAIDLevel);
+		name = myrs_raid_level_name(ldev_info->RAIDLevel);
 		if (!name)
 			return snprintf(buf, 32, "Invalid (%02X)\n",
 					ldev_info->State);
 
 	} else
-		name = DAC960_V2_RAIDLevelName(DAC960_V2_RAID_Physical);
+		name = myrs_raid_level_name(DAC960_V2_RAID_Physical);
 
 	return snprintf(buf, 32, "%s\n", name);
 }
@@ -1316,7 +1315,7 @@ static ssize_t myrs_store_dev_rebuild(struct device *dev,
 		mbox->LogicalDeviceInfo.ioctl_opcode =
 			DAC960_V2_RebuildDeviceStop;
 	}
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
 	if (status) {
@@ -1427,7 +1426,7 @@ static ssize_t myrs_store_consistency_check(struct device *dev,
 		mbox->ConsistencyCheck.ioctl_opcode =
 			DAC960_V2_ConsistencyCheckStop;
 	}
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
 	if (status != DAC960_V2_NormalCompletion) {
@@ -1676,6 +1675,17 @@ submit:
 	return 0;
 }
 
+static unsigned short myrs_translate_ldev(myr_hba *c,
+					  struct scsi_device *sdev)
+{
+	unsigned short ldev_num;
+
+	ldev_num = sdev->id +
+		(sdev->channel - c->PhysicalChannelCount) * c->host->max_id;
+
+	return ldev_num;
+}
+
 static int myrs_slave_alloc(struct scsi_device *sdev)
 {
 	myrs_hba *cs = (myrs_hba *)sdev->host->hostdata;
@@ -1691,7 +1701,7 @@ static int myrs_slave_alloc(struct scsi_device *sdev)
 		if (sdev->lun > 0)
 			return -ENXIO;
 
-		ldev_num = myr_translate_ldev(&cs->common, sdev);
+		ldev_num = myrs_translate_ldev(&cs->common, sdev);
 		if (ldev_num >= cs->common.LogicalDriveCount)
 			return -ENXIO;
 
@@ -1921,7 +1931,7 @@ static ssize_t myrs_store_discovery_command(struct device *dev,
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	mbox->Common.ioctl_opcode = DAC960_V2_StartDiscovery;
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
 	if (status != DAC960_V2_NormalCompletion) {
@@ -2495,7 +2505,7 @@ static unsigned char DAC960_V2_MonitoringGetHealthStatus(myrs_hba *cs)
 	sgl->sge[0].sge_addr = cs->fwstat_addr;
 	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
 	dev_dbg(&cs->common.host->shost_gendev, "Sending GetHealthStatus\n");
-	DAC960_V2_ExecuteCommand(cs, cmd_blk);
+	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 
 	return status;

@@ -54,7 +54,7 @@
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_tcq.h>
-#include "mylex.h"
+#include "myr.h"
 
 static DEFINE_MUTEX(DAC960_mutex);
 static int DAC960_ControllerCount;

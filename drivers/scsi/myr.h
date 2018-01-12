@@ -18,8 +18,8 @@
  *
  */
 
-#ifndef _MYLEX_H
-#define _MYLEX_H
+#ifndef _MYR_H
+#define _MYR_H
 
 /*
   Define the maximum number of DAC960 Controllers supported by this driver.
@@ -259,17 +259,6 @@ void dma_addr_writeql(dma_addr_t addr, void __iomem *write_address)
 	writel(u.wl[1], write_address + 4);
 }
 
-static unsigned short myr_translate_ldev(myr_hba *c,
-					 struct scsi_device *sdev)
-{
-	unsigned short ldev_num;
-
-	ldev_num = sdev->id +
-		(sdev->channel - c->PhysicalChannelCount) * c->host->max_id;
-
-	return ldev_num;
-}
-
 /*
  * myraid block:
  * driver for the older, block-based firmware interface
@@ -338,4 +327,4 @@ irqreturn_t DAC960_LP_InterruptHandler(int, void *);
 bool init_dma_loaf(struct pci_dev *, struct dma_loaf *, size_t);
 void *slice_dma_loaf(struct dma_loaf *, size_t, dma_addr_t *);
 
-#endif /* _MYLEX_H */
+#endif /* _MYR_H */

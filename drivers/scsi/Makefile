@@ -111,7 +111,7 @@ obj-$(CONFIG_SCSI_INIA100)	+= a100u2w.o
 obj-$(CONFIG_SCSI_QLOGICPTI)	+= qlogicpti.o
 obj-$(CONFIG_SCSI_MESH)		+= mesh.o
 obj-$(CONFIG_SCSI_MAC53C94)	+= mac53c94.o
-obj-$(CONFIG_SCSI_MYLEX)	+= myraid.o
+obj-$(CONFIG_SCSI_MYLEX)	+= mylex.o
 obj-$(CONFIG_BLK_DEV_3W_XXXX_RAID) += 3w-xxxx.o
 obj-$(CONFIG_SCSI_3W_9XXX)	+= 3w-9xxx.o
 obj-$(CONFIG_SCSI_3W_SAS)	+= 3w-sas.o
@@ -188,7 +188,7 @@ zalon7xx-objs	:= zalon.o ncr53c8xx.o
 NCR_Q720_mod-objs	:= NCR_Q720.o ncr53c8xx.o
 oktagon_esp_mod-objs	:= oktagon_esp.o oktagon_io.o
 
-myraid-objs		:= mylex.o myrb.o myrs.o
+mylex-objs		:= myr.o myrb.o myrs.o
 
 # Files generated that shall be removed upon make clean
 clean-files :=	53c700_d.h 53c700_u.h

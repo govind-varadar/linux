@@ -17,8 +17,8 @@
 #define DAC960_V2_CommandMailboxCount		512
 #define DAC960_V2_StatusMailboxCount		512
 
-#define DAC960_V2_DCDB_SIZE 16
-#define DAC960_V2_SENSE_BUFFERSIZE 14
+#define DAC960_V2_DCDB_SIZE			16
+#define DAC960_V2_SENSE_BUFFERSIZE		14
 
 
 /*
@@ -388,7 +388,7 @@ typedef enum {
 	DAC960_V2_RAID_Physical =	0xf,     /* physical device */
 }
 __attribute__ ((packed))
-DAC960_V2_RAIDLevel_T;
+myrs_raid_level;
 
 typedef enum {
 	DAC960_V2_StripeSize_0 =	0x0,	/* no stripe (RAID 1, RAID 7, etc) */
@@ -668,7 +668,7 @@ myrs_pdev;
   Define the DAC960 V2 Firmware Logical Device structure.
 */
 
-typedef struct DAC960_V2_LogicalDevice
+typedef struct myrs_ldev_s
 {
 	unsigned short LogicalDeviceNumber;			/* Bytes 0-1 */
 	unsigned char :3;					/* Byte 2 Bits 0-2 */
@@ -728,7 +728,7 @@ typedef struct myrs_sge_s
   Define the DAC960 V2 Firmware Data Transfer Memory Address structure.
 */
 
-typedef union  myrs_sgl
+typedef union myrs_sgl_s
 {
 	myrs_sge sge[2]; /* Bytes 0-31 */
 	struct {
