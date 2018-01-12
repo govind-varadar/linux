@@ -246,7 +246,6 @@ DAC960_DetectController(struct pci_dev *pdev,
 	irq_handler_t InterruptHandler = privdata->InterruptHandler;
 	unsigned int MemoryWindowSize = privdata->MemoryWindowSize;
 	myr_hba *c = NULL;
-	void __iomem *base;
 
 	if (privdata->FirmwareType == DAC960_V1_Controller)
 		c = myrb_alloc_host(pdev, entry);
@@ -298,8 +297,8 @@ DAC960_DetectController(struct pci_dev *pdev,
 		goto Failure;
 	}
 
-	base = c->MemoryMappedAddress + (c->PCI_Address & ~PAGE_MASK);
-	if (privdata->HardwareInit(pdev, c, base))
+	c->io_addr = c->MemoryMappedAddress + (c->PCI_Address & ~PAGE_MASK);
+	if (privdata->HardwareInit(pdev, c, c->io_addr))
 		goto Failure;
 
 	/*
