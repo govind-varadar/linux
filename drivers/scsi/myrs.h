@@ -1021,6 +1021,8 @@ typedef struct myrs_hba_s
   Define the DAC960 GEM Series Controller Interface Register Offsets.
  */
 
+#define DAC960_GEM_RegisterWindowSize	0x600
+
 typedef enum
 {
 	DAC960_GEM_InboundDoorBellRegisterReadSetOffset = 0x214,
@@ -1326,6 +1328,8 @@ DAC960_GEM_ReadErrorStatus(void __iomem *base,
   Define the DAC960 BA Series Controller Interface Register Offsets.
 */
 
+#define DAC960_BA_RegisterWindowSize		0x80
+
 typedef enum
 {
 	DAC960_BA_InterruptStatusRegisterOffset =	0x30,
@@ -1624,6 +1628,8 @@ DAC960_BA_ReadErrorStatus(void __iomem *base,
 /*
   Define the DAC960 LP Series Controller Interface Register Offsets.
 */
+
+#define DAC960_LP_RegisterWindowSize		0x80
 
 typedef enum
 {

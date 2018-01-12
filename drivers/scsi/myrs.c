@@ -2180,308 +2180,6 @@ static void myrs_handle_cmdblk(myrs_hba *cs, myrs_cmdblk *cmd_blk)
 	}
 }
 
-
-/*
-  DAC960_GEM_HardwareInit initializes the hardware for DAC960 GEM Series
-  Controllers.
-*/
-
-int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
-			    myr_hba *c, void __iomem *base)
-{
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	int timeout = 0;
-	unsigned char ErrorStatus, Parameter0, Parameter1;
-
-	DAC960_GEM_DisableInterrupts(base);
-	DAC960_GEM_AcknowledgeHardwareMailboxStatus(base);
-	udelay(1000);
-	while (DAC960_GEM_InitializationInProgressP(base) &&
-	       timeout < DAC960_MAILBOX_TIMEOUT) {
-		if (DAC960_GEM_ReadErrorStatus(base, &ErrorStatus,
-					       &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus,
-					     Parameter0, Parameter1))
-			return -EIO;
-		udelay(10);
-		timeout++;
-	}
-	if (timeout == DAC960_MAILBOX_TIMEOUT) {
-		dev_err(&pdev->dev,
-			"Timeout waiting for Controller Initialisation\n");
-		return -ETIMEDOUT;
-	}
-	if (!DAC960_V2_EnableMemoryMailboxInterface(cs)) {
-		dev_err(&pdev->dev,
-			"Unable to Enable Memory Mailbox Interface\n");
-		DAC960_GEM_ControllerReset(base);
-		return -EAGAIN;
-	}
-	DAC960_GEM_EnableInterrupts(base);
-	cs->WriteCommandMailbox = DAC960_GEM_WriteCommandMailbox;
-	cs->MailboxNewCommand = DAC960_GEM_MemoryMailboxNewCommand;
-	c->ReadControllerConfiguration =
-		DAC960_V2_ReadControllerConfiguration;
-	c->DisableInterrupts = DAC960_GEM_DisableInterrupts;
-	c->Reset = DAC960_GEM_ControllerReset;
-	return 0;
-}
-
-/*
-  DAC960_GEM_InterruptHandler handles hardware interrupts from DAC960 GEM Series
-  Controllers.
-*/
-
-irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
-					void *DeviceIdentifier)
-{
-	myr_hba *c = DeviceIdentifier;
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	void __iomem *base = c->io_addr;
-	myrs_stat_mbox *NextStatusMailbox;
-	unsigned long flags;
-
-	spin_lock_irqsave(&c->queue_lock, flags);
-	DAC960_GEM_AcknowledgeInterrupt(base);
-	NextStatusMailbox = cs->NextStatusMailbox;
-	while (NextStatusMailbox->id > 0) {
-		unsigned short id = NextStatusMailbox->id;
-		struct scsi_cmnd *scmd = NULL;
-		myrs_cmdblk *cmd_blk = NULL;
-
-		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &cs->dcmd_blk;
-		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &cs->mcmd_blk;
-		else {
-			scmd = scsi_host_find_tag(c->host, id - 3);
-			if (scmd)
-				cmd_blk = scsi_cmd_priv(scmd);
-		}
-		if (cmd_blk) {
-			cmd_blk->status = NextStatusMailbox->status;
-			cmd_blk->sense_len = NextStatusMailbox->sense_len;
-			cmd_blk->residual = NextStatusMailbox->residual;
-		} else
-			dev_err(&c->PCIDevice->dev,
-				"Unhandled command completion %d\n", id);
-
-		memset(NextStatusMailbox, 0, sizeof(myrs_stat_mbox));
-		if (++NextStatusMailbox > cs->LastStatusMailbox)
-			NextStatusMailbox = cs->FirstStatusMailbox;
-
-		if (id < 3)
-			myrs_handle_cmdblk(cs, cmd_blk);
-		else
-			myrs_handle_scsi(cs, cmd_blk, scmd);
-	}
-	cs->NextStatusMailbox = NextStatusMailbox;
-	spin_unlock_irqrestore(&c->queue_lock, flags);
-	return IRQ_HANDLED;
-}
-
-
-/*
-  DAC960_BA_HardwareInit initializes the hardware for DAC960 BA Series
-  Controllers.
-*/
-
-int DAC960_BA_HardwareInit(struct pci_dev *pdev,
-			   myr_hba *c, void __iomem *base)
-{
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	int timeout = 0;
-	unsigned char ErrorStatus, Parameter0, Parameter1;
-
-	DAC960_BA_DisableInterrupts(base);
-	DAC960_BA_AcknowledgeHardwareMailboxStatus(base);
-	udelay(1000);
-	while (DAC960_BA_InitializationInProgressP(base) &&
-	       timeout < DAC960_MAILBOX_TIMEOUT) {
-		if (DAC960_BA_ReadErrorStatus(base, &ErrorStatus,
-					      &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus,
-					     Parameter0, Parameter1))
-			return -EIO;
-		udelay(10);
-		timeout++;
-	}
-	if (timeout == DAC960_MAILBOX_TIMEOUT) {
-		dev_err(&pdev->dev,
-			"Timeout waiting for Controller Initialisation\n");
-		return -ETIMEDOUT;
-	}
-	if (!DAC960_V2_EnableMemoryMailboxInterface(cs)) {
-		dev_err(&pdev->dev,
-			"Unable to Enable Memory Mailbox Interface\n");
-		DAC960_BA_ControllerReset(base);
-		return -EAGAIN;
-	}
-	DAC960_BA_EnableInterrupts(base);
-	cs->WriteCommandMailbox = DAC960_BA_WriteCommandMailbox;
-	cs->MailboxNewCommand = DAC960_BA_MemoryMailboxNewCommand;
-	c->ReadControllerConfiguration =
-		DAC960_V2_ReadControllerConfiguration;
-	c->DisableInterrupts = DAC960_BA_DisableInterrupts;
-	c->Reset = DAC960_BA_ControllerReset;
-	return 0;
-}
-
-
-/*
-  DAC960_BA_InterruptHandler handles hardware interrupts from DAC960 BA Series
-  Controllers.
-*/
-
-irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
-				       void *DeviceIdentifier)
-{
-	myr_hba *c = DeviceIdentifier;
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	void __iomem *base = c->io_addr;
-	myrs_stat_mbox *NextStatusMailbox;
-	unsigned long flags;
-
-	spin_lock_irqsave(&c->queue_lock, flags);
-	DAC960_BA_AcknowledgeInterrupt(base);
-	NextStatusMailbox = cs->NextStatusMailbox;
-	while (NextStatusMailbox->id > 0) {
-		unsigned short id = NextStatusMailbox->id;
-		struct scsi_cmnd *scmd = NULL;
-		myrs_cmdblk *cmd_blk = NULL;
-
-		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &cs->dcmd_blk;
-		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &cs->mcmd_blk;
-		else {
-			scmd = scsi_host_find_tag(c->host, id - 3);
-			if (scmd)
-				cmd_blk = scsi_cmd_priv(scmd);
-		}
-		if (cmd_blk) {
-			cmd_blk->status = NextStatusMailbox->status;
-			cmd_blk->sense_len = NextStatusMailbox->sense_len;
-			cmd_blk->residual = NextStatusMailbox->residual;
-		} else
-			dev_err(&c->PCIDevice->dev,
-				"Unhandled command completion %d\n", id);
-
-		memset(NextStatusMailbox, 0, sizeof(myrs_stat_mbox));
-		if (++NextStatusMailbox > cs->LastStatusMailbox)
-			NextStatusMailbox = cs->FirstStatusMailbox;
-
-		if (id < 3)
-			myrs_handle_cmdblk(cs, cmd_blk);
-		else
-			myrs_handle_scsi(cs, cmd_blk, scmd);
-	}
-	cs->NextStatusMailbox = NextStatusMailbox;
-	spin_unlock_irqrestore(&c->queue_lock, flags);
-	return IRQ_HANDLED;
-}
-
-
-/*
-  DAC960_LP_HardwareInit initializes the hardware for DAC960 LP Series
-  Controllers.
-*/
-
-int DAC960_LP_HardwareInit(struct pci_dev *pdev,
-			   myr_hba *c, void __iomem *base)
-{
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	int timeout = 0;
-	unsigned char ErrorStatus, Parameter0, Parameter1;
-
-	DAC960_LP_DisableInterrupts(base);
-	DAC960_LP_AcknowledgeHardwareMailboxStatus(base);
-	udelay(1000);
-	while (DAC960_LP_InitializationInProgressP(base) &&
-	       timeout < DAC960_MAILBOX_TIMEOUT) {
-		if (DAC960_LP_ReadErrorStatus(base, &ErrorStatus,
-					      &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus,
-					     Parameter0, Parameter1))
-			return -EIO;
-		udelay(10);
-		timeout++;
-	}
-	if (timeout == DAC960_MAILBOX_TIMEOUT) {
-		dev_err(&pdev->dev,
-			"Timeout waiting for Controller Initialisation\n");
-		return -ETIMEDOUT;
-	}
-	if (!DAC960_V2_EnableMemoryMailboxInterface(cs)) {
-		dev_err(&pdev->dev,
-			"Unable to Enable Memory Mailbox Interface\n");
-		DAC960_LP_ControllerReset(base);
-		return -ENODEV;
-	}
-	DAC960_LP_EnableInterrupts(base);
-	cs->WriteCommandMailbox = DAC960_LP_WriteCommandMailbox;
-	cs->MailboxNewCommand = DAC960_LP_MemoryMailboxNewCommand;
-	c->ReadControllerConfiguration =
-		DAC960_V2_ReadControllerConfiguration;
-	c->DisableInterrupts = DAC960_LP_DisableInterrupts;
-	c->Reset = DAC960_LP_ControllerReset;
-
-	return 0;
-}
-
-/*
-  DAC960_LP_InterruptHandler handles hardware interrupts from DAC960 LP Series
-  Controllers.
-*/
-
-irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
-				       void *DeviceIdentifier)
-{
-	myr_hba *c = DeviceIdentifier;
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	void __iomem *base = c->io_addr;
-	myrs_stat_mbox *NextStatusMailbox;
-	unsigned long flags;
-
-	spin_lock_irqsave(&c->queue_lock, flags);
-	DAC960_LP_AcknowledgeInterrupt(base);
-	NextStatusMailbox = cs->NextStatusMailbox;
-	while (NextStatusMailbox->id > 0) {
-		unsigned short id = NextStatusMailbox->id;
-		struct scsi_cmnd *scmd = NULL;
-		myrs_cmdblk *cmd_blk = NULL;
-
-		if (id == DAC960_DirectCommandIdentifier)
-			cmd_blk = &cs->dcmd_blk;
-		else if (id == DAC960_MonitoringIdentifier)
-			cmd_blk = &cs->mcmd_blk;
-		else {
-			scmd = scsi_host_find_tag(c->host, id - 3);
-			if (scmd)
-				cmd_blk = scsi_cmd_priv(scmd);
-		}
-		if (cmd_blk) {
-			cmd_blk->status = NextStatusMailbox->status;
-			cmd_blk->sense_len = NextStatusMailbox->sense_len;
-			cmd_blk->residual = NextStatusMailbox->residual;
-		} else
-			dev_err(&c->PCIDevice->dev,
-				"Unhandled command completion %d\n", id);
-
-		memset(NextStatusMailbox, 0, sizeof(myrs_stat_mbox));
-		if (++NextStatusMailbox > cs->LastStatusMailbox)
-			NextStatusMailbox = cs->FirstStatusMailbox;
-
-		if (id < 3)
-			myrs_handle_cmdblk(cs, cmd_blk);
-		else
-			myrs_handle_scsi(cs, cmd_blk, scmd);
-	}
-	cs->NextStatusMailbox = NextStatusMailbox;
-	spin_unlock_irqrestore(&c->queue_lock, flags);
-	return IRQ_HANDLED;
-}
-
 /*
   DAC960_V2_MonitoringGetHealthStatus queues a Get Health Status Command
   to DAC960 V2 Firmware Controllers.
@@ -2572,3 +2270,329 @@ unsigned long myrs_monitor(myr_hba *c)
 	}
 	return interval;
 }
+
+/*
+  DAC960_GEM_HardwareInit initializes the hardware for DAC960 GEM Series
+  Controllers.
+*/
+
+static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
+				   myr_hba *c, void __iomem *base)
+{
+	myrs_hba *cs = container_of(c, myrs_hba, common);
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	DAC960_GEM_DisableInterrupts(base);
+	DAC960_GEM_AcknowledgeHardwareMailboxStatus(base);
+	udelay(1000);
+	while (DAC960_GEM_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_GEM_ReadErrorStatus(base, &ErrorStatus,
+					       &Parameter0, &Parameter1) &&
+		    myr_err_status(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -EIO;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V2_EnableMemoryMailboxInterface(cs)) {
+		dev_err(&pdev->dev,
+			"Unable to Enable Memory Mailbox Interface\n");
+		DAC960_GEM_ControllerReset(base);
+		return -EAGAIN;
+	}
+	DAC960_GEM_EnableInterrupts(base);
+	cs->WriteCommandMailbox = DAC960_GEM_WriteCommandMailbox;
+	cs->MailboxNewCommand = DAC960_GEM_MemoryMailboxNewCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V2_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_GEM_DisableInterrupts;
+	c->Reset = DAC960_GEM_ControllerReset;
+	return 0;
+}
+
+/*
+  DAC960_GEM_InterruptHandler handles hardware interrupts from DAC960 GEM Series
+  Controllers.
+*/
+
+static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
+					       void *DeviceIdentifier)
+{
+	myr_hba *c = DeviceIdentifier;
+	myrs_hba *cs = container_of(c, myrs_hba, common);
+	void __iomem *base = c->io_addr;
+	myrs_stat_mbox *NextStatusMailbox;
+	unsigned long flags;
+
+	spin_lock_irqsave(&c->queue_lock, flags);
+	DAC960_GEM_AcknowledgeInterrupt(base);
+	NextStatusMailbox = cs->NextStatusMailbox;
+	while (NextStatusMailbox->id > 0) {
+		unsigned short id = NextStatusMailbox->id;
+		struct scsi_cmnd *scmd = NULL;
+		myrs_cmdblk *cmd_blk = NULL;
+
+		if (id == DAC960_DirectCommandIdentifier)
+			cmd_blk = &cs->dcmd_blk;
+		else if (id == DAC960_MonitoringIdentifier)
+			cmd_blk = &cs->mcmd_blk;
+		else {
+			scmd = scsi_host_find_tag(c->host, id - 3);
+			if (scmd)
+				cmd_blk = scsi_cmd_priv(scmd);
+		}
+		if (cmd_blk) {
+			cmd_blk->status = NextStatusMailbox->status;
+			cmd_blk->sense_len = NextStatusMailbox->sense_len;
+			cmd_blk->residual = NextStatusMailbox->residual;
+		} else
+			dev_err(&c->PCIDevice->dev,
+				"Unhandled command completion %d\n", id);
+
+		memset(NextStatusMailbox, 0, sizeof(myrs_stat_mbox));
+		if (++NextStatusMailbox > cs->LastStatusMailbox)
+			NextStatusMailbox = cs->FirstStatusMailbox;
+
+		if (id < 3)
+			myrs_handle_cmdblk(cs, cmd_blk);
+		else
+			myrs_handle_scsi(cs, cmd_blk, scmd);
+	}
+	cs->NextStatusMailbox = NextStatusMailbox;
+	spin_unlock_irqrestore(&c->queue_lock, flags);
+	return IRQ_HANDLED;
+}
+
+struct DAC960_privdata DAC960_GEM_privdata = {
+	.HardwareType =		DAC960_GEM_Controller,
+	.FirmwareType =		DAC960_V2_Controller,
+	.HardwareInit =		DAC960_GEM_HardwareInit,
+	.InterruptHandler =	DAC960_GEM_InterruptHandler,
+	.MemoryWindowSize =	DAC960_GEM_RegisterWindowSize,
+};
+
+
+/*
+  DAC960_BA_HardwareInit initializes the hardware for DAC960 BA Series
+  Controllers.
+*/
+
+static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
+				  myr_hba *c, void __iomem *base)
+{
+	myrs_hba *cs = container_of(c, myrs_hba, common);
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	DAC960_BA_DisableInterrupts(base);
+	DAC960_BA_AcknowledgeHardwareMailboxStatus(base);
+	udelay(1000);
+	while (DAC960_BA_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_BA_ReadErrorStatus(base, &ErrorStatus,
+					      &Parameter0, &Parameter1) &&
+		    myr_err_status(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -EIO;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V2_EnableMemoryMailboxInterface(cs)) {
+		dev_err(&pdev->dev,
+			"Unable to Enable Memory Mailbox Interface\n");
+		DAC960_BA_ControllerReset(base);
+		return -EAGAIN;
+	}
+	DAC960_BA_EnableInterrupts(base);
+	cs->WriteCommandMailbox = DAC960_BA_WriteCommandMailbox;
+	cs->MailboxNewCommand = DAC960_BA_MemoryMailboxNewCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V2_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_BA_DisableInterrupts;
+	c->Reset = DAC960_BA_ControllerReset;
+	return 0;
+}
+
+
+/*
+  DAC960_BA_InterruptHandler handles hardware interrupts from DAC960 BA Series
+  Controllers.
+*/
+
+static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
+					      void *DeviceIdentifier)
+{
+	myr_hba *c = DeviceIdentifier;
+	myrs_hba *cs = container_of(c, myrs_hba, common);
+	void __iomem *base = c->io_addr;
+	myrs_stat_mbox *NextStatusMailbox;
+	unsigned long flags;
+
+	spin_lock_irqsave(&c->queue_lock, flags);
+	DAC960_BA_AcknowledgeInterrupt(base);
+	NextStatusMailbox = cs->NextStatusMailbox;
+	while (NextStatusMailbox->id > 0) {
+		unsigned short id = NextStatusMailbox->id;
+		struct scsi_cmnd *scmd = NULL;
+		myrs_cmdblk *cmd_blk = NULL;
+
+		if (id == DAC960_DirectCommandIdentifier)
+			cmd_blk = &cs->dcmd_blk;
+		else if (id == DAC960_MonitoringIdentifier)
+			cmd_blk = &cs->mcmd_blk;
+		else {
+			scmd = scsi_host_find_tag(c->host, id - 3);
+			if (scmd)
+				cmd_blk = scsi_cmd_priv(scmd);
+		}
+		if (cmd_blk) {
+			cmd_blk->status = NextStatusMailbox->status;
+			cmd_blk->sense_len = NextStatusMailbox->sense_len;
+			cmd_blk->residual = NextStatusMailbox->residual;
+		} else
+			dev_err(&c->PCIDevice->dev,
+				"Unhandled command completion %d\n", id);
+
+		memset(NextStatusMailbox, 0, sizeof(myrs_stat_mbox));
+		if (++NextStatusMailbox > cs->LastStatusMailbox)
+			NextStatusMailbox = cs->FirstStatusMailbox;
+
+		if (id < 3)
+			myrs_handle_cmdblk(cs, cmd_blk);
+		else
+			myrs_handle_scsi(cs, cmd_blk, scmd);
+	}
+	cs->NextStatusMailbox = NextStatusMailbox;
+	spin_unlock_irqrestore(&c->queue_lock, flags);
+	return IRQ_HANDLED;
+}
+
+struct DAC960_privdata DAC960_BA_privdata = {
+	.HardwareType =		DAC960_BA_Controller,
+	.FirmwareType =		DAC960_V2_Controller,
+	.HardwareInit =		DAC960_BA_HardwareInit,
+	.InterruptHandler =	DAC960_BA_InterruptHandler,
+	.MemoryWindowSize =	DAC960_BA_RegisterWindowSize,
+};
+
+
+/*
+  DAC960_LP_HardwareInit initializes the hardware for DAC960 LP Series
+  Controllers.
+*/
+
+static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
+				  myr_hba *c, void __iomem *base)
+{
+	myrs_hba *cs = container_of(c, myrs_hba, common);
+	int timeout = 0;
+	unsigned char ErrorStatus, Parameter0, Parameter1;
+
+	DAC960_LP_DisableInterrupts(base);
+	DAC960_LP_AcknowledgeHardwareMailboxStatus(base);
+	udelay(1000);
+	while (DAC960_LP_InitializationInProgressP(base) &&
+	       timeout < DAC960_MAILBOX_TIMEOUT) {
+		if (DAC960_LP_ReadErrorStatus(base, &ErrorStatus,
+					      &Parameter0, &Parameter1) &&
+		    myr_err_status(c, ErrorStatus,
+					     Parameter0, Parameter1))
+			return -EIO;
+		udelay(10);
+		timeout++;
+	}
+	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+		dev_err(&pdev->dev,
+			"Timeout waiting for Controller Initialisation\n");
+		return -ETIMEDOUT;
+	}
+	if (!DAC960_V2_EnableMemoryMailboxInterface(cs)) {
+		dev_err(&pdev->dev,
+			"Unable to Enable Memory Mailbox Interface\n");
+		DAC960_LP_ControllerReset(base);
+		return -ENODEV;
+	}
+	DAC960_LP_EnableInterrupts(base);
+	cs->WriteCommandMailbox = DAC960_LP_WriteCommandMailbox;
+	cs->MailboxNewCommand = DAC960_LP_MemoryMailboxNewCommand;
+	c->ReadControllerConfiguration =
+		DAC960_V2_ReadControllerConfiguration;
+	c->DisableInterrupts = DAC960_LP_DisableInterrupts;
+	c->Reset = DAC960_LP_ControllerReset;
+
+	return 0;
+}
+
+/*
+  DAC960_LP_InterruptHandler handles hardware interrupts from DAC960 LP Series
+  Controllers.
+*/
+
+static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
+					      void *DeviceIdentifier)
+{
+	myr_hba *c = DeviceIdentifier;
+	myrs_hba *cs = container_of(c, myrs_hba, common);
+	void __iomem *base = c->io_addr;
+	myrs_stat_mbox *NextStatusMailbox;
+	unsigned long flags;
+
+	spin_lock_irqsave(&c->queue_lock, flags);
+	DAC960_LP_AcknowledgeInterrupt(base);
+	NextStatusMailbox = cs->NextStatusMailbox;
+	while (NextStatusMailbox->id > 0) {
+		unsigned short id = NextStatusMailbox->id;
+		struct scsi_cmnd *scmd = NULL;
+		myrs_cmdblk *cmd_blk = NULL;
+
+		if (id == DAC960_DirectCommandIdentifier)
+			cmd_blk = &cs->dcmd_blk;
+		else if (id == DAC960_MonitoringIdentifier)
+			cmd_blk = &cs->mcmd_blk;
+		else {
+			scmd = scsi_host_find_tag(c->host, id - 3);
+			if (scmd)
+				cmd_blk = scsi_cmd_priv(scmd);
+		}
+		if (cmd_blk) {
+			cmd_blk->status = NextStatusMailbox->status;
+			cmd_blk->sense_len = NextStatusMailbox->sense_len;
+			cmd_blk->residual = NextStatusMailbox->residual;
+		} else
+			dev_err(&c->PCIDevice->dev,
+				"Unhandled command completion %d\n", id);
+
+		memset(NextStatusMailbox, 0, sizeof(myrs_stat_mbox));
+		if (++NextStatusMailbox > cs->LastStatusMailbox)
+			NextStatusMailbox = cs->FirstStatusMailbox;
+
+		if (id < 3)
+			myrs_handle_cmdblk(cs, cmd_blk);
+		else
+			myrs_handle_scsi(cs, cmd_blk, scmd);
+	}
+	cs->NextStatusMailbox = NextStatusMailbox;
+	spin_unlock_irqrestore(&c->queue_lock, flags);
+	return IRQ_HANDLED;
+}
+
+struct DAC960_privdata DAC960_LP_privdata = {
+	.HardwareType =		DAC960_LP_Controller,
+	.FirmwareType =		DAC960_V2_Controller,
+	.HardwareInit =		DAC960_LP_HardwareInit,
+	.InterruptHandler =	DAC960_LP_InterruptHandler,
+	.MemoryWindowSize =	DAC960_LP_RegisterWindowSize,
+};
+

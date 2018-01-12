@@ -259,6 +259,12 @@ void dma_addr_writeql(dma_addr_t addr, void __iomem *write_address)
 	writel(u.wl[1], write_address + 4);
 }
 
+bool init_dma_loaf(struct pci_dev *, struct dma_loaf *, size_t);
+void *slice_dma_loaf(struct dma_loaf *, size_t, dma_addr_t *);
+
+bool myr_err_status(myr_hba *,
+		    unsigned char, unsigned char, unsigned char);
+
 /*
  * myraid block:
  * driver for the older, block-based firmware interface
@@ -273,26 +279,10 @@ unsigned long myrb_monitor(myr_hba *c);
 void myrb_get_ctlr_info(myr_hba *c);
 myr_hba *myrb_alloc_host(struct pci_dev *, const struct pci_device_id *);
 
-int DAC960_LA_HardwareInit(struct pci_dev *, myr_hba *c, void __iomem *);
-irqreturn_t DAC960_LA_InterruptHandler(int, void *);
-
-#define DAC960_LA_RegisterWindowSize		0x80
-
-int DAC960_PG_HardwareInit(struct pci_dev *, myr_hba *c, void __iomem *);
-irqreturn_t DAC960_PG_InterruptHandler(int, void *);
-
-#define DAC960_PG_RegisterWindowSize		0x2000
-
-int DAC960_PD_HardwareInit(struct pci_dev *, myr_hba *c, void __iomem *);
-irqreturn_t DAC960_PD_InterruptHandler(int, void *);
-
-#define DAC960_PD_RegisterWindowSize		0x80
-
-int DAC960_P_HardwareInit(struct pci_dev *, myr_hba *c, void __iomem *);
-irqreturn_t DAC960_P_InterruptHandler(int, void *);
-
-bool myr_err_status(myr_hba *,
-		    unsigned char, unsigned char, unsigned char);
+extern struct DAC960_privdata DAC960_LA_privdata;
+extern struct DAC960_privdata DAC960_PG_privdata;
+extern struct DAC960_privdata DAC960_PD_privdata;
+extern struct DAC960_privdata DAC960_P_privdata;
 
 /*
  * myraid scsi:
@@ -308,23 +298,8 @@ unsigned long myrs_monitor(myr_hba *c);
 void myrs_get_ctlr_info(myr_hba *c);
 myr_hba *myrs_alloc_host(struct pci_dev *, const struct pci_device_id *);
 
-int DAC960_GEM_HardwareInit(struct pci_dev *, myr_hba *c, void __iomem *);
-irqreturn_t DAC960_GEM_InterruptHandler(int, void *);
-
-#define DAC960_GEM_RegisterWindowSize	0x600
-
-int DAC960_BA_HardwareInit(struct pci_dev *, myr_hba *c, void __iomem *);
-irqreturn_t DAC960_BA_InterruptHandler(int, void *);
-
-#define DAC960_BA_RegisterWindowSize		0x80
-
-int DAC960_LP_HardwareInit(struct pci_dev *, myr_hba *c, void __iomem *);
-irqreturn_t DAC960_LP_InterruptHandler(int, void *);
-
-#define DAC960_LP_RegisterWindowSize		0x80
-
-
-bool init_dma_loaf(struct pci_dev *, struct dma_loaf *, size_t);
-void *slice_dma_loaf(struct dma_loaf *, size_t, dma_addr_t *);
+extern struct DAC960_privdata DAC960_GEM_privdata;
+extern struct DAC960_privdata DAC960_BA_privdata;
+extern struct DAC960_privdata DAC960_LP_privdata;
 
 #endif /* _MYR_H */

@@ -445,63 +445,6 @@ static void DAC960_MonitoringWork(struct work_struct *work)
 	queue_delayed_work(c->work_q, &c->monitor_work, interval);
 }
 
-static struct DAC960_privdata DAC960_GEM_privdata = {
-	.HardwareType =		DAC960_GEM_Controller,
-	.FirmwareType =		DAC960_V2_Controller,
-	.HardwareInit =		DAC960_GEM_HardwareInit,
-	.InterruptHandler =	DAC960_GEM_InterruptHandler,
-	.MemoryWindowSize =	DAC960_GEM_RegisterWindowSize,
-};
-
-
-static struct DAC960_privdata DAC960_BA_privdata = {
-	.HardwareType =		DAC960_BA_Controller,
-	.FirmwareType =		DAC960_V2_Controller,
-	.HardwareInit =		DAC960_BA_HardwareInit,
-	.InterruptHandler =	DAC960_BA_InterruptHandler,
-	.MemoryWindowSize =	DAC960_BA_RegisterWindowSize,
-};
-
-static struct DAC960_privdata DAC960_LP_privdata = {
-	.HardwareType =		DAC960_LP_Controller,
-	.FirmwareType =		DAC960_V2_Controller,
-	.HardwareInit =		DAC960_LP_HardwareInit,
-	.InterruptHandler =	DAC960_LP_InterruptHandler,
-	.MemoryWindowSize =	DAC960_LP_RegisterWindowSize,
-};
-
-static struct DAC960_privdata DAC960_LA_privdata = {
-	.HardwareType =		DAC960_LA_Controller,
-	.FirmwareType =		DAC960_V1_Controller,
-	.HardwareInit =		DAC960_LA_HardwareInit,
-	.InterruptHandler =	DAC960_LA_InterruptHandler,
-	.MemoryWindowSize =	DAC960_LA_RegisterWindowSize,
-};
-
-static struct DAC960_privdata DAC960_PG_privdata = {
-	.HardwareType =		DAC960_PG_Controller,
-	.FirmwareType =		DAC960_V1_Controller,
-	.HardwareInit =		DAC960_PG_HardwareInit,
-	.InterruptHandler =	DAC960_PG_InterruptHandler,
-	.MemoryWindowSize =	DAC960_PG_RegisterWindowSize,
-};
-
-static struct DAC960_privdata DAC960_PD_privdata = {
-	.HardwareType =		DAC960_PD_Controller,
-	.FirmwareType =		DAC960_V1_Controller,
-	.HardwareInit =		DAC960_PD_HardwareInit,
-	.InterruptHandler =	DAC960_PD_InterruptHandler,
-	.MemoryWindowSize =	DAC960_PD_RegisterWindowSize,
-};
-
-static struct DAC960_privdata DAC960_P_privdata = {
-	.HardwareType =		DAC960_P_Controller,
-	.FirmwareType =		DAC960_V1_Controller,
-	.HardwareInit =		DAC960_P_HardwareInit,
-	.InterruptHandler =	DAC960_P_InterruptHandler,
-	.MemoryWindowSize =	DAC960_PD_RegisterWindowSize,
-};
-
 static const struct pci_device_id DAC960_id_table[] = {
 	{
 		.vendor		= PCI_VENDOR_ID_MYLEX,

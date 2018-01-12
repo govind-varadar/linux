@@ -2543,8 +2543,8 @@ myr_hba *myrb_alloc_host(struct pci_dev *pdev,
   Controllers.
 */
 
-int DAC960_LA_HardwareInit(struct pci_dev *pdev,
-			   myr_hba *c, void __iomem *base)
+static int DAC960_LA_HardwareInit(struct pci_dev *pdev,
+				  myr_hba *c, void __iomem *base)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 	int timeout = 0;
@@ -2609,8 +2609,8 @@ int DAC960_LA_HardwareInit(struct pci_dev *pdev,
   Controllers.
 */
 
-irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
-				       void *DeviceIdentifier)
+static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
+					      void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
 	myrb_hba *cb = container_of(c, myrb_hba, common);
@@ -2655,14 +2655,22 @@ irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 	return IRQ_HANDLED;
 }
 
+struct DAC960_privdata DAC960_LA_privdata = {
+	.HardwareType =		DAC960_LA_Controller,
+	.FirmwareType =		DAC960_V1_Controller,
+	.HardwareInit =		DAC960_LA_HardwareInit,
+	.InterruptHandler =	DAC960_LA_InterruptHandler,
+	.MemoryWindowSize =	DAC960_LA_RegisterWindowSize,
+};
+
 
 /*
   DAC960_PG_HardwareInit initializes the hardware for DAC960 PG Series
   Controllers.
 */
 
-int DAC960_PG_HardwareInit(struct pci_dev *pdev,
-			   myr_hba *c, void __iomem *base)
+static int DAC960_PG_HardwareInit(struct pci_dev *pdev,
+				  myr_hba *c, void __iomem *base)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 	int timeout = 0;
@@ -2710,8 +2718,8 @@ int DAC960_PG_HardwareInit(struct pci_dev *pdev,
   Controllers.
 */
 
-irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
-				       void *DeviceIdentifier)
+static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
+					      void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
 	myrb_hba *cb = container_of(c, myrb_hba, common);
@@ -2756,14 +2764,22 @@ irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 	return IRQ_HANDLED;
 }
 
+struct DAC960_privdata DAC960_PG_privdata = {
+	.HardwareType =		DAC960_PG_Controller,
+	.FirmwareType =		DAC960_V1_Controller,
+	.HardwareInit =		DAC960_PG_HardwareInit,
+	.InterruptHandler =	DAC960_PG_InterruptHandler,
+	.MemoryWindowSize =	DAC960_PG_RegisterWindowSize,
+};
+
 
 /*
   DAC960_PD_HardwareInit initializes the hardware for DAC960 P Series
   Controllers.
 */
 
-int DAC960_PD_HardwareInit(struct pci_dev *pdev,
-			   myr_hba *c, void __iomem *base)
+static int DAC960_PD_HardwareInit(struct pci_dev *pdev,
+				  myr_hba *c, void __iomem *base)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 	int timeout = 0;
@@ -2812,8 +2828,8 @@ int DAC960_PD_HardwareInit(struct pci_dev *pdev,
   Controllers.
 */
 
-irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
-				       void *DeviceIdentifier)
+static irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
+					      void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
 	myrb_hba *cb = container_of(c, myrb_hba, common);
@@ -2853,14 +2869,22 @@ irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
 	return IRQ_HANDLED;
 }
 
+struct DAC960_privdata DAC960_PD_privdata = {
+	.HardwareType =		DAC960_PD_Controller,
+	.FirmwareType =		DAC960_V1_Controller,
+	.HardwareInit =		DAC960_PD_HardwareInit,
+	.InterruptHandler =	DAC960_PD_InterruptHandler,
+	.MemoryWindowSize =	DAC960_PD_RegisterWindowSize,
+};
+
 
 /*
   DAC960_P_HardwareInit initializes the hardware for DAC960 P Series
   Controllers.
 */
 
-int DAC960_P_HardwareInit(struct pci_dev *pdev,
-			  myr_hba *c, void __iomem *base)
+static int DAC960_P_HardwareInit(struct pci_dev *pdev,
+				 myr_hba *c, void __iomem *base)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 	int timeout = 0;
@@ -2912,8 +2936,8 @@ int DAC960_P_HardwareInit(struct pci_dev *pdev,
   an arbitrary buffer.
 */
 
-irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
-				      void *DeviceIdentifier)
+static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
+					     void *DeviceIdentifier)
 {
 	myr_hba *c = DeviceIdentifier;
 	myrb_hba *cb = container_of(c, myrb_hba, common);
@@ -2989,3 +3013,11 @@ irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 	return IRQ_HANDLED;
 }
+
+struct DAC960_privdata DAC960_P_privdata = {
+	.HardwareType =		DAC960_P_Controller,
+	.FirmwareType =		DAC960_V1_Controller,
+	.HardwareInit =		DAC960_P_HardwareInit,
+	.InterruptHandler =	DAC960_P_InterruptHandler,
+	.MemoryWindowSize =	DAC960_PD_RegisterWindowSize,
+};

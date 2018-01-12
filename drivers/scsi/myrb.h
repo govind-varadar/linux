@@ -872,6 +872,8 @@ typedef struct myrb_hba_s
   Define the DAC960 LA Series Controller Interface Register Offsets.
 */
 
+#define DAC960_LA_RegisterWindowSize		0x80
+
 typedef enum
 {
 	DAC960_LA_InterruptMaskRegisterOffset =		0x34,
@@ -1187,6 +1189,8 @@ DAC960_LA_ReadErrorStatus(void __iomem *base,
 /*
   Define the DAC960 PG Series Controller Interface Register Offsets.
 */
+
+#define DAC960_PG_RegisterWindowSize		0x2000
 
 typedef enum
 {
@@ -1507,6 +1511,8 @@ DAC960_PG_ReadErrorStatus(void __iomem *base,
 /*
   Define the DAC960 PD Series Controller Interface Register Offsets.
 */
+
+#define DAC960_PD_RegisterWindowSize		0x80
 
 typedef enum
 {
