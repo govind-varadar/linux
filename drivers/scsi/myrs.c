@@ -222,7 +222,7 @@ static void DAC960_V2_ExecuteCommand(myrs_hba *cs,
 
 	cmd_blk->Completion = &Completion;
 	spin_lock_irqsave(&cs->common.queue_lock, flags);
-	cs->QueueCommand(cs, cmd_blk);
+	myrs_qcmd(cs, cmd_blk);
 	spin_unlock_irqrestore(&cs->common.queue_lock, flags);
 
 	if (in_interrupt())
@@ -1670,7 +1670,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 	}
 submit:
 	spin_lock_irqsave(&cs->common.queue_lock, flags);
-	cs->QueueCommand(cs, cmd_blk);
+	myrs_qcmd(cs, cmd_blk);
 	spin_unlock_irqrestore(&cs->common.queue_lock, flags);
 
 	return 0;
@@ -2208,7 +2208,6 @@ int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
 		return -EAGAIN;
 	}
 	DAC960_GEM_EnableInterrupts(base);
-	cs->QueueCommand = myrs_qcmd;
 	cs->WriteCommandMailbox = DAC960_GEM_WriteCommandMailbox;
 	cs->MailboxNewCommand = DAC960_GEM_MemoryMailboxNewCommand;
 	c->ReadControllerConfiguration =
@@ -2309,7 +2308,6 @@ int DAC960_BA_HardwareInit(struct pci_dev *pdev,
 		return -EAGAIN;
 	}
 	DAC960_BA_EnableInterrupts(base);
-	cs->QueueCommand = myrs_qcmd;
 	cs->WriteCommandMailbox = DAC960_BA_WriteCommandMailbox;
 	cs->MailboxNewCommand = DAC960_BA_MemoryMailboxNewCommand;
 	c->ReadControllerConfiguration =
@@ -2411,7 +2409,6 @@ int DAC960_LP_HardwareInit(struct pci_dev *pdev,
 		return -ENODEV;
 	}
 	DAC960_LP_EnableInterrupts(base);
-	cs->QueueCommand = myrs_qcmd;
 	cs->WriteCommandMailbox = DAC960_LP_WriteCommandMailbox;
 	cs->MailboxNewCommand = DAC960_LP_MemoryMailboxNewCommand;
 	c->ReadControllerConfiguration =

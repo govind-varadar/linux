@@ -977,7 +977,6 @@ typedef struct myrs_hba_s
 	struct pci_pool *RequestSensePool;
 	struct pci_pool *DCDBPool;
 
-	void (*QueueCommand)(struct myrs_hba_s *, myrs_cmdblk *);
 	void (*WriteCommandMailbox)(myrs_cmd_mbox *, myrs_cmd_mbox *);
 	void (*MailboxNewCommand)(void __iomem *);
 
