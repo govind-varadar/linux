@@ -1004,12 +1004,6 @@ typedef struct myrs_hba_s
 	dma_addr_t ctlr_info_addr;
 	struct mutex cinfo_mutex;
 
-	myrs_ldev_info *ldev_info_buf;
-	dma_addr_t ldev_info_addr;
-
-	myrs_pdev_info *pdev_info_buf;
-	dma_addr_t pdev_info_addr;
-
 	myrs_event *event_buf;
 	dma_addr_t event_addr;
 

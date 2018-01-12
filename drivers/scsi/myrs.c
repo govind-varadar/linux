@@ -294,20 +294,26 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
   DAC960_V2_LogicalDeviceInfo executes a DAC960 V2 Firmware Controller Logical
   Device Information Reading IOCTL Command and waits for completion.  It
   returns true on success and false on failure.
-
-  Data is returned in the controller's V2.ldev_info_buf
 */
 
 static unsigned char
-DAC960_V2_NewLogicalDeviceInfo(myrs_hba *cs,
-			       unsigned short ldev_num,
-			       myrs_ldev_info *ldev_info)
+myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
+		   myrs_ldev_info *ldev_info)
 {
 	myr_hba *c = &cs->common;
 	myrs_cmdblk *cmd_blk = &cs->dcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
+	dma_addr_t ldev_info_addr;
+	myrs_ldev_info ldev_info_orig;
 	myrs_sgl *sgl;
 	unsigned char status;
+
+	memcpy(&ldev_info_orig, ldev_info, sizeof(myrs_ldev_info));
+	ldev_info_addr = dma_map_single(&c->pdev->dev, ldev_info,
+					sizeof(myrs_ldev_info),
+					DMA_FROM_DEVICE);
+	if (dma_mapping_error(&c->pdev->dev, ldev_info_addr))
+		return DAC960_V2_AbnormalCompletion;
 
 	mutex_lock(&cs->dcmd_mutex);
 	myrs_reset_cmd(cmd_blk);
@@ -315,79 +321,75 @@ DAC960_V2_NewLogicalDeviceInfo(myrs_hba *cs,
 	mbox->LogicalDeviceInfo.opcode = DAC960_V2_IOCTL;
 	mbox->LogicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->LogicalDeviceInfo.control.NoAutoRequestSense = true;
-	mbox->LogicalDeviceInfo.dma_size =
-		sizeof(myrs_ldev_info);
+	mbox->LogicalDeviceInfo.dma_size = sizeof(myrs_ldev_info);
 	mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
 	mbox->LogicalDeviceInfo.ioctl_opcode =
 		DAC960_V2_GetLogicalDeviceInfoValid;
 	sgl = &mbox->LogicalDeviceInfo.dma_addr;
-	sgl->sge[0].sge_addr = cs->ldev_info_addr;
+	sgl->sge[0].sge_addr = ldev_info_addr;
 	sgl->sge[0].sge_count = mbox->LogicalDeviceInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetLogicalDeviceInfoValid for ldev %d\n", ldev_num);
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
+	mutex_unlock(&cs->dcmd_mutex);
+	dma_unmap_single(&c->pdev->dev, ldev_info_addr,
+			 sizeof(myrs_ldev_info), DMA_FROM_DEVICE);
 	if (status == DAC960_V2_NormalCompletion) {
 		unsigned short ldev_num = ldev_info->LogicalDeviceNumber;
-		myrs_ldev_info *new = cs->ldev_info_buf;
-		myrs_ldev_info *old = ldev_info;
+		myrs_ldev_info *new = ldev_info;
+		myrs_ldev_info *old = &ldev_info_orig;
+		unsigned long ldev_size = new->ConfigurableDeviceSize;
 
-		if (old != NULL) {
-			unsigned long ldev_size = new->ConfigurableDeviceSize;
+		if (new->State != old->State) {
+			const char *name;
 
-			if (new->State != old->State) {
-				const char *name;
-
-				name = myrs_devstate_name(new->State);
-				shost_printk(KERN_INFO, c->host,
-					 "Logical Drive %d is now %s\n",
-					 ldev_num, name ? name : "Invalid");
-			}
-			if ((new->SoftErrors != old->SoftErrors) ||
-			    (new->CommandsFailed != old->CommandsFailed) ||
-			    (new->DeferredWriteErrors !=
-			     old->DeferredWriteErrors))
-				shost_printk(KERN_INFO, c->host,
-					    "Logical Drive %d Errors: "
-					    "Soft = %d, Failed = %d, Deferred Write = %d\n",
-					    ldev_num,
-					    new->SoftErrors,
-					    new->CommandsFailed,
-					    new->DeferredWriteErrors);
-			if (new->BackgroundInitializationInProgress)
-				DAC960_V2_ReportProgress(c, ldev_num,
-					"Background Initialization",
-					new->BackgroundInitializationBlockNumber,
-					ldev_size);
-			else if (new->ForegroundInitializationInProgress)
-				DAC960_V2_ReportProgress(c, ldev_num,
-					"Foreground Initialization",
-					new->ForegroundInitializationBlockNumber,
-					ldev_size);
-			else if (new->DataMigrationInProgress)
-				DAC960_V2_ReportProgress(c, ldev_num,
-					"Data Migration",
-					new->DataMigrationBlockNumber,
-					ldev_size);
-			else if (new->PatrolOperationInProgress)
-				DAC960_V2_ReportProgress(c, ldev_num,
-					"Patrol Operation",
-					new->PatrolOperationBlockNumber,
-					ldev_size);
-			if (old->BackgroundInitializationInProgress &&
-			    !new->BackgroundInitializationInProgress)
-				shost_printk(KERN_INFO, c->host,
-					    "Logical Drive %d: "
-					    "Background Initialization %s\n",
-					    ldev_num,
-					    (new->LogicalDeviceControl
-						 .LogicalDeviceInitialized
-						 ? "Completed" : "Failed"));
-			memcpy(ldev_info, cs->ldev_info_buf,
-			       sizeof(*ldev_info));
+			name = myrs_devstate_name(new->State);
+			shost_printk(KERN_INFO, c->host,
+				     "Logical Drive %d is now %s\n",
+				     ldev_num, name ? name : "Invalid");
 		}
+		if ((new->SoftErrors != old->SoftErrors) ||
+		    (new->CommandsFailed != old->CommandsFailed) ||
+		    (new->DeferredWriteErrors !=
+		     old->DeferredWriteErrors))
+			shost_printk(KERN_INFO, c->host,
+				     "Logical Drive %d Errors: "
+				     "Soft = %d, Failed = %d, Deferred Write = %d\n",
+				     ldev_num,
+				     new->SoftErrors,
+				     new->CommandsFailed,
+				     new->DeferredWriteErrors);
+		if (new->BackgroundInitializationInProgress)
+			DAC960_V2_ReportProgress(c, ldev_num,
+						 "Background Initialization",
+						 new->BackgroundInitializationBlockNumber,
+						 ldev_size);
+		else if (new->ForegroundInitializationInProgress)
+			DAC960_V2_ReportProgress(c, ldev_num,
+						 "Foreground Initialization",
+						 new->ForegroundInitializationBlockNumber,
+						 ldev_size);
+		else if (new->DataMigrationInProgress)
+			DAC960_V2_ReportProgress(c, ldev_num,
+						 "Data Migration",
+						 new->DataMigrationBlockNumber,
+						 ldev_size);
+		else if (new->PatrolOperationInProgress)
+			DAC960_V2_ReportProgress(c, ldev_num,
+						 "Patrol Operation",
+						 new->PatrolOperationBlockNumber,
+						 ldev_size);
+		if (old->BackgroundInitializationInProgress &&
+		    !new->BackgroundInitializationInProgress)
+			shost_printk(KERN_INFO, c->host,
+				     "Logical Drive %d: "
+				     "Background Initialization %s\n",
+				     ldev_num,
+				     (new->LogicalDeviceControl
+				      .LogicalDeviceInitialized
+				      ? "Completed" : "Failed"));
 	}
-	mutex_unlock(&cs->dcmd_mutex);
 	return status;
 }
 
@@ -599,8 +601,6 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 		CommandMailboxesSize + StatusMailboxesSize +
 		sizeof(myrs_fwstat) +
 		sizeof(myrs_ctlr_info) +
-		sizeof(myrs_ldev_info) +
-		sizeof(myrs_pdev_info) +
 		sizeof(myrs_event) +
 		sizeof(myrs_devmap);
 
@@ -638,12 +638,6 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 
 	cs->ctlr_info_buf = slice_dma_loaf(DmaPages, sizeof(myrs_ctlr_info),
 					     &cs->ctlr_info_addr);
-
-	cs->ldev_info_buf = slice_dma_loaf(DmaPages, sizeof(myrs_ldev_info),
-					     &cs->ldev_info_addr);
-
-	cs->pdev_info_buf = slice_dma_loaf(DmaPages, sizeof(myrs_pdev_info),
-					     &cs->pdev_info_addr);
 
 	cs->event_buf = slice_dma_loaf(DmaPages, sizeof(myrs_event),
 					 &cs->event_addr);
@@ -1245,7 +1239,13 @@ static ssize_t myrs_show_dev_rebuild(struct device *dev,
 
 	ldev_info = sdev->hostdata;
 	ldev_num = ldev_info->LogicalDeviceNumber;
-	status = DAC960_V2_NewLogicalDeviceInfo(cs, ldev_num, ldev_info);
+	status = myrs_get_ldev_info(cs, ldev_num, ldev_info);
+	if (status != DAC960_V2_NormalCompletion) {
+		sdev_printk(KERN_INFO, sdev,
+			    "Failed to get device information, status 0x%02x\n",
+			    status);
+		return -EIO;
+	}
 	if (ldev_info->RebuildInProgress) {
 		return snprintf(buf, 32, "rebuilding block %zu of %zu\n",
 				(size_t)ldev_info->RebuildBlockNumber,
@@ -1283,7 +1283,7 @@ static ssize_t myrs_store_dev_rebuild(struct device *dev,
 	if (sscanf(tmpbuf, "%d", &rebuild) != 1)
 		return -EINVAL;
 
-	status = DAC960_V2_NewLogicalDeviceInfo(cs, ldev_num, ldev_info);
+	status = myrs_get_ldev_info(cs, ldev_num, ldev_info);
 	if (status != DAC960_V2_NormalCompletion) {
 		sdev_printk(KERN_INFO, sdev,
 			    "Failed to get device information, status 0x%02x\n",
@@ -1353,7 +1353,7 @@ static ssize_t myrs_show_consistency_check(struct device *dev,
 	if (!ldev_info)
 		return -ENXIO;
 	ldev_num = ldev_info->LogicalDeviceNumber;
-	status = DAC960_V2_NewLogicalDeviceInfo(cs, ldev_num, ldev_info);
+	status = myrs_get_ldev_info(cs, ldev_num, ldev_info);
 	if (ldev_info->ConsistencyCheckInProgress)
 		return snprintf(buf, 32, "checking block %zu of %zu\n",
 				(size_t)ldev_info->ConsistencyCheckBlockNumber,
@@ -1391,7 +1391,7 @@ static ssize_t myrs_store_consistency_check(struct device *dev,
 	if (sscanf(tmpbuf, "%d", &check) != 1)
 		return -EINVAL;
 
-	status = DAC960_V2_NewLogicalDeviceInfo(cs, ldev_num, ldev_info);
+	status = myrs_get_ldev_info(cs, ldev_num, ldev_info);
 	if (status != DAC960_V2_NormalCompletion) {
 		sdev_printk(KERN_INFO, sdev,
 			    "Failed to get device information, status 0x%02x\n",
@@ -1475,7 +1475,7 @@ static ssize_t myrs_store_flush_cache(struct device *dev,
 	myrs_hba *cs = (myrs_hba *)shost->hostdata;
 	unsigned char status;
 
-	status = DAC960_V2_DeviceOperation(cs, DAC960_V2_PauseDevice,
+	status = DAC960_V2_DeviceOperation(cs, DAC960_V2_FlushDeviceData,
 					   DAC960_V2_RAID_Controller);
 	if (status == DAC960_V2_NormalCompletion) {
 		shost_printk(KERN_INFO, shost, "Cache Flush Completed\n");
@@ -1711,8 +1711,7 @@ static int myrs_slave_alloc(struct scsi_device *sdev)
 		if (!ldev_info)
 			return -ENOMEM;
 
-		status = DAC960_V2_NewLogicalDeviceInfo(cs, ldev_num,
-							ldev_info);
+		status = myrs_get_ldev_info(cs, ldev_num, ldev_info);
 		if (status != DAC960_V2_NormalCompletion) {
 			sdev->hostdata = NULL;
 			kfree(ldev_info);
@@ -2040,8 +2039,7 @@ myrs_get_resync(struct device *dev)
 	if (ldev_info->RebuildInProgress) {
 		unsigned short ldev_num = ldev_info->LogicalDeviceNumber;
 
-		status = DAC960_V2_NewLogicalDeviceInfo(cs, ldev_num,
-							ldev_info);
+		status = myrs_get_ldev_info(cs, ldev_num, ldev_info);
 		percent_complete = ldev_info->RebuildBlockNumber * 100 /
 			ldev_info->ConfigurableDeviceSize;
 	}
@@ -2119,7 +2117,7 @@ void myrs_flush_cache(myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
 
-	DAC960_V2_DeviceOperation(cs, DAC960_V2_PauseDevice,
+	DAC960_V2_DeviceOperation(cs, DAC960_V2_FlushDeviceData,
 				  DAC960_V2_RAID_Controller);
 }
 
@@ -2251,14 +2249,15 @@ unsigned long myrs_monitor(myr_hba *c)
 		struct scsi_device *sdev;
 		shost_for_each_device(sdev, c->host) {
 			myrs_ldev_info *ldev_info;
+			int ldev_num;
+
 			if (sdev->channel < c->PhysicalChannelCount)
 				continue;
 			ldev_info = sdev->hostdata;
 			if (!ldev_info)
 				continue;
-			status = DAC960_V2_NewLogicalDeviceInfo(cs,
-						ldev_info->LogicalDeviceNumber,
-						ldev_info);
+			ldev_num = ldev_info->LogicalDeviceNumber;
+			myrs_get_ldev_info(cs, ldev_num, ldev_info);
 		}
 		cs->NeedControllerInformation = true;
 	}
