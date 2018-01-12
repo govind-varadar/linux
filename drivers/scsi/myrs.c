@@ -418,8 +418,15 @@ DAC960_V2_NewPhysicalDeviceInfo(myrs_hba *cs,
 	myr_hba *c = &cs->common;
 	myrs_cmdblk *cmd_blk = &cs->dcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
+	dma_addr_t pdev_info_addr;
 	myrs_sgl *sgl;
 	unsigned char status;
+
+	pdev_info_addr = dma_map_single(&c->pdev->dev, pdev_info,
+					sizeof(myrs_pdev_info),
+					DMA_FROM_DEVICE);
+	if (dma_mapping_error(&c->pdev->dev, pdev_info_addr))
+		return DAC960_V2_AbnormalCompletion;
 
 	mutex_lock(&cs->dcmd_mutex);
 	myrs_reset_cmd(cmd_blk);
@@ -427,24 +434,23 @@ DAC960_V2_NewPhysicalDeviceInfo(myrs_hba *cs,
 	mbox->PhysicalDeviceInfo.id = DAC960_DirectCommandIdentifier;
 	mbox->PhysicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->PhysicalDeviceInfo.control.NoAutoRequestSense = true;
-	mbox->PhysicalDeviceInfo.dma_size =
-		sizeof(myrs_pdev_info);
+	mbox->PhysicalDeviceInfo.dma_size = sizeof(myrs_pdev_info);
 	mbox->PhysicalDeviceInfo.pdev.LogicalUnit = LogicalUnit;
 	mbox->PhysicalDeviceInfo.pdev.TargetID = TargetID;
 	mbox->PhysicalDeviceInfo.pdev.Channel = Channel;
 	mbox->PhysicalDeviceInfo.ioctl_opcode =
 		DAC960_V2_GetPhysicalDeviceInfoValid;
 	sgl = &mbox->PhysicalDeviceInfo.dma_addr;
-	sgl->sge[0].sge_addr = cs->pdev_info_addr;
+	sgl->sge[0].sge_addr = pdev_info_addr;
 	sgl->sge[0].sge_count = mbox->PhysicalDeviceInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev,
 		"Sending GetPhysicalDeviceInfoValid for pdev %d:%d:%d\n",
 		Channel, TargetID, LogicalUnit);
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
-	if (status == DAC960_V2_NormalCompletion)
-		memcpy(pdev_info, &cs->pdev_info_buf, sizeof(*pdev_info));
 	mutex_unlock(&cs->dcmd_mutex);
+	dma_unmap_single(&c->pdev->dev, pdev_info_addr,
+			 sizeof(myrs_pdev_info), DMA_FROM_DEVICE);
 	return status;
 }
 
@@ -1530,14 +1536,12 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 			myrs_ldev_info *ldev_info = sdev->hostdata;
 
 			mbox->SCSI_10.opcode = DAC960_V2_SCSI_10;
-			mbox->SCSI_10.pdev.LogicalUnit =
-				ldev_info->LogicalUnit;
+			mbox->SCSI_10.pdev.LogicalUnit = ldev_info->LogicalUnit;
 			mbox->SCSI_10.pdev.TargetID = ldev_info->TargetID;
 			mbox->SCSI_10.pdev.Channel = ldev_info->Channel;
 			mbox->SCSI_10.pdev.Controller = 0;
 		} else {
-			mbox->SCSI_10.opcode =
-				DAC960_V2_SCSI_10_Passthru;
+			mbox->SCSI_10.opcode = DAC960_V2_SCSI_10_Passthru;
 			mbox->SCSI_10.pdev.LogicalUnit = sdev->lun;
 			mbox->SCSI_10.pdev.TargetID = sdev->id;
 			mbox->SCSI_10.pdev.Channel = sdev->channel;
