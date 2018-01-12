@@ -192,16 +192,13 @@ typedef struct myr_hba_s
 	DAC960_HardwareType_T HardwareType;
 	phys_addr_t IO_Address;
 	phys_addr_t PCI_Address;
-	struct pci_dev *PCIDevice;
+	struct pci_dev *pdev;
 	struct Scsi_Host *host;
 	unsigned char ControllerNumber;
 	unsigned char ControllerName[4];
 	unsigned char ModelName[20];
 	unsigned char FullModelName[28];
 	unsigned char FirmwareVersion[12];
-	unsigned char Bus;
-	unsigned char Device;
-	unsigned char Function;
 	unsigned char IRQ_Channel;
 	unsigned char MemorySize;
 	unsigned char LogicalDriveCount;
@@ -209,9 +206,6 @@ typedef struct myr_hba_s
 	unsigned char PhysicalChannelMax;
 	unsigned char LogicalChannelCount;
 	unsigned char LogicalChannelMax;
-	unsigned short ControllerQueueDepth;
-	unsigned short ControllerScatterGatherLimit;
-	u64		BounceBufferLimit;
 	struct dma_loaf DmaPages;
 	unsigned long PrimaryMonitoringTime;
 	unsigned long SecondaryMonitoringTime;

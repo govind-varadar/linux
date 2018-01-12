@@ -410,7 +410,7 @@ typedef struct myrb_ldev_info_s
 */
 
 typedef myrb_ldev_info
-DAC960_V1_LogicalDeviceInfoArray_T[DAC960_MaxLogicalDrives];
+myrb_ldev_info_arr[DAC960_MaxLogicalDrives];
 
 
 /*
@@ -853,8 +853,8 @@ typedef struct myrb_hba_s
 	dma_addr_t RebuildProgressDMA;
 	unsigned short LastRebuildStatus;
 
-	DAC960_V1_LogicalDeviceInfoArray_T *LogicalDeviceInfo;
-	dma_addr_t LogicalDeviceInfoDMA;
+	myrb_ldev_info_arr *ldev_info_buf;
+	dma_addr_t ldev_info_addr;
 
 	DAC960_V1_BackgroundInitializationStatus_T
 	*BackgroundInitializationStatus;

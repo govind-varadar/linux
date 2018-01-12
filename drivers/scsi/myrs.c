@@ -558,7 +558,7 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 {
 	myr_hba *c = &cs->common;
 	void __iomem *base = c->io_addr;
-	struct pci_dev *pdev = c->PCIDevice;
+	struct pci_dev *pdev = c->pdev;
 	struct dma_loaf *DmaPages = &c->DmaPages;
 	size_t DmaPagesSize;
 	size_t CommandMailboxesSize;
@@ -574,14 +574,11 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 	dma_addr_t	CommandMailboxDMA;
 	unsigned char status;
 
-	if (!pci_set_dma_mask(pdev, DMA_BIT_MASK(64)))
-		c->BounceBufferLimit = DMA_BIT_MASK(64);
-	else if (!pci_set_dma_mask(pdev, DMA_BIT_MASK(32)))
-		c->BounceBufferLimit = DMA_BIT_MASK(32);
-	else {
-		dev_err(&pdev->dev, "DMA mask out of range\n");
-		return false;
-	}
+	if (pci_set_dma_mask(pdev, DMA_BIT_MASK(64)))
+		if (pci_set_dma_mask(pdev, DMA_BIT_MASK(32))) {
+			dev_err(&pdev->dev, "DMA mask out of range\n");
+			return false;
+		}
 
 	/* This is a temporary dma mapping, used only in the scope of this function */
 	mbox = pci_alloc_consistent(pdev,
@@ -800,16 +797,12 @@ int DAC960_V2_ReadControllerConfiguration(myr_hba *c)
 	 * the Controller Queue Depth; tag '1' is reserved for
 	 * direct commands, and tag '2' for monitoring commands.
 	 */
-	c->ControllerQueueDepth = info->MaximumParallelCommands;
-	shost->can_queue = c->ControllerQueueDepth - 3;
+	shost->can_queue = info->MaximumParallelCommands - 3;
 	if (shost->can_queue > DAC960_MaxDriverQueueDepth)
 		shost->can_queue = DAC960_MaxDriverQueueDepth;
 	c->LogicalDriveCount = info->LogicalDevicesPresent;
-	shost->max_sectors =
-		info->MaximumDataTransferSizeInBlocks;
-	c->ControllerScatterGatherLimit =
-		info->MaximumScatterGatherEntries;
-	shost->sg_tablesize = c->ControllerScatterGatherLimit;
+	shost->max_sectors = info->MaximumDataTransferSizeInBlocks;
+	shost->sg_tablesize = info->MaximumScatterGatherEntries;
 	if (shost->sg_tablesize > DAC960_V2_ScatterGatherLimit)
 		shost->sg_tablesize = DAC960_V2_ScatterGatherLimit;
 	return 0;
@@ -1068,6 +1061,11 @@ void myrs_get_ctlr_info(myr_hba *c)
 	myrs_hba *cs = container_of(c, myrs_hba, common);
 	myrs_ctlr_info *info = &cs->ctlr_info;
 
+	shost_printk(KERN_INFO, c->host,
+		     "  Driver Queue Depth: %d,"
+		     " Scatter/Gather Limit: %d of %d Segments\n",
+		     c->host->can_queue, c->host->sg_tablesize,
+		     DAC960_V2_ScatterGatherLimit);
 	for (i = 0; i < c->PhysicalChannelMax; i++) {
 		if (!info->MaximumTargetsPerChannel[i])
 			continue;
@@ -2353,7 +2351,7 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 			cmd_blk->sense_len = NextStatusMailbox->sense_len;
 			cmd_blk->residual = NextStatusMailbox->residual;
 		} else
-			dev_err(&c->PCIDevice->dev,
+			dev_err(&c->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		memset(NextStatusMailbox, 0, sizeof(myrs_stat_mbox));
@@ -2462,7 +2460,7 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 			cmd_blk->sense_len = NextStatusMailbox->sense_len;
 			cmd_blk->residual = NextStatusMailbox->residual;
 		} else
-			dev_err(&c->PCIDevice->dev,
+			dev_err(&c->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		memset(NextStatusMailbox, 0, sizeof(myrs_stat_mbox));
@@ -2571,7 +2569,7 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 			cmd_blk->sense_len = NextStatusMailbox->sense_len;
 			cmd_blk->residual = NextStatusMailbox->residual;
 		} else
-			dev_err(&c->PCIDevice->dev,
+			dev_err(&c->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		memset(NextStatusMailbox, 0, sizeof(myrs_stat_mbox));

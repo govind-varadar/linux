@@ -133,11 +133,7 @@ static void DAC960_ReportControllerConfiguration(myr_hba *c)
 			c->IRQ_Channel);
 	shost_printk(KERN_INFO, c->host,
 		"  Controller Queue Depth: %d, Maximum Blocks per Command: %d\n",
-		c->ControllerQueueDepth, c->host->max_sectors);
-	shost_printk(KERN_INFO, c->host,
-		"  Driver Queue Depth: %d, Scatter/Gather Limit: %d of %d Segments\n",
-		c->host->can_queue, c->host->sg_tablesize,
-		c->ControllerScatterGatherLimit);
+		c->host->can_queue, c->host->max_sectors);
 	if (c->FirmwareType == DAC960_V1_Controller)
 		myrb_get_ctlr_info(c);
 	else
@@ -158,7 +154,7 @@ static void DAC960_ReportControllerConfiguration(myr_hba *c)
 bool myr_err_status(myr_hba *c, unsigned char ErrorStatus,
 		    unsigned char Parameter0, unsigned char Parameter1)
 {
-	struct pci_dev *pdev = c->PCIDevice;
+	struct pci_dev *pdev = c->pdev;
 
 	switch (ErrorStatus) {
 	case 0x00:
@@ -216,7 +212,7 @@ bool myr_err_status(myr_hba *c, unsigned char ErrorStatus,
  */
 static void DAC960_DetectCleanup(myr_hba *c)
 {
-	struct pci_dev *pdev = c->PCIDevice;
+	struct pci_dev *pdev = c->pdev;
 
 	/* Free the memory mailbox, status, and related structures */
 	free_dma_loaf(pdev, &c->DmaPages);
@@ -250,7 +246,6 @@ DAC960_DetectController(struct pci_dev *pdev,
 	irq_handler_t InterruptHandler = privdata->InterruptHandler;
 	unsigned int MemoryWindowSize = privdata->MemoryWindowSize;
 	myr_hba *c = NULL;
-	unsigned char DeviceFunction = pdev->devfn;
 	void __iomem *base;
 
 	if (privdata->FirmwareType == DAC960_V1_Controller)
@@ -263,12 +258,9 @@ DAC960_DetectController(struct pci_dev *pdev,
 		return NULL;
 	}
 	c->ControllerNumber = DAC960_ControllerCount++;
-	c->Bus = pdev->bus->number;
 	c->FirmwareType = privdata->FirmwareType;
 	c->HardwareType = privdata->HardwareType;
-	c->Device = DeviceFunction >> 3;
-	c->Function = DeviceFunction & 0x7;
-	c->PCIDevice = pdev;
+	c->pdev = pdev;
 	strcpy(c->FullModelName, "DAC960");
 
 	snprintf(c->work_q_name, sizeof(c->work_q_name),
@@ -332,7 +324,7 @@ Failure:
 
 static bool DAC960_CreateAuxiliaryStructures(myr_hba *c)
 {
-	struct pci_dev *pdev = c->PCIDevice;
+	struct pci_dev *pdev = c->pdev;
 
 	if (c->FirmwareType == DAC960_V1_Controller)
 		return myrb_create_mempools(pdev, c);

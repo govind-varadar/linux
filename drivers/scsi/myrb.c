@@ -149,86 +149,28 @@ static inline void myrb_reset_cmd(myrb_cmdblk *cmd_blk)
  * myrb_qcmd queues Command for DAC960 V1 Series Controller
  */
 
-static void myrb_qcmd(myrb_hba *c, myrb_cmdblk *cmd_blk)
+static void myrb_qcmd(myrb_hba *cb, myrb_cmdblk *cmd_blk)
 {
-	void __iomem *base = c->common.io_addr;
+	void __iomem *base = cb->common.io_addr;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-	myrb_cmd_mbox *next_mbox = c->NextCommandMailbox;
+	myrb_cmd_mbox *next_mbox = cb->NextCommandMailbox;
 
-	c->WriteCommandMailbox(next_mbox, mbox);
-	if (c->PreviousCommandMailbox1->Words[0] == 0 ||
-	    c->PreviousCommandMailbox2->Words[0] == 0)
-		c->MailboxNewCommand(base);
-	c->PreviousCommandMailbox2 = c->PreviousCommandMailbox1;
-	c->PreviousCommandMailbox1 = next_mbox;
-	if (++next_mbox > c->LastCommandMailbox)
-		next_mbox = c->FirstCommandMailbox;
-	c->NextCommandMailbox = next_mbox;
+	cb->WriteCommandMailbox(next_mbox, mbox);
+	if (cb->PreviousCommandMailbox1->Words[0] == 0 ||
+	    cb->PreviousCommandMailbox2->Words[0] == 0)
+		cb->MailboxNewCommand(base);
+	cb->PreviousCommandMailbox2 = cb->PreviousCommandMailbox1;
+	cb->PreviousCommandMailbox1 = next_mbox;
+	if (++next_mbox > cb->LastCommandMailbox)
+		next_mbox = cb->FirstCommandMailbox;
+	cb->NextCommandMailbox = next_mbox;
 }
 
 /*
-  DAC960_PD_QueueCommand queues Command for DAC960 PD Series Controllers.
-*/
-
-static void DAC960_PD_QueueCommand(myrb_hba *c, myrb_cmdblk *cmd_blk)
-{
-	void __iomem *base = c->common.io_addr;
-	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-
-	while (DAC960_PD_MailboxFullP(base))
-		udelay(1);
-	DAC960_PD_WriteCommandMailbox(base, mbox);
-	DAC960_PD_NewCommand(base);
-}
-
-
-/*
-  DAC960_P_QueueCommand queues Command for DAC960 P Series Controllers.
-*/
-
-static void DAC960_P_QueueCommand(myrb_hba *c, myrb_cmdblk *cmd_blk)
-{
-	void __iomem *base = c->common.io_addr;
-	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-
-	switch (mbox->Common.opcode) {
-	case DAC960_V1_Enquiry:
-		mbox->Common.opcode = DAC960_V1_Enquiry_Old;
-		break;
-	case DAC960_V1_GetDeviceState:
-		mbox->Common.opcode = DAC960_V1_GetDeviceState_Old;
-		break;
-	case DAC960_V1_Read:
-		mbox->Common.opcode = DAC960_V1_Read_Old;
-		DAC960_PD_To_P_TranslateReadWriteCommand(cmd_blk);
-		break;
-	case DAC960_V1_Write:
-		mbox->Common.opcode = DAC960_V1_Write_Old;
-		DAC960_PD_To_P_TranslateReadWriteCommand(cmd_blk);
-		break;
-	case DAC960_V1_ReadWithScatterGather:
-		mbox->Common.opcode = DAC960_V1_ReadWithScatterGather_Old;
-		DAC960_PD_To_P_TranslateReadWriteCommand(cmd_blk);
-		break;
-	case DAC960_V1_WriteWithScatterGather:
-		mbox->Common.opcode = DAC960_V1_WriteWithScatterGather_Old;
-		DAC960_PD_To_P_TranslateReadWriteCommand(cmd_blk);
-		break;
-	default:
-		break;
-	}
-	while (DAC960_PD_MailboxFullP(base))
-		udelay(1);
-	DAC960_PD_WriteCommandMailbox(base, mbox);
-	DAC960_PD_NewCommand(base);
-}
-
-/*
- * DAC960_V1_ExecuteCommand executes V1 Command and waits for completion.
+ * myrb_exec_cmd executes V1 Command and waits for completion.
  */
 
-static void DAC960_V1_ExecuteCommand(myrb_hba *cb,
-				     myrb_cmdblk *cmd_blk)
+static void myrb_exec_cmd(myrb_hba *cb, myrb_cmdblk *cmd_blk)
 {
 	DECLARE_COMPLETION_ONSTACK(Completion);
 	unsigned long flags;
@@ -245,14 +187,14 @@ static void DAC960_V1_ExecuteCommand(myrb_hba *cb,
 }
 
 /*
-  DAC960_V1_ExecuteType3 executes a DAC960 V1 Firmware Controller Type 3
+  myrb_exec_type3 executes a DAC960 V1 Firmware Controller Type 3
   Command and waits for completion.  It returns true on success and false
   on failure.
 */
 
-static unsigned short DAC960_V1_ExecuteType3(myrb_hba *cb,
-					     myrb_cmd_opcode op,
-					     dma_addr_t DataDMA)
+static unsigned short myrb_exec_type3(myrb_hba *cb,
+				      myrb_cmd_opcode op,
+				      dma_addr_t addr)
 {
 	myrb_cmdblk *cmd_blk = &cb->dcmd_blk;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
@@ -262,8 +204,8 @@ static unsigned short DAC960_V1_ExecuteType3(myrb_hba *cb,
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3.opcode = op;
-	mbox->Type3.BusAddress = DataDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	mbox->Type3.BusAddress = addr;
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cb->dcmd_mutex);
 	return status;
@@ -271,12 +213,12 @@ static unsigned short DAC960_V1_ExecuteType3(myrb_hba *cb,
 
 
 /*
-  DAC960_V1_ExecuteTypeB executes a DAC960 V1 Firmware Controller Type 3B
+  myrb_exec_type3B executes a DAC960 V1 Firmware Controller Type 3B
   Command and waits for completion.  It returns true on success and false
   on failure.
 */
 
-static unsigned short DAC960_V1_ExecuteType3B(myrb_hba *cb,
+static unsigned short myrb_exec_type3B(myrb_hba *cb,
 					      myrb_cmd_opcode op,
 					      unsigned char CommandOpcode2,
 					      dma_addr_t DataDMA)
@@ -291,7 +233,7 @@ static unsigned short DAC960_V1_ExecuteType3B(myrb_hba *cb,
 	mbox->Type3B.opcode = op;
 	mbox->Type3B.CommandOpcode2 = CommandOpcode2;
 	mbox->Type3B.BusAddress = DataDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cb->dcmd_mutex);
 	return status;
@@ -299,14 +241,14 @@ static unsigned short DAC960_V1_ExecuteType3B(myrb_hba *cb,
 
 
 /*
-  DAC960_V1_ExecuteType3D executes a DAC960 V1 Firmware Controller Type 3D
+  myrb_exec_type3D executes a DAC960 V1 Firmware Controller Type 3D
   Command and waits for completion.  It returns true on success and false
   on failure.
 */
 
-static unsigned short DAC960_V1_ExecuteType3D(myrb_hba *cb,
-					      myrb_cmd_opcode op,
-					      struct scsi_device *sdev)
+static unsigned short myrb_exec_type3D(myrb_hba *cb,
+				       myrb_cmd_opcode op,
+				       struct scsi_device *sdev)
 {
 	myrb_cmdblk *cmd_blk = &cb->dcmd_blk;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
@@ -325,7 +267,7 @@ static unsigned short DAC960_V1_ExecuteType3D(myrb_hba *cb,
 	mbox->Type3D.Channel = sdev->channel;
 	mbox->Type3D.TargetID = sdev->id;
 	mbox->Type3D.BusAddress = cb->NewDeviceStateDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion)
 		memcpy(pdev_info, cb->NewDeviceState, sizeof(*pdev_info));
@@ -377,7 +319,7 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myrb_hba *cb,
 	mbox->Type3E.OperationQualifier = 1;
 	mbox->Type3E.SequenceNumber = event;
 	mbox->Type3E.BusAddress = cb->EventLogEntryDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
 		DAC960_V1_EventLogEntry_T *EventLogEntry =
@@ -432,7 +374,7 @@ static void DAC960_V1_MonitorGetErrorTable(myrb_hba *cb)
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetErrorTable;
 	mbox->Type3.BusAddress = cb->NewErrorTableDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
 		DAC960_V1_ErrorTable_T *old_table = &cb->ErrorTable;
@@ -477,59 +419,45 @@ static void DAC960_V1_MonitorGetErrorTable(myrb_hba *cb)
 
 static unsigned short DAC960_V1_GetLogicalDriveInfo(myrb_hba *cb)
 {
-	myr_hba *c = &cb->common;
-	myrb_cmdblk *cmd_blk = &cb->dcmd_blk;
-	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
+	int ldev_num, ldev_cnt = cb->common.LogicalDriveCount;
+	int pdev_cnt = cb->common.PhysicalChannelCount;
+	struct Scsi_Host *shost = cb->common.host;
 
-	mutex_lock(&cb->dcmd_mutex);
-	myrb_reset_cmd(cmd_blk);
-	mbox->Type3.id = DAC960_DirectCommandIdentifier;
-	mbox->Type3.opcode = DAC960_V1_GetLogicalDeviceInfo;
-	mbox->Type3.BusAddress = cb->LogicalDeviceInfoDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
-	status = cmd_blk->status;
-	mutex_unlock(&cb->dcmd_mutex);
-	if (status == DAC960_V1_NormalCompletion) {
-		int ldev_num;
-		for (ldev_num = 0; ldev_num < c->LogicalDriveCount; ldev_num++) {
-			myrb_ldev_info *old = NULL;
-			myrb_ldev_info *new =
-				cb->LogicalDeviceInfo[ldev_num];
-			struct scsi_device *sdev;
-			unsigned short ldev_num;
-			myrb_devstate old_state =
-				DAC960_V1_Device_Offline;
+	status = myrb_exec_type3(cb, DAC960_V1_GetLogicalDeviceInfo,
+				 cb->ldev_info_addr);
+	if (status != DAC960_V1_NormalCompletion)
+		return status;
 
-			sdev = scsi_device_lookup(c->host,
-						  c->PhysicalChannelCount,
-						  ldev_num, 0);
-			if (sdev && sdev->hostdata)
-				old = sdev->hostdata;
-			else if (new->State == DAC960_V1_Device_Online) {
-				shost_printk(KERN_INFO, c->host,
-					     "Logical Drive %d is now Online\n",
-					     ldev_num);
-				scsi_add_device(c->host,
-						c->PhysicalChannelCount,
-						ldev_num, 0);
-				break;
-			}
-			if (old)
-				old_state = old->State;
-			if (new->State != old_state)
-				shost_printk(KERN_INFO, c->host,
-					 "Logical Drive %d is now %s\n",
-					 ldev_num,
-					 myrb_devstate_name(new->State));
-			if (old && new->WriteBack != old->WriteBack)
-				sdev_printk(KERN_INFO, sdev,
-					 "Logical Drive is now %s\n",
-					 (new->WriteBack
-					  ? "WRITE BACK" : "WRITE THRU"));
-			if (old)
-				memcpy(old, new, sizeof(*new));
+	for (ldev_num = 0; ldev_num < ldev_cnt; ldev_num++) {
+		myrb_ldev_info *old = NULL;
+		myrb_ldev_info *new = cb->ldev_info_buf[ldev_num];
+		struct scsi_device *sdev;
+		unsigned short ldev_num;
+		myrb_devstate old_state = DAC960_V1_Device_Offline;
+
+		sdev = scsi_device_lookup(shost, pdev_cnt, ldev_num, 0);
+		if (sdev && sdev->hostdata)
+			old = sdev->hostdata;
+		else if (new->State == DAC960_V1_Device_Online) {
+			shost_printk(KERN_INFO, shost,
+				     "Logical Drive %d is now Online\n",
+				     ldev_num);
+			scsi_add_device(shost, pdev_cnt, ldev_num, 0);
+			break;
 		}
+		if (old)
+			old_state = old->State;
+		if (new->State != old_state)
+			shost_printk(KERN_INFO, shost,
+				     "Logical Drive %d is now %s\n",
+				     ldev_num, myrb_devstate_name(new->State));
+		if (old && new->WriteBack != old->WriteBack)
+			sdev_printk(KERN_INFO, sdev,
+				    "Logical Drive is now WRITE %s\n",
+				    (new->WriteBack ? "BACK" : "THRU"));
+		if (old)
+			memcpy(old, new, sizeof(*new));
 	}
 	return status;
 }
@@ -552,7 +480,7 @@ static void DAC960_V1_MonitorRebuildProgress(myrb_hba *cb)
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
 	mbox->Type3.BusAddress = cb->RebuildProgressDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
 		unsigned int ldev_num =
@@ -624,7 +552,7 @@ static void DAC960_V1_ConsistencyCheckProgress(myrb_hba *cb)
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_RebuildStat;
 	mbox->Type3.BusAddress = cb->RebuildProgressDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
 		unsigned int ldev_num =
@@ -664,7 +592,7 @@ static void DAC960_V1_BackgroundInitialization(myrb_hba *cb)
 	mbox->Type3B.opcode = DAC960_V1_BackgroundInitializationControl;
 	mbox->Type3B.CommandOpcode2 = 0x20;
 	mbox->Type3B.BusAddress = cb->BackgroundInitializationStatusDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	bgi = cb->BackgroundInitializationStatus;
 	last_bgi = &cb->LastBackgroundInitializationStatus;
@@ -732,18 +660,9 @@ static void DAC960_V1_BackgroundInitialization(myrb_hba *cb)
 static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 {
 	myr_hba *c = &cb->common;
-	myrb_cmdblk *cmd_blk = &cb->dcmd_blk;
-	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
 
-	mutex_lock(&cb->dcmd_mutex);
-	myrb_reset_cmd(cmd_blk);
-	mbox->Type3.id = DAC960_DirectCommandIdentifier;
-	mbox->Type3.opcode = DAC960_V1_Enquiry;
-	mbox->Type3.BusAddress = cb->NewEnquiryDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
-	status = cmd_blk->status;
-	mutex_unlock(&cb->dcmd_mutex);
+	status = myrb_exec_type3(cb, DAC960_V1_Enquiry, cb->NewEnquiryDMA);
 	if (status == DAC960_V1_NormalCompletion) {
 		DAC960_V1_Enquiry_T *old = &cb->Enquiry;
 		DAC960_V1_Enquiry_T *new = cb->NewEnquiry;
@@ -805,8 +724,7 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 			c->SecondaryMonitoringTime = jiffies;
 		}
 		if (new->RebuildFlag == DAC960_V1_StandbyRebuildInProgress ||
-		    new->RebuildFlag
-		    == DAC960_V1_BackgroundRebuildInProgress ||
+		    new->RebuildFlag == DAC960_V1_BackgroundRebuildInProgress ||
 		    old->RebuildFlag == DAC960_V1_StandbyRebuildInProgress ||
 		    old->RebuildFlag == DAC960_V1_BackgroundRebuildInProgress) {
 			cb->NeedRebuildProgress = true;
@@ -849,8 +767,7 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 					 "Consistency Check Successfully Terminated\n");
 				break;
 			}
-		else if (new->RebuildFlag
-			 == DAC960_V1_BackgroundCheckInProgress)
+		else if (new->RebuildFlag == DAC960_V1_BackgroundCheckInProgress)
 			cb->NeedConsistencyCheckProgress = true;
 		if (new->RebuildFlag > DAC960_V1_BackgroundCheckInProgress) {
 			cb->PendingRebuildFlag = new->RebuildFlag;
@@ -880,7 +797,7 @@ static unsigned short DAC960_V1_SetDeviceState(myrb_hba *cb,
 	mbox->Type3D.Channel = sdev->channel;
 	mbox->Type3D.TargetID = sdev->id;
 	mbox->Type3D.State = State & 0x1F;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cb->dcmd_mutex);
 
@@ -900,7 +817,7 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 	myr_hba *c = &cb->common;
 	void __iomem *base = c->io_addr;
 	DAC960_HardwareType_T hw_type = c->HardwareType;
-	struct pci_dev *pdev = c->PCIDevice;
+	struct pci_dev *pdev = c->pdev;
 	struct dma_loaf *DmaPages = &c->DmaPages;
 	size_t DmaPagesSize;
 	size_t CommandMailboxesSize;
@@ -923,7 +840,6 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 		dev_err(&pdev->dev, "DMA mask out of range\n");
 		return false;
 	}
-	c->BounceBufferLimit = DMA_BIT_MASK(32);
 
 	if ((hw_type == DAC960_PD_Controller) || (hw_type == DAC960_P_Controller)) {
 		CommandMailboxesSize =  0;
@@ -936,7 +852,7 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 		sizeof(myrb_dcdb) + sizeof(DAC960_V1_Enquiry_T) +
 		sizeof(DAC960_V1_ErrorTable_T) + sizeof(DAC960_V1_EventLogEntry_T) +
 		sizeof(DAC960_V1_RebuildProgress_T) +
-		sizeof(DAC960_V1_LogicalDeviceInfoArray_T) +
+		sizeof(myrb_ldev_info_arr) +
 		sizeof(DAC960_V1_BackgroundInitializationStatus_T) +
 		sizeof(myrb_pdev_state);
 
@@ -987,9 +903,9 @@ skip_mailboxes:
 					       sizeof(DAC960_V1_RebuildProgress_T),
 					       &cb->RebuildProgressDMA);
 
-	cb->LogicalDeviceInfo = slice_dma_loaf(DmaPages,
-						       sizeof(DAC960_V1_LogicalDeviceInfoArray_T),
-						       &cb->LogicalDeviceInfoDMA);
+	cb->ldev_info_buf = slice_dma_loaf(DmaPages,
+					       sizeof(myrb_ldev_info_arr),
+					       &cb->ldev_info_addr);
 
 	cb->BackgroundInitializationStatus = slice_dma_loaf(DmaPages,
 							      sizeof(DAC960_V1_BackgroundInitializationStatus_T),
@@ -1112,7 +1028,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	DAC960_V1_Config2_T *Config2;
 	dma_addr_t Config2DMA;
 	struct Scsi_Host *shost = c->host;
-	struct pci_dev *pdev = c->PCIDevice;
+	struct pci_dev *pdev = c->pdev;
 	unsigned short status;
 	int ret = -ENODEV;
 
@@ -1141,14 +1057,14 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 		goto out;
 	}
 
-	status = DAC960_V1_ExecuteType3(cb, DAC960_V1_Enquiry2, Enquiry2DMA);
+	status = myrb_exec_type3(cb, DAC960_V1_Enquiry2, Enquiry2DMA);
 	if (status != DAC960_V1_NormalCompletion) {
 		shost_printk(KERN_WARNING, c->host,
 			     "Failed to issue V1 Enquiry2\n");
 		goto out;
 	}
 
-	status = DAC960_V1_ExecuteType3(cb, DAC960_V1_ReadConfig2, Config2DMA);
+	status = myrb_exec_type3(cb, DAC960_V1_ReadConfig2, Config2DMA);
 	if (status != DAC960_V1_NormalCompletion) {
 		shost_printk(KERN_WARNING, c->host,
 			     "Failed to issue ReadConfig2\n");
@@ -1309,19 +1225,18 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	  less than the Controller Queue Depth to allow for an automatic drive
 	  rebuild operation.
 	*/
-	c->ControllerQueueDepth = cb->Enquiry.MaxCommands;
-	if (c->ControllerQueueDepth < 3)
-		c->ControllerQueueDepth = Enquiry2->MaxCommands;
-	if (c->ControllerQueueDepth < 3)
+	shost->can_queue = cb->Enquiry.MaxCommands;
+	if (shost->can_queue < 3)
+		shost->can_queue = Enquiry2->MaxCommands;
+	if (shost->can_queue < 3)
 		/* Play safe and disable TCQ */
-		c->ControllerQueueDepth = 3;
-	shost->can_queue = c->ControllerQueueDepth - 2;
+		shost->can_queue = 1;
+
 	if (shost->can_queue > DAC960_MaxDriverQueueDepth)
 		shost->can_queue = DAC960_MaxDriverQueueDepth;
 	c->LogicalDriveCount = cb->Enquiry.NumberOfLogicalDrives;
 	shost->max_sectors = Enquiry2->MaxBlocksPerCommand;
-	c->ControllerScatterGatherLimit = Enquiry2->MaxScatterGatherEntries;
-	shost->sg_tablesize = c->ControllerScatterGatherLimit;
+	shost->sg_tablesize = Enquiry2->MaxScatterGatherEntries;
 	if (shost->sg_tablesize > DAC960_V1_ScatterGatherLimit)
 		shost->sg_tablesize = DAC960_V1_ScatterGatherLimit;
 	/*
@@ -1354,7 +1269,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	    (c->FirmwareVersion[0] == '5' &&
 	     strcmp(c->FirmwareVersion, "5.08") >= 0)) {
 		cb->BackgroundInitializationStatusSupported = true;
-		DAC960_V1_ExecuteType3B(cb,
+		myrb_exec_type3B(cb,
 					DAC960_V1_BackgroundInitializationControl, 0x20,
 					cb->BackgroundInitializationStatusDMA);
 		memcpy(&cb->LastBackgroundInitializationStatus,
@@ -1764,7 +1679,7 @@ static int myrb_slave_alloc(struct scsi_device *sdev)
 		unsigned short ldev_num;
 
 		ldev_num = myrb_translate_ldev(&cb->common, sdev);
-		ldev_info = cb->LogicalDeviceInfo[ldev_num];
+		ldev_info = cb->ldev_info_buf[ldev_num];
 		if (ldev_info) {
 			enum raid_level level;
 
@@ -1803,7 +1718,7 @@ static int myrb_slave_alloc(struct scsi_device *sdev)
 		return 0;
 	}
 
-	status = DAC960_V1_ExecuteType3D(cb, DAC960_V1_GetDeviceState, sdev);
+	status = myrb_exec_type3D(cb, DAC960_V1_GetDeviceState, sdev);
 	if (status != DAC960_V1_NormalCompletion) {
 		dev_dbg(&sdev->sdev_gendev,
 			"Failed to get device state, status %x\n", status);
@@ -1814,13 +1729,12 @@ static int myrb_slave_alloc(struct scsi_device *sdev)
 int myrb_slave_configure(struct scsi_device *sdev)
 {
 	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
-	myr_hba *c = &cb->common;
 	myrb_ldev_info *ldev_info;
 
 	if (sdev->channel > sdev->host->max_id)
 		return -ENXIO;
 
-	if (sdev->channel < c->PhysicalChannelCount) {
+	if (sdev->channel < cb->common.PhysicalChannelCount) {
 		sdev->no_uld_attach = 1;
 		return 0;
 	}
@@ -1874,7 +1788,7 @@ static ssize_t myrb_show_dev_state(struct device *dev,
 		unsigned short status;
 		const char *name;
 
-		status = DAC960_V1_ExecuteType3D(cb, DAC960_V1_GetDeviceState,
+		status = myrb_exec_type3D(cb, DAC960_V1_GetDeviceState,
 						 sdev);
 		if (status != DAC960_V1_NormalCompletion)
 			sdev_printk(KERN_INFO, sdev,
@@ -2006,7 +1920,7 @@ static ssize_t myrb_show_dev_rebuild(struct device *dev,
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
 	mbox->Type3.BusAddress = cb->RebuildProgressDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
 		ldev_num = cb->RebuildProgress->LogicalDriveNumber;
@@ -2064,7 +1978,7 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
 	mbox->Type3.BusAddress = cb->RebuildProgressDMA;
-	DAC960_V1_ExecuteCommand(cb, cmd_blk);
+	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion)
 		ldev_num = cb->RebuildProgress->LogicalDriveNumber;
@@ -2093,11 +2007,11 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 			mbox->Type3C.LogicalDriveNumber = ldev_num;
 			mbox->Type3C.AutoRestore = true;
 		}
-		DAC960_V1_ExecuteCommand(cb, cmd_blk);
+		myrb_exec_cmd(cb, cmd_blk);
 		status = cmd_blk->status;
 		mutex_unlock(&cb->dcmd_mutex);
 	} else {
-		struct pci_dev *pdev = cb->common.PCIDevice;
+		struct pci_dev *pdev = cb->common.pdev;
 		unsigned char *rate;
 		dma_addr_t rate_addr;
 
@@ -2123,7 +2037,7 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 		mbox->Type3R.id = DAC960_DirectCommandIdentifier;
 		mbox->Type3R.RebuildRateConstant = 0xFF;
 		mbox->Type3R.BusAddress = rate_addr;
-		DAC960_V1_ExecuteCommand(cb, cmd_blk);
+		myrb_exec_cmd(cb, cmd_blk);
 		status = cmd_blk->status;
 		pci_free_consistent(pdev, sizeof(char), rate, rate_addr);
 		mutex_unlock(&cb->dcmd_mutex);
@@ -2208,7 +2122,7 @@ static ssize_t myrb_store_flush_cache(struct device *dev,
 	myrb_hba *cb = (myrb_hba *)shost->hostdata;
 	unsigned short status;
 
-	status = DAC960_V1_ExecuteType3(cb, DAC960_V1_Flush, 0);
+	status = myrb_exec_type3(cb, DAC960_V1_Flush, 0);
 	if (status == DAC960_V1_NormalCompletion) {
 		shost_printk(KERN_INFO, shost,
 			     "Cache Flush Completed\n");
@@ -2491,13 +2405,18 @@ void myrb_flush_cache(myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 
-	DAC960_V1_ExecuteType3(cb, DAC960_V1_Flush, 0);
+	myrb_exec_type3(cb, DAC960_V1_Flush, 0);
 }
 
 void myrb_get_ctlr_info(myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 
+	shost_printk(KERN_INFO, c->host,
+		     "  Driver Queue Depth: %d,"
+		     " Scatter/Gather Limit: %d of %d Segments\n",
+		     c->host->can_queue, c->host->sg_tablesize,
+		     DAC960_V1_ScatterGatherLimit);
 	shost_printk(KERN_INFO, c->host,
 		     "  Stripe Size: %dKB, Segment Size: %dKB, "
 		     "BIOS Geometry: %d/%d%s\n",
@@ -2638,7 +2557,7 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 		if (cmd_blk)
 			cmd_blk->status = NextStatusMailbox->status;
 		else
-			dev_err(&c->PCIDevice->dev,
+			dev_err(&c->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		memset(NextStatusMailbox, 0, sizeof(myrb_stat_mbox));
@@ -2747,7 +2666,7 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 		if (cmd_blk)
 			cmd_blk->status = NextStatusMailbox->status;
 		else
-			dev_err(&c->PCIDevice->dev,
+			dev_err(&c->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		memset(NextStatusMailbox, 0, sizeof(myrb_stat_mbox));
@@ -2771,6 +2690,22 @@ struct DAC960_privdata DAC960_PG_privdata = {
 	.InterruptHandler =	DAC960_PG_InterruptHandler,
 	.MemoryWindowSize =	DAC960_PG_RegisterWindowSize,
 };
+
+
+/*
+  DAC960_PD_QueueCommand queues Command for DAC960 PD Series Controllers.
+*/
+
+static void DAC960_PD_QueueCommand(myrb_hba *c, myrb_cmdblk *cmd_blk)
+{
+	void __iomem *base = c->common.io_addr;
+	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
+
+	while (DAC960_PD_MailboxFullP(base))
+		udelay(1);
+	DAC960_PD_WriteCommandMailbox(base, mbox);
+	DAC960_PD_NewCommand(base);
+}
 
 
 /*
@@ -2854,7 +2789,7 @@ static irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
 		if (cmd_blk)
 			cmd_blk->status = DAC960_PD_ReadStatusRegister(base);
 		else
-			dev_err(&c->PCIDevice->dev,
+			dev_err(&c->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		DAC960_PD_AcknowledgeInterrupt(base);
@@ -2876,6 +2811,48 @@ struct DAC960_privdata DAC960_PD_privdata = {
 	.InterruptHandler =	DAC960_PD_InterruptHandler,
 	.MemoryWindowSize =	DAC960_PD_RegisterWindowSize,
 };
+
+
+/*
+  DAC960_P_QueueCommand queues Command for DAC960 P Series Controllers.
+*/
+
+static void DAC960_P_QueueCommand(myrb_hba *c, myrb_cmdblk *cmd_blk)
+{
+	void __iomem *base = c->common.io_addr;
+	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
+
+	switch (mbox->Common.opcode) {
+	case DAC960_V1_Enquiry:
+		mbox->Common.opcode = DAC960_V1_Enquiry_Old;
+		break;
+	case DAC960_V1_GetDeviceState:
+		mbox->Common.opcode = DAC960_V1_GetDeviceState_Old;
+		break;
+	case DAC960_V1_Read:
+		mbox->Common.opcode = DAC960_V1_Read_Old;
+		DAC960_PD_To_P_TranslateReadWriteCommand(cmd_blk);
+		break;
+	case DAC960_V1_Write:
+		mbox->Common.opcode = DAC960_V1_Write_Old;
+		DAC960_PD_To_P_TranslateReadWriteCommand(cmd_blk);
+		break;
+	case DAC960_V1_ReadWithScatterGather:
+		mbox->Common.opcode = DAC960_V1_ReadWithScatterGather_Old;
+		DAC960_PD_To_P_TranslateReadWriteCommand(cmd_blk);
+		break;
+	case DAC960_V1_WriteWithScatterGather:
+		mbox->Common.opcode = DAC960_V1_WriteWithScatterGather_Old;
+		DAC960_PD_To_P_TranslateReadWriteCommand(cmd_blk);
+		break;
+	default:
+		break;
+	}
+	while (DAC960_PD_MailboxFullP(base))
+		udelay(1);
+	DAC960_PD_WriteCommandMailbox(base, mbox);
+	DAC960_PD_NewCommand(base);
+}
 
 
 /*
@@ -2966,7 +2943,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 			cmd_blk->status
 				= DAC960_PD_ReadStatusRegister(base);
 		else
-			dev_err(&c->PCIDevice->dev,
+			dev_err(&c->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		DAC960_PD_AcknowledgeInterrupt(base);
