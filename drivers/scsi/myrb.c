@@ -266,11 +266,11 @@ static unsigned short myrb_exec_type3D(myrb_hba *cb,
 	mbox->Type3D.opcode = op;
 	mbox->Type3D.Channel = sdev->channel;
 	mbox->Type3D.TargetID = sdev->id;
-	mbox->Type3D.BusAddress = cb->NewDeviceStateDMA;
+	mbox->Type3D.BusAddress = cb->pdev_state_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion)
-		memcpy(pdev_info, cb->NewDeviceState, sizeof(*pdev_info));
+		memcpy(pdev_info, cb->pdev_state_buf, sizeof(*pdev_info));
 	else {
 		kfree(pdev_info);
 		pdev_info = NULL;
@@ -479,23 +479,21 @@ static void DAC960_V1_MonitorRebuildProgress(myrb_hba *cb)
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
-	mbox->Type3.BusAddress = cb->RebuildProgressDMA;
+	mbox->Type3.BusAddress = cb->rbld_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		unsigned int ldev_num =
-			cb->RebuildProgress->LogicalDriveNumber;
-		unsigned int LogicalDriveSize =
-			cb->RebuildProgress->LogicalDriveSize;
+		unsigned int ldev_num = cb->rbld->LogicalDriveNumber;
+		unsigned int LogicalDriveSize = cb->rbld->LogicalDriveSize;
 		unsigned int BlocksCompleted =
-			LogicalDriveSize - cb->RebuildProgress->RemainingBlocks;
+			LogicalDriveSize - cb->rbld->RemainingBlocks;
 		struct scsi_device *sdev;
 
 		sdev = scsi_device_lookup(c->host,
 					  c->PhysicalChannelCount,
 					  ldev_num, 0);
 		if (status == DAC960_V1_NoRebuildOrCheckInProgress &&
-		    cb->LastRebuildStatus == DAC960_V1_NormalCompletion)
+		    cb->last_rbld_status == DAC960_V1_NormalCompletion)
 			status = DAC960_V1_RebuildSuccessful;
 		switch (status) {
 		case DAC960_V1_NormalCompletion:
@@ -531,7 +529,7 @@ static void DAC960_V1_MonitorRebuildProgress(myrb_hba *cb)
 				     "Rebuild Successfully Terminated\n");
 			break;
 		}
-		cb->LastRebuildStatus = status;
+		cb->last_rbld_status = status;
 	}
 }
 
@@ -551,16 +549,14 @@ static void DAC960_V1_ConsistencyCheckProgress(myrb_hba *cb)
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_RebuildStat;
-	mbox->Type3.BusAddress = cb->RebuildProgressDMA;
+	mbox->Type3.BusAddress = cb->rbld_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		unsigned int ldev_num =
-			cb->RebuildProgress->LogicalDriveNumber;
-		unsigned int LogicalDriveSize =
-			cb->RebuildProgress->LogicalDriveSize;
+		unsigned int ldev_num = cb->rbld->LogicalDriveNumber;
+		unsigned int LogicalDriveSize = cb->rbld->LogicalDriveSize;
 		unsigned int BlocksCompleted =
-			LogicalDriveSize - cb->RebuildProgress->RemainingBlocks;
+			LogicalDriveSize - cb->rbld->RemainingBlocks;
 		struct scsi_device *sdev;
 
 		sdev = scsi_device_lookup(c->host, c->PhysicalChannelCount,
@@ -574,16 +570,16 @@ static void DAC960_V1_ConsistencyCheckProgress(myrb_hba *cb)
 
 
 /*
-  DAC960_V1_BackgroundInitialization executes a DAC960 V1 Firmware Controller
+  myrb_bgi_control executes a DAC960 V1 Firmware Controller
   Type 3B Command and waits for completion.
 */
 
-static void DAC960_V1_BackgroundInitialization(myrb_hba *cb)
+static void myrb_bgi_control(myrb_hba *cb)
 {
 	myr_hba *c = &cb->common;
 	myrb_cmdblk *cmd_blk = &cb->mcmd_blk;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-	DAC960_V1_BackgroundInitializationStatus_T *bgi, *last_bgi;
+	myrb_bgi_status *bgi, *last_bgi;
 	struct scsi_device *sdev;
 	unsigned short status;
 
@@ -591,27 +587,25 @@ static void DAC960_V1_BackgroundInitialization(myrb_hba *cb)
 	mbox->Type3B.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3B.opcode = DAC960_V1_BackgroundInitializationControl;
 	mbox->Type3B.CommandOpcode2 = 0x20;
-	mbox->Type3B.BusAddress = cb->BackgroundInitializationStatusDMA;
+	mbox->Type3B.BusAddress = cb->bgi_status_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
-	bgi = cb->BackgroundInitializationStatus;
-	last_bgi = &cb->LastBackgroundInitializationStatus;
+	bgi = cb->bgi_status_buf;
+	last_bgi = &cb->bgi_status_old;
 	sdev = scsi_device_lookup(c->host, c->PhysicalChannelCount,
 				  bgi->LogicalDriveNumber, 0);
 	switch (status) {
 	case DAC960_V1_NormalCompletion:
 		switch (bgi->Status) {
-		case DAC960_V1_BackgroundInitializationInvalid:
+		case MYRB_BGI_INVALID:
 			break;
-		case DAC960_V1_BackgroundInitializationStarted:
+		case MYRB_BGI_STARTED:
 			sdev_printk(KERN_INFO, sdev,
 				    "Background Initialization Started\n");
 			break;
-		case DAC960_V1_BackgroundInitializationInProgress:
-			if (bgi->BlocksCompleted ==
-			    last_bgi->BlocksCompleted &&
-			    bgi->LogicalDriveNumber ==
-			    last_bgi->LogicalDriveNumber)
+		case MYRB_BGI_INPROGRESS:
+			if (bgi->BlocksCompleted == last_bgi->BlocksCompleted &&
+			    bgi->LogicalDriveNumber == last_bgi->LogicalDriveNumber)
 				break;
 			sdev_printk(KERN_INFO, sdev,
 				 "Background Initialization in Progress: "
@@ -619,33 +613,30 @@ static void DAC960_V1_BackgroundInitialization(myrb_hba *cb)
 				 (100 * (bgi->BlocksCompleted >> 7))
 				 / (bgi->LogicalDriveSize >> 7));
 			break;
-		case DAC960_V1_BackgroundInitializationSuspended:
+		case MYRB_BGI_SUSPENDED:
 			sdev_printk(KERN_INFO, sdev,
 				    "Background Initialization Suspended\n");
 			break;
-		case DAC960_V1_BackgroundInitializationCancelled:
+		case MYRB_BGI_CANCELLED:
 			sdev_printk(KERN_INFO, sdev,
 				    "Background Initialization Cancelled\n");
 			break;
 		}
-		memcpy(&cb->LastBackgroundInitializationStatus,
-		       cb->BackgroundInitializationStatus,
-		       sizeof(DAC960_V1_BackgroundInitializationStatus_T));
+		memcpy(&cb->bgi_status_old, cb->bgi_status_buf,
+		       sizeof(myrb_bgi_status));
 		break;
 	case DAC960_V1_BackgroundInitSuccessful:
-		if (bgi->Status ==
-		    DAC960_V1_BackgroundInitializationInProgress)
+		if (bgi->Status == MYRB_BGI_INPROGRESS)
 			sdev_printk(KERN_INFO, sdev,
 				    "Background Initialization "
 				    "Completed Successfully\n");
-		bgi->Status = DAC960_V1_BackgroundInitializationInvalid;
+		bgi->Status = MYRB_BGI_INVALID;
 		break;
 	case DAC960_V1_BackgroundInitAborted:
-		if (bgi->Status ==
-		    DAC960_V1_BackgroundInitializationInProgress)
+		if (bgi->Status ==  MYRB_BGI_INPROGRESS)
 			sdev_printk(KERN_INFO, sdev,
 				    "Background Initialization Aborted\n");
-		bgi->Status = DAC960_V1_BackgroundInitializationInvalid;
+		bgi->Status = MYRB_BGI_INVALID;
 		break;
 	case DAC960_V1_NoBackgroundInitInProgress:
 		break;
@@ -690,13 +681,11 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 				  ? "TRUE" : "FALSE"));
 		if (new->EventLogSequenceNumber !=
 		    old->EventLogSequenceNumber) {
-			cb->NewEventLogSequenceNumber =
-				new->EventLogSequenceNumber;
-			cb->NeedErrorTableInformation = true;
+			cb->new_ev_seq = new->EventLogSequenceNumber;
+			cb->need_err_info = true;
 			shost_printk(KERN_INFO, c->host,
 				     "Event log %d/%d (%d/%d) available\n",
-				     cb->OldEventLogSequenceNumber,
-				     cb->NewEventLogSequenceNumber,
+				     cb->old_ev_seq, cb->new_ev_seq,
 				     old->EventLogSequenceNumber,
 				     new->EventLogSequenceNumber);
 		}
@@ -713,24 +702,22 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 				     new->CriticalLogicalDriveCount,
 				     new->OfflineLogicalDriveCount,
 				     new->NumberOfLogicalDrives);
-			cb->NeedLogicalDeviceInfo = true;
+			cb->need_ldev_info = true;
 		}
 		if ((new->DeadDriveCount > 0 ||
 		     new->DeadDriveCount != old->DeadDriveCount) ||
 		    time_after_eq(jiffies, c->SecondaryMonitoringTime
 				  + DAC960_SecondaryMonitoringInterval)) {
-			cb->NeedBackgroundInitializationStatus =
-				cb->BackgroundInitializationStatusSupported;
+			cb->need_bgi_status = cb->bgi_status_supported;
 			c->SecondaryMonitoringTime = jiffies;
 		}
 		if (new->RebuildFlag == DAC960_V1_StandbyRebuildInProgress ||
 		    new->RebuildFlag == DAC960_V1_BackgroundRebuildInProgress ||
 		    old->RebuildFlag == DAC960_V1_StandbyRebuildInProgress ||
 		    old->RebuildFlag == DAC960_V1_BackgroundRebuildInProgress) {
-			cb->NeedRebuildProgress = true;
-			cb->RebuildProgressFirst =
-				(new->CriticalLogicalDriveCount <
-				 old->CriticalLogicalDriveCount);
+			cb->need_rbld = true;
+			cb->rbld_first = (new->CriticalLogicalDriveCount <
+					  old->CriticalLogicalDriveCount);
 		}
 		if (old->RebuildFlag == DAC960_V1_BackgroundCheckInProgress)
 			switch (new->RebuildFlag) {
@@ -742,7 +729,7 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 			case DAC960_V1_BackgroundRebuildInProgress:
 				break;
 			case DAC960_V1_BackgroundCheckInProgress:
-				cb->NeedConsistencyCheckProgress = true;
+				cb->need_cc_status = true;
 				break;
 			case DAC960_V1_StandbyRebuildCompletedWithError:
 				shost_printk(KERN_INFO, c->host,
@@ -768,11 +755,8 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 				break;
 			}
 		else if (new->RebuildFlag == DAC960_V1_BackgroundCheckInProgress)
-			cb->NeedConsistencyCheckProgress = true;
-		if (new->RebuildFlag > DAC960_V1_BackgroundCheckInProgress) {
-			cb->PendingRebuildFlag = new->RebuildFlag;
-			cb->RebuildFlagPending = true;
-		}
+			cb->need_cc_status = true;
+
 		memcpy(old, new, sizeof(DAC960_V1_Enquiry_T));
 	}
 	return status;
@@ -851,9 +835,9 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
 		sizeof(myrb_dcdb) + sizeof(DAC960_V1_Enquiry_T) +
 		sizeof(DAC960_V1_ErrorTable_T) + sizeof(DAC960_V1_EventLogEntry_T) +
-		sizeof(DAC960_V1_RebuildProgress_T) +
+		sizeof(myrb_rbld_progress) +
 		sizeof(myrb_ldev_info_arr) +
-		sizeof(DAC960_V1_BackgroundInitializationStatus_T) +
+		sizeof(myrb_bgi_status) +
 		sizeof(myrb_pdev_state);
 
 	if (!init_dma_loaf(pdev, DmaPages, DmaPagesSize))
@@ -899,27 +883,23 @@ skip_mailboxes:
 					     sizeof(DAC960_V1_EventLogEntry_T),
 					     &cb->EventLogEntryDMA);
 
-	cb->RebuildProgress = slice_dma_loaf(DmaPages,
-					       sizeof(DAC960_V1_RebuildProgress_T),
-					       &cb->RebuildProgressDMA);
+	cb->rbld = slice_dma_loaf(DmaPages, sizeof(myrb_rbld_progress),
+				  &cb->rbld_addr);
 
-	cb->ldev_info_buf = slice_dma_loaf(DmaPages,
-					       sizeof(myrb_ldev_info_arr),
-					       &cb->ldev_info_addr);
+	cb->ldev_info_buf = slice_dma_loaf(DmaPages, sizeof(myrb_ldev_info_arr),
+					   &cb->ldev_info_addr);
 
-	cb->BackgroundInitializationStatus = slice_dma_loaf(DmaPages,
-							      sizeof(DAC960_V1_BackgroundInitializationStatus_T),
-							      &cb->BackgroundInitializationStatusDMA);
+	cb->bgi_status_buf = slice_dma_loaf(DmaPages, sizeof(myrb_bgi_status),
+					    &cb->bgi_status_addr);
 
-	cb->NewDeviceState = slice_dma_loaf(DmaPages,
-					      sizeof(myrb_pdev_state),
-					      &cb->NewDeviceStateDMA);
+	cb->pdev_state_buf = slice_dma_loaf(DmaPages, sizeof(myrb_pdev_state),
+					    &cb->pdev_state_addr);
 
 	if ((hw_type == DAC960_PD_Controller) || (hw_type == DAC960_P_Controller))
 		return true;
 
 	/* Enable the Memory Mailbox Interface. */
-	cb->DualModeMemoryMailboxInterface = true;
+	cb->dual_mode_interface = true;
 	mbox.TypeX.opcode = 0x2B;
 	mbox.TypeX.id = 0;
 	mbox.TypeX.CommandOpcode2 = 0x14;
@@ -961,7 +941,7 @@ skip_mailboxes:
 			DAC960_LA_AcknowledgeHardwareMailboxStatus(base);
 			if (status == DAC960_V1_NormalCompletion)
 				return true;
-			cb->DualModeMemoryMailboxInterface = false;
+			cb->dual_mode_interface = false;
 			mbox.TypeX.CommandOpcode2 = 0x10;
 			break;
 		case DAC960_PG_Controller:
@@ -998,7 +978,7 @@ skip_mailboxes:
 			DAC960_PG_AcknowledgeHardwareMailboxStatus(base);
 			if (status == DAC960_V1_NormalCompletion)
 				return true;
-			cb->DualModeMemoryMailboxInterface = false;
+			cb->dual_mode_interface = false;
 			mbox.TypeX.CommandOpcode2 = 0x10;
 			break;
 		default:
@@ -1216,8 +1196,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 		c->LogicalChannelCount = c->LogicalChannelMax = channels;
 	}
 	c->MemorySize = Enquiry2->MemorySize >> 20;
-	cb->SAFTE_EnclosureManagementEnabled =
-		(Enquiry2->FaultManagementType == DAC960_V1_SAFTE);
+	cb->safte_enabled = (Enquiry2->FaultManagementType == DAC960_V1_SAFTE);
 	/*
 	  Initialize the Controller Queue Depth, Driver Queue Depth, Logical Drive
 	  Count, Maximum Blocks per Command, Controller Scatter/Gather Limit, and
@@ -1268,15 +1247,13 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	     strcmp(c->FirmwareVersion, "4.08") >= 0) ||
 	    (c->FirmwareVersion[0] == '5' &&
 	     strcmp(c->FirmwareVersion, "5.08") >= 0)) {
-		cb->BackgroundInitializationStatusSupported = true;
-		myrb_exec_type3B(cb,
-					DAC960_V1_BackgroundInitializationControl, 0x20,
-					cb->BackgroundInitializationStatusDMA);
-		memcpy(&cb->LastBackgroundInitializationStatus,
-		       cb->BackgroundInitializationStatus,
-		       sizeof(DAC960_V1_BackgroundInitializationStatus_T));
+		cb->bgi_status_supported = true;
+		myrb_exec_type3B(cb, DAC960_V1_BackgroundInitializationControl,
+				 0x20, cb->bgi_status_addr);
+		memcpy(&cb->bgi_status_old, cb->bgi_status_buf,
+		       sizeof(myrb_bgi_status));
 	}
-	cb->LastRebuildStatus = DAC960_V1_NoRebuildOrCheckInProgress;
+	cb->last_rbld_status = DAC960_V1_NoRebuildOrCheckInProgress;
 	ret = 0;
 
 out:
@@ -1919,13 +1896,13 @@ static ssize_t myrb_show_dev_rebuild(struct device *dev,
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
-	mbox->Type3.BusAddress = cb->RebuildProgressDMA;
+	mbox->Type3.BusAddress = cb->rbld_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		ldev_num = cb->RebuildProgress->LogicalDriveNumber;
-		ldev_size = cb->RebuildProgress->LogicalDriveSize;
-		remaining = cb->RebuildProgress->RemainingBlocks;
+		ldev_num = cb->rbld->LogicalDriveNumber;
+		ldev_size = cb->rbld->LogicalDriveSize;
+		remaining = cb->rbld->RemainingBlocks;
 	}
 	mutex_unlock(&cb->dcmd_mutex);
 
@@ -1977,11 +1954,11 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
-	mbox->Type3.BusAddress = cb->RebuildProgressDMA;
+	mbox->Type3.BusAddress = cb->rbld_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion)
-		ldev_num = cb->RebuildProgress->LogicalDriveNumber;
+		ldev_num = cb->rbld->LogicalDriveNumber;
 	mutex_unlock(&cb->dcmd_mutex);
 
 	if (start) {
@@ -2192,10 +2169,10 @@ myrb_get_resync(struct device *dev)
 	if (sdev->channel < cb->common.PhysicalChannelCount)
 		return;
 	if (DAC960_V1_ControllerIsRebuilding(cb)) {
-		ldev_num = cb->RebuildProgress->LogicalDriveNumber;
+		ldev_num = cb->rbld->LogicalDriveNumber;
 		if (ldev_num == myrb_translate_ldev(&cb->common, sdev)) {
-			ldev_size = cb->RebuildProgress->LogicalDriveSize;
-			remaining = cb->RebuildProgress->RemainingBlocks;
+			ldev_size = cb->rbld->LogicalDriveSize;
+			remaining = cb->rbld->RemainingBlocks;
 		}
 	}
 	if (remaining && ldev_size)
@@ -2337,64 +2314,57 @@ unsigned long myrb_monitor(myr_hba *c)
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 	unsigned long interval = DAC960_MonitoringTimerInterval;
 
-	if (cb->NewEventLogSequenceNumber
-	    > cb->OldEventLogSequenceNumber) {
-		int event = cb->OldEventLogSequenceNumber;
+	if (cb->new_ev_seq > cb->old_ev_seq) {
+		int event = cb->old_ev_seq;
 		dev_dbg(&c->host->shost_gendev,
 			"get event log no %d/%d\n",
-			cb->NewEventLogSequenceNumber, event);
+			cb->new_ev_seq, event);
 		DAC960_V1_MonitorGetEventLog(cb, event);
-		cb->OldEventLogSequenceNumber = event + 1;
+		cb->old_ev_seq = event + 1;
 		interval = 10;
-	} else if (cb->NeedErrorTableInformation) {
-		cb->NeedErrorTableInformation = false;
+	} else if (cb->need_err_info) {
+		cb->need_err_info = false;
 		dev_dbg(&c->host->shost_gendev, "get error table\n");
 		DAC960_V1_MonitorGetErrorTable(cb);
 		interval = 10;
-	} else if (cb->NeedRebuildProgress &&
-		   cb->RebuildProgressFirst) {
-		cb->NeedRebuildProgress = false;
+	} else if (cb->need_rbld && cb->rbld_first) {
+		cb->need_rbld = false;
 		dev_dbg(&c->host->shost_gendev,
 			"get rebuild progress\n");
 		DAC960_V1_MonitorRebuildProgress(cb);
 		interval = 10;
-	} else if (cb->NeedLogicalDeviceInfo) {
-		cb->NeedLogicalDeviceInfo = false;
+	} else if (cb->need_ldev_info) {
+		cb->need_ldev_info = false;
 		dev_dbg(&c->host->shost_gendev,
 			"get logical drive info\n");
 		DAC960_V1_GetLogicalDriveInfo(cb);
 		interval = 10;
-	} else if (cb->NeedRebuildProgress) {
-		cb->NeedRebuildProgress = false;
+	} else if (cb->need_rbld) {
+		cb->need_rbld = false;
 		dev_dbg(&c->host->shost_gendev,
 			"get rebuild progress\n");
 		DAC960_V1_MonitorRebuildProgress(cb);
 		interval = 10;
-	} else if (cb->NeedConsistencyCheckProgress) {
-		cb->NeedConsistencyCheckProgress = false;
+	} else if (cb->need_cc_status) {
+		cb->need_cc_status = false;
 		dev_dbg(&c->host->shost_gendev,
 			"get consistency check progress\n");
 		DAC960_V1_ConsistencyCheckProgress(cb);
 		interval = 10;
-	} else if (cb->NeedBackgroundInitializationStatus) {
-		cb->NeedBackgroundInitializationStatus = false;
-		dev_dbg(&c->host->shost_gendev,
-			"get background init status\n");
-		DAC960_V1_BackgroundInitialization(cb);
+	} else if (cb->need_bgi_status) {
+		cb->need_bgi_status = false;
+		dev_dbg(&c->host->shost_gendev, "get background init status\n");
+		myrb_bgi_control(cb);
 		interval = 10;
 	} else {
 		dev_dbg(&c->host->shost_gendev, "new enquiry\n");
 		mutex_lock(&cb->dma_mutex);
 		DAC960_V1_NewEnquiry(cb);
 		mutex_unlock(&cb->dma_mutex);
-		if ((cb->NewEventLogSequenceNumber
-		     - cb->OldEventLogSequenceNumber > 0) ||
-		    cb->NeedErrorTableInformation ||
-		    cb->NeedRebuildProgress ||
-		    cb->NeedLogicalDeviceInfo ||
-		    cb->NeedRebuildProgress ||
-		    cb->NeedConsistencyCheckProgress ||
-		    cb->NeedBackgroundInitializationStatus)
+		if ((cb->new_ev_seq - cb->old_ev_seq > 0) ||
+		    cb->need_err_info || cb->need_rbld ||
+		    cb->need_ldev_info || cb->need_cc_status ||
+		    cb->need_bgi_status)
 			dev_dbg(&c->host->shost_gendev,
 				"reschedule monitor\n");
 	}
@@ -2424,7 +2394,7 @@ void myrb_get_ctlr_info(myr_hba *c)
 		     cb->SegmentSize,
 		     cb->GeometryTranslationHeads,
 		     cb->GeometryTranslationSectors,
-		     cb->SAFTE_EnclosureManagementEnabled ?
+		     cb->safte_enabled ?
 		     "  SAF-TE Enclosure Management Enabled" : "");
 	shost_printk(KERN_INFO, c->host,
 		     "  Physical: %d/%d channels\n",
@@ -2511,7 +2481,7 @@ static int DAC960_LA_HardwareInit(struct pci_dev *pdev,
 	DAC960_LA_EnableInterrupts(base);
 	cb->QueueCommand = myrb_qcmd;
 	cb->WriteCommandMailbox = DAC960_LA_WriteCommandMailbox;
-	if (cb->DualModeMemoryMailboxInterface)
+	if (cb->dual_mode_interface)
 		cb->MailboxNewCommand = DAC960_LA_MemoryMailboxNewCommand;
 	else
 		cb->MailboxNewCommand = DAC960_LA_HardwareMailboxNewCommand;
@@ -2621,7 +2591,7 @@ static int DAC960_PG_HardwareInit(struct pci_dev *pdev,
 	DAC960_PG_EnableInterrupts(base);
 	cb->QueueCommand = myrb_qcmd;
 	cb->WriteCommandMailbox = DAC960_PG_WriteCommandMailbox;
-	if (cb->DualModeMemoryMailboxInterface)
+	if (cb->dual_mode_interface)
 		cb->MailboxNewCommand = DAC960_PG_MemoryMailboxNewCommand;
 	else
 		cb->MailboxNewCommand = DAC960_PG_HardwareMailboxNewCommand;
@@ -2961,7 +2931,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 			break;
 		case DAC960_V1_GetDeviceState_Old:
 			mbox->Common.opcode = DAC960_V1_GetDeviceState;
-			DAC960_P_To_PD_TranslateDeviceState(cb->NewDeviceState);
+			DAC960_P_To_PD_TranslateDeviceState(cb->pdev_state_buf);
 			break;
 		case DAC960_V1_Read_Old:
 			mbox->Common.opcode = DAC960_V1_Read;

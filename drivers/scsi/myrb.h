@@ -485,7 +485,7 @@ typedef struct DAC960_V1_RebuildProgress
 	unsigned int LogicalDriveSize;			/* Bytes 4-7 */
 	unsigned int RemainingBlocks;			/* Bytes 8-11 */
 }
-DAC960_V1_RebuildProgress_T;
+myrb_rbld_progress;
 
 
 /*
@@ -493,23 +493,22 @@ DAC960_V1_RebuildProgress_T;
   reply structure.
 */
 
-typedef struct DAC960_V1_BackgroundInitializationStatus
+typedef struct myrb_bgi_status_s
 {
-	unsigned int LogicalDriveSize;				/* Bytes 0-3 */
-	unsigned int BlocksCompleted;				/* Bytes 4-7 */
-	unsigned char Reserved1[12];				/* Bytes 8-19 */
-	unsigned int LogicalDriveNumber;			/* Bytes 20-23 */
-	unsigned char RAIDLevel;				/* Byte 24 */
+	unsigned int LogicalDriveSize;			/* Bytes 0-3 */
+	unsigned int BlocksCompleted;			/* Bytes 4-7 */
+	unsigned char rsvd1[12];			/* Bytes 8-19 */
+	unsigned int LogicalDriveNumber;		/* Bytes 20-23 */
+	unsigned char RAIDLevel;			/* Byte 24 */
 	enum {
-		DAC960_V1_BackgroundInitializationInvalid =	0x00,
-		DAC960_V1_BackgroundInitializationStarted =	0x02,
-		DAC960_V1_BackgroundInitializationInProgress =  0x04,
-		DAC960_V1_BackgroundInitializationSuspended =   0x05,
-		DAC960_V1_BackgroundInitializationCancelled =   0x06
-	} __attribute__ ((packed)) Status;			/* Byte 25 */
-	unsigned char Reserved2[6];				/* Bytes 26-31 */
-}
-DAC960_V1_BackgroundInitializationStatus_T;
+		MYRB_BGI_INVALID =	0x00,
+		MYRB_BGI_STARTED =	0x02,
+		MYRB_BGI_INPROGRESS =	0x04,
+		MYRB_BGI_SUSPENDED =	0x05,
+		MYRB_BGI_CANCELLED =	0x06
+	} __attribute__ ((packed)) Status;		/* Byte 25 */
+	unsigned char rsvd2[6];				/* Bytes 26-31 */
+} myrb_bgi_status;
 
 
 /*
@@ -799,28 +798,26 @@ typedef struct myrb_hba_s
 	unsigned int LogicalBlockSize;
 	unsigned char GeometryTranslationHeads;
 	unsigned char GeometryTranslationSectors;
-	unsigned char PendingRebuildFlag;
 	unsigned char BusWidth;
 	unsigned short StripeSize;
 	unsigned short SegmentSize;
-	unsigned short NewEventLogSequenceNumber;
-	unsigned short OldEventLogSequenceNumber;
-	bool DualModeMemoryMailboxInterface;
-	bool BackgroundInitializationStatusSupported;
-	bool SAFTE_EnclosureManagementEnabled;
-	bool NeedLogicalDeviceInfo;
-	bool NeedErrorTableInformation;
-	bool NeedRebuildProgress;
-	bool NeedConsistencyCheckProgress;
-	bool NeedBackgroundInitializationStatus;
-	bool RebuildProgressFirst;
-	bool RebuildFlagPending;
-	bool RebuildStatusPending;
-	struct pci_pool *DCDBPool;
+	unsigned short new_ev_seq;
+	unsigned short old_ev_seq;
+	bool dual_mode_interface;
+	bool bgi_status_supported;
+	bool safte_enabled;
+	bool need_ldev_info;
+	bool need_err_info;
+	bool need_rbld;
+	bool need_cc_status;
+	bool need_bgi_status;
+	bool rbld_first;
 
 	void (*QueueCommand)(struct myrb_hba_s *, myrb_cmdblk *);
 	void (*WriteCommandMailbox)(myrb_cmd_mbox *, myrb_cmd_mbox *);
 	void (*MailboxNewCommand)(void __iomem *);
+
+	struct pci_pool *DCDBPool;
 
 	dma_addr_t	FirstCommandMailboxDMA;
 	myrb_cmd_mbox *FirstCommandMailbox;
@@ -849,21 +846,19 @@ typedef struct myrb_hba_s
 	DAC960_V1_EventLogEntry_T *EventLogEntry;
 	dma_addr_t EventLogEntryDMA;
 
-	DAC960_V1_RebuildProgress_T *RebuildProgress;
-	dma_addr_t RebuildProgressDMA;
-	unsigned short LastRebuildStatus;
+	myrb_rbld_progress *rbld;
+	dma_addr_t rbld_addr;
+	unsigned short last_rbld_status;
 
 	myrb_ldev_info_arr *ldev_info_buf;
 	dma_addr_t ldev_info_addr;
 
-	DAC960_V1_BackgroundInitializationStatus_T
-	*BackgroundInitializationStatus;
-	dma_addr_t BackgroundInitializationStatusDMA;
-	DAC960_V1_BackgroundInitializationStatus_T
-	LastBackgroundInitializationStatus;
+	myrb_bgi_status *bgi_status_buf;
+	dma_addr_t bgi_status_addr;
+	myrb_bgi_status bgi_status_old;
 
-	myrb_pdev_state *NewDeviceState;
-	dma_addr_t	NewDeviceStateDMA;
+	myrb_pdev_state *pdev_state_buf;
+	dma_addr_t pdev_state_addr;
 	struct mutex dma_mutex;
 } myrb_hba;
 
