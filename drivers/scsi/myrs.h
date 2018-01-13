@@ -511,7 +511,7 @@ typedef struct myrs_ldev_info_s
 
 typedef struct myrs_pdev_info_s
 {
-	unsigned char :8;				/* Byte 0 */
+	unsigned char rsvd1:8;				/* Byte 0 */
 	unsigned char Channel;				/* Byte 1 */
 	unsigned char TargetID;				/* Byte 2 */
 	unsigned char LogicalUnit;			/* Byte 3 */
@@ -519,18 +519,18 @@ typedef struct myrs_pdev_info_s
 	bool PhysicalDeviceFaultTolerant:1;		/* Byte 4 Bit 0 */
 	bool PhysicalDeviceConnected:1;			/* Byte 4 Bit 1 */
 	bool PhysicalDeviceLocalToController:1;		/* Byte 4 Bit 2 */
-	unsigned char :5;				/* Byte 4 Bits 3-7 */
+	unsigned char rsvd2:5;				/* Byte 4 Bits 3-7 */
 	/* Multiple Host/Controller Status Bits */
 	bool RemoteHostSystemDead:1;			/* Byte 5 Bit 0 */
 	bool RemoteControllerDead:1;			/* Byte 5 Bit 1 */
-	unsigned char :6;				/* Byte 5 Bits 2-7 */
+	unsigned char rsvd3:6;				/* Byte 5 Bits 2-7 */
 	myrs_devstate State;			/* Byte 6 */
 	unsigned char NegotiatedDataWidthBits;		/* Byte 7 */
 	unsigned short NegotiatedSynchronousMegaTransfers; /* Bytes 8-9 */
 	/* Multiported Physical Device Information */
 	unsigned char NumberOfPortConnections;		/* Byte 10 */
 	unsigned char DriveAccessibilityBitmap;		/* Byte 11 */
-	unsigned int :32;				/* Bytes 12-15 */
+	unsigned int rsvd4:32;				/* Bytes 12-15 */
 	unsigned char NetworkAddress[16];		/* Bytes 16-31 */
 	unsigned short MaximumTags;			/* Bytes 32-33 */
 	/* Physical Device Operations Status */
@@ -540,7 +540,7 @@ typedef struct myrs_pdev_info_s
 	bool PhysicalDeviceInitializationInProgress:1;	/* Byte 34 Bit 3 */
 	bool DataMigrationInProgress:1;			/* Byte 34 Bit 4 */
 	bool PatrolOperationInProgress:1;		/* Byte 34 Bit 5 */
-	unsigned char :2;				/* Byte 34 Bits 6-7 */
+	unsigned char rsvd5:2;				/* Byte 34 Bits 6-7 */
 	unsigned char LongOperationStatus;		/* Byte 35 */
 	unsigned char ParityErrors;			/* Byte 36 */
 	unsigned char SoftErrors;			/* Byte 37 */
@@ -550,18 +550,18 @@ typedef struct myrs_pdev_info_s
 	unsigned char Retries;				/* Byte 41 */
 	unsigned char Aborts;				/* Byte 42 */
 	unsigned char PredictedFailuresDetected;	/* Byte 43 */
-	unsigned int :32;				/* Bytes 44-47 */
-	unsigned short :16;				/* Bytes 48-49 */
+	unsigned int rsvd6:32;				/* Bytes 44-47 */
+	unsigned short rsvd7:16;			/* Bytes 48-49 */
 	unsigned short DeviceBlockSizeInBytes;		/* Bytes 50-51 */
 	unsigned int OriginalDeviceSize;		/* Bytes 52-55 */
 	unsigned int ConfigurableDeviceSize;		/* Bytes 56-59 */
-	unsigned int :32;				/* Bytes 60-63 */
+	unsigned int rsvd8:32;				/* Bytes 60-63 */
 	unsigned char PhysicalDeviceName[16];		/* Bytes 64-79 */
-	unsigned char Reserved1[16];			/* Bytes 80-95 */
-	unsigned char Reserved2[32];			/* Bytes 96-127 */
+	unsigned char rsvd9[16];			/* Bytes 80-95 */
+	unsigned char rsvd10[32];			/* Bytes 96-127 */
 	unsigned char SCSI_InquiryData[36];		/* Bytes 128-163 */
-	unsigned char Reserved3[20];			/* Bytes 164-183 */
-	unsigned char Reserved4[8];			/* Bytes 184-191 */
+	unsigned char rsvd11[20];			/* Bytes 164-183 */
+	unsigned char rsvd12[8];			/* Bytes 184-191 */
 	u64 LastReadBlockNumber;			/* Bytes 192-199 */
 	u64 LastWrittenBlockNumber;			/* Bytes 200-207 */
 	u64 ConsistencyCheckBlockNumber;		/* Bytes 208-215 */
@@ -570,7 +570,7 @@ typedef struct myrs_pdev_info_s
 	u64 DeviceInitializationBlockNumber;		/* Bytes 232-239 */
 	u64 DataMigrationBlockNumber;			/* Bytes 240-247 */
 	u64 PatrolOperationBlockNumber;			/* Bytes 248-255 */
-	unsigned char Reserved5[256];			/* Bytes 256-511 */
+	unsigned char rsvd13[256];			/* Bytes 256-511 */
 } myrs_pdev_info;
 
 
@@ -1006,9 +1006,6 @@ typedef struct myrs_hba_s
 
 	myrs_event *event_buf;
 	dma_addr_t event_addr;
-
-	myrs_devmap *devmap_buf;
-	dma_addr_t devmap_addr;
 } myrs_hba;
 
 /*

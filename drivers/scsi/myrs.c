@@ -496,12 +496,19 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 				  unsigned char Channel,
 				  unsigned char TargetID,
 				  unsigned char LogicalUnit,
-				  unsigned short *ldev_num)
+				  myrs_devmap *devmap)
 {
+	dma_addr_t devmap_addr;
 	myrs_cmdblk *cmd_blk;
 	myrs_cmd_mbox *mbox;
 	myrs_sgl *sgl;
 	unsigned char status;
+
+	memset(devmap, 0x0, sizeof(myrs_devmap));
+	devmap_addr = dma_map_single(&c->pdev->dev, devmap,
+				     sizeof(myrs_devmap), DMA_FROM_DEVICE);
+	if (dma_mapping_error(&c->pdev->dev, devmap_addr))
+		return DAC960_V2_AbnormalCompletion;
 
 	mutex_lock(&cs->dcmd_mutex);
 	cmd_blk = &cs->dcmd_blk;
@@ -516,15 +523,14 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 	mbox->PhysicalDeviceInfo.ioctl_opcode =
 		DAC960_V2_TranslatePhysicalToLogicalDevice;
 	sgl = &mbox->PhysicalDeviceInfo.dma_addr;
-	sgl->sge[0].sge_addr = cs->devmap_addr;
+	sgl->sge[0].sge_addr = devmap_addr;
 	sgl->sge[0].sge_addr = mbox->PhysicalDeviceInfo.dma_size;
 
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
-	if (status == DAC960_V2_NormalCompletion)
-		*ldev_num = cs->devmap_buf->LogicalDeviceNumber;
-
+	dma_unmap_single(&c->pdev->dev, devmap_addr,
+			 sizeof(myrs_devmap), DMA_FROM_DEVICE);
 	return status;
 }
 
@@ -601,8 +607,7 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 		CommandMailboxesSize + StatusMailboxesSize +
 		sizeof(myrs_fwstat) +
 		sizeof(myrs_ctlr_info) +
-		sizeof(myrs_event) +
-		sizeof(myrs_devmap);
+		sizeof(myrs_event);
 
 	if (!init_dma_loaf(pdev, DmaPages, DmaPagesSize)) {
 		pci_free_consistent(pdev, sizeof(myrs_cmd_mbox),
@@ -641,9 +646,6 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 
 	cs->event_buf = slice_dma_loaf(DmaPages, sizeof(myrs_event),
 					 &cs->event_addr);
-
-	cs->devmap_buf = slice_dma_loaf(DmaPages, sizeof(myrs_devmap),
-					  &cs->devmap_addr);
 
 	/*
 	  Enable the Memory Mailbox Interface.
@@ -1138,6 +1140,7 @@ static ssize_t myrs_store_dev_state(struct device *dev,
 
 	if (sdev->channel < cs->common.PhysicalChannelCount) {
 		myrs_pdev_info *pdev_info = sdev->hostdata;
+		myrs_devmap *pdev_devmap = (myrs_devmap *)&pdev_info->rsvd13;
 
 		if (pdev_info->State == new_state) {
 			sdev_printk(KERN_INFO, sdev,
@@ -1147,9 +1150,10 @@ static ssize_t myrs_store_dev_state(struct device *dev,
 		}
 		status = DAC960_V2_TranslatePhysicalDevice(cs, sdev->channel,
 							   sdev->id, sdev->lun,
-							   &ldev_num);
+							   pdev_devmap);
 		if (status != DAC960_V2_NormalCompletion)
 			return -ENXIO;
+		ldev_num = pdev_demap->LogicalDeviceNumber;
 	} else {
 		myrs_ldev_info *ldev_info = sdev->hostdata;
 
