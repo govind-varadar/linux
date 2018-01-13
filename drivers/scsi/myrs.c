@@ -535,24 +535,34 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 }
 
 
-static unsigned char DAC960_V2_MonitorGetEvent(myrs_hba *cs)
+static unsigned char DAC960_V2_MonitorGetEvent(myrs_hba *cs,
+					       unsigned short event_num,
+					       myrs_event *event_buf)
 {
+	dma_addr_t event_addr;
 	myrs_cmdblk *cmd_blk = &cs->mcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
 	myrs_sgl *sgl;
 	unsigned char status;
 
+	event_addr = dma_map_single(&c->pdev->dev, event_buf,
+				    sizeof(myrs_event), DMA_FROM_DEVICE);
+	if (dma_mapping_error(&c->pdev->dev, event_addr))
+		return DAC960_V2_AbnormalCompletion;
+
 	mbox->GetEvent.opcode = DAC960_V2_IOCTL;
 	mbox->GetEvent.dma_size = sizeof(myrs_event);
-	mbox->GetEvent.evnum_upper = cs->NextEventSequenceNumber >> 16;
+	mbox->GetEvent.evnum_upper = event_num >> 16;
 	mbox->GetEvent.ctlr_num = 0;
 	mbox->GetEvent.ioctl_opcode = DAC960_V2_GetEvent;
-	mbox->GetEvent.evnum_lower = cs->NextEventSequenceNumber & 0xFFFF;
+	mbox->GetEvent.evnum_lower = event_num & 0xFFFF;
 	sgl = &mbox->GetEvent.dma_addr;
-	sgl->sge[0].sge_addr = cs->event_addr;
+	sgl->sge[0].sge_addr = event_addr;
 	sgl->sge[0].sge_count = mbox->GetEvent.dma_size;
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
+	dma_unmap_single(&c->pdev->dev, event_addr,
+			 sizeof(myrs_event), DMA_FROM_DEVICE);
 
 	return status;
 }
@@ -603,11 +613,8 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 
 	CommandMailboxesSize = DAC960_V2_CommandMailboxCount * sizeof(myrs_cmd_mbox);
 	StatusMailboxesSize = DAC960_V2_StatusMailboxCount * sizeof(myrs_stat_mbox);
-	DmaPagesSize =
-		CommandMailboxesSize + StatusMailboxesSize +
-		sizeof(myrs_fwstat) +
-		sizeof(myrs_ctlr_info) +
-		sizeof(myrs_event);
+	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
+		sizeof(myrs_fwstat) + sizeof(myrs_ctlr_info);
 
 	if (!init_dma_loaf(pdev, DmaPages, DmaPagesSize)) {
 		pci_free_consistent(pdev, sizeof(myrs_cmd_mbox),
@@ -643,9 +650,6 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 
 	cs->ctlr_info_buf = slice_dma_loaf(DmaPages, sizeof(myrs_ctlr_info),
 					     &cs->ctlr_info_addr);
-
-	cs->event_buf = slice_dma_loaf(DmaPages, sizeof(myrs_event),
-					 &cs->event_addr);
 
 	/*
 	  Enable the Memory Mailbox Interface.
@@ -2232,7 +2236,9 @@ unsigned long myrs_monitor(myr_hba *c)
 	}
 	if (cs->fwstat_buf->NextEventSequenceNumber
 	    - cs->NextEventSequenceNumber > 0) {
-		status = DAC960_V2_MonitorGetEvent(cs);
+		status = DAC960_V2_MonitorGetEvent(cs,
+						   cs->NextEventSequenceNumber,
+						   cs->event_buf);
 		if (status == DAC960_V2_NormalCompletion) {
 			DAC960_V2_ReportEvent(cs, cs->event_buf);
 			cs->NextEventSequenceNumber++;
