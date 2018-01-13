@@ -282,7 +282,6 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 				     new->LogicalDevicesCritical,
 				     new->LogicalDevicesOffline,
 				     new->LogicalDevicesPresent);
-		c->LogicalDriveCount = new->LogicalDevicesPresent;
 		memcpy(old, new, sizeof(myrs_ctlr_info));
 	}
 
@@ -806,7 +805,6 @@ int DAC960_V2_ReadControllerConfiguration(myr_hba *c)
 	shost->can_queue = info->MaximumParallelCommands - 3;
 	if (shost->can_queue > DAC960_MaxDriverQueueDepth)
 		shost->can_queue = DAC960_MaxDriverQueueDepth;
-	c->LogicalDriveCount = info->LogicalDevicesPresent;
 	shost->max_sectors = info->MaximumDataTransferSizeInBlocks;
 	shost->sg_tablesize = info->MaximumScatterGatherEntries;
 	if (shost->sg_tablesize > DAC960_V2_ScatterGatherLimit)
@@ -1712,8 +1710,6 @@ static int myrs_slave_alloc(struct scsi_device *sdev)
 			return -ENXIO;
 
 		ldev_num = myrs_translate_ldev(&cs->common, sdev);
-		if (ldev_num >= cs->common.LogicalDriveCount)
-			return -ENXIO;
 
 		ldev_info = kzalloc(sizeof(*ldev_info), GFP_KERNEL);
 		if (!ldev_info)
