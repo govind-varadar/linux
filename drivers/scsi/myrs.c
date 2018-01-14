@@ -94,22 +94,6 @@ static char *myrs_raid_level_name(myrs_raid_level level)
 	return NULL;
 }
 
-/*
-  DAC960_V2_ReportProgress prints an appropriate progress message for
-  Logical Device Long Operations.
-*/
-
-static void DAC960_V2_ReportProgress(myr_hba *c,
-				     unsigned short ldev_num,
-				     unsigned char *msg,
-				     unsigned long blocks,
-				     unsigned long size)
-{
-	shost_printk(KERN_INFO, c->host,
-		     "Logical Drive %d: %s in Progress: %ld%% completed\n",
-		     ldev_num, msg, (100 * (blocks >> 7)) / (size >> 7));
-}
-
 bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
@@ -192,21 +176,21 @@ static void myrs_qcmd(myrs_hba *cs, myrs_cmdblk *cmd_blk)
 {
 	void __iomem *base = cs->common.io_addr;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
-	myrs_cmd_mbox *next_mbox = cs->NextCommandMailbox;
+	myrs_cmd_mbox *next_mbox = cs->next_cmd_mbox;
 
 	cs->WriteCommandMailbox(next_mbox, mbox);
 
-	if (cs->PreviousCommandMailbox1->Words[0] == 0 ||
-	    cs->PreviousCommandMailbox2->Words[0] == 0)
+	if (cs->prev_cmd_mbox1->Words[0] == 0 ||
+	    cs->prev_cmd_mbox2->Words[0] == 0)
 		cs->MailboxNewCommand(base);
 
-	cs->PreviousCommandMailbox2 = cs->PreviousCommandMailbox1;
-	cs->PreviousCommandMailbox1 = next_mbox;
+	cs->prev_cmd_mbox2 = cs->prev_cmd_mbox1;
+	cs->prev_cmd_mbox1 = next_mbox;
 
-	if (++next_mbox > cs->LastCommandMailbox)
-		next_mbox = cs->FirstCommandMailbox;
+	if (++next_mbox > cs->last_cmd_mbox)
+		next_mbox = cs->first_cmd_mbox;
 
-	cs->NextCommandMailbox = next_mbox;
+	cs->next_cmd_mbox = next_mbox;
 }
 
 /*
@@ -231,11 +215,27 @@ static void myrs_exec_cmd(myrs_hba *cs,
 
 
 /*
+  DAC960_V2_ReportProgress prints an appropriate progress message for
+  Logical Device Long Operations.
+*/
+
+static void DAC960_V2_ReportProgress(myr_hba *c,
+				     unsigned short ldev_num,
+				     unsigned char *msg,
+				     unsigned long blocks,
+				     unsigned long size)
+{
+	shost_printk(KERN_INFO, c->host,
+		     "Logical Drive %d: %s in Progress: %ld%% completed\n",
+		     ldev_num, msg, (100 * (blocks >> 7)) / (size >> 7));
+}
+
+/*
   DAC960_V2_ControllerInfo executes a DAC960 V2 Firmware Controller
   Information Reading IOCTL Command and waits for completion.  It returns
   true on success and false on failure.
 
-  Data is returned in the controller's V2.ctlr_info_buf dma-able
+  Data is returned in the controller's V2.ctlr_info dma-able
   memory buffer.
 */
 
@@ -246,6 +246,9 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
 	myrs_sgl *sgl;
 	unsigned char status;
+	myrs_ctlr_info old;
+
+	memcpy(&old, cs->ctlr_info, sizeof(myrs_ctlr_info));
 
 	mutex_lock(&cs->dcmd_mutex);
 	myrs_reset_cmd(cmd_blk);
@@ -259,30 +262,26 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 	sgl = &mbox->ControllerInfo.dma_addr;
 	sgl->sge[0].sge_addr = cs->ctlr_info_addr;
 	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
-	dev_dbg(&c->host->shost_gendev,
-		"Sending GetControllerInfo\n");
+	dev_dbg(&c->host->shost_gendev, "Sending GetControllerInfo\n");
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
 	if (status == DAC960_V2_NormalCompletion) {
-		myrs_ctlr_info *new = cs->ctlr_info_buf;
-		myrs_ctlr_info *old = &cs->ctlr_info;
-		if (new->BackgroundInitializationsActive +
-		    new->LogicalDeviceInitializationsActive +
-		    new->PhysicalDeviceInitializationsActive +
-		    new->ConsistencyChecksActive +
-		    new->RebuildsActive +
-		    new->OnlineExpansionsActive != 0)
+		if (cs->ctlr_info->bg_init_active +
+		    cs->ctlr_info->ldev_init_active +
+		    cs->ctlr_info->pdev_init_active +
+		    cs->ctlr_info->cc_active +
+		    cs->ctlr_info->rbld_active +
+		    cs->ctlr_info->exp_active != 0)
 			cs->NeedControllerInformation = true;
-		if (new->LogicalDevicesPresent != old->LogicalDevicesPresent ||
-		    new->LogicalDevicesCritical != old->LogicalDevicesCritical ||
-		    new->LogicalDevicesOffline != old->LogicalDevicesOffline)
+		if (cs->ctlr_info->ldev_present != old.ldev_present ||
+		    cs->ctlr_info->ldev_critical != old.ldev_critical ||
+		    cs->ctlr_info->ldev_offline != old.ldev_offline)
 			shost_printk(KERN_INFO, c->host,
 				     "Logical drive count changes (%d/%d/%d)\n",
-				     new->LogicalDevicesCritical,
-				     new->LogicalDevicesOffline,
-				     new->LogicalDevicesPresent);
-		memcpy(old, new, sizeof(myrs_ctlr_info));
+				     cs->ctlr_info->ldev_critical,
+				     cs->ctlr_info->ldev_offline,
+				     cs->ctlr_info->ldev_present);
 	}
 
 	return status;
@@ -321,7 +320,7 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 	mbox->LogicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->LogicalDeviceInfo.control.NoAutoRequestSense = true;
 	mbox->LogicalDeviceInfo.dma_size = sizeof(myrs_ldev_info);
-	mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
+	mbox->LogicalDeviceInfo.ldev.ldev_num = ldev_num;
 	mbox->LogicalDeviceInfo.ioctl_opcode =
 		DAC960_V2_GetLogicalDeviceInfoValid;
 	sgl = &mbox->LogicalDeviceInfo.dma_addr;
@@ -335,10 +334,10 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 	dma_unmap_single(&c->pdev->dev, ldev_info_addr,
 			 sizeof(myrs_ldev_info), DMA_FROM_DEVICE);
 	if (status == DAC960_V2_NormalCompletion) {
-		unsigned short ldev_num = ldev_info->LogicalDeviceNumber;
+		unsigned short ldev_num = ldev_info->ldev_num;
 		myrs_ldev_info *new = ldev_info;
 		myrs_ldev_info *old = &ldev_info_orig;
-		unsigned long ldev_size = new->ConfigurableDeviceSize;
+		unsigned long ldev_size = new->cfg_devsize;
 
 		if (new->State != old->State) {
 			const char *name;
@@ -359,35 +358,33 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 				     new->SoftErrors,
 				     new->CommandsFailed,
 				     new->DeferredWriteErrors);
-		if (new->BackgroundInitializationInProgress)
+		if (new->bg_init_active)
 			DAC960_V2_ReportProgress(c, ldev_num,
 						 "Background Initialization",
-						 new->BackgroundInitializationBlockNumber,
+						 new->bg_init_lba,
 						 ldev_size);
-		else if (new->ForegroundInitializationInProgress)
+		else if (new->fg_init_active)
 			DAC960_V2_ReportProgress(c, ldev_num,
 						 "Foreground Initialization",
-						 new->ForegroundInitializationBlockNumber,
+						 new->fg_init_lba,
 						 ldev_size);
-		else if (new->DataMigrationInProgress)
+		else if (new->migration_active)
 			DAC960_V2_ReportProgress(c, ldev_num,
 						 "Data Migration",
-						 new->DataMigrationBlockNumber,
+						 new->migration_lba,
 						 ldev_size);
-		else if (new->PatrolOperationInProgress)
+		else if (new->patrol_active)
 			DAC960_V2_ReportProgress(c, ldev_num,
 						 "Patrol Operation",
-						 new->PatrolOperationBlockNumber,
+						 new->patrol_lba,
 						 ldev_size);
-		if (old->BackgroundInitializationInProgress &&
-		    !new->BackgroundInitializationInProgress)
+		if (old->bg_init_active && !new->bg_init_active)
 			shost_printk(KERN_INFO, c->host,
 				     "Logical Drive %d: "
 				     "Background Initialization %s\n",
 				     ldev_num,
-				     (new->LogicalDeviceControl
-				      .LogicalDeviceInitialized
-				      ? "Completed" : "Failed"));
+				     (new->ldev_control.ldev_init_done ?
+				      "Completed" : "Failed"));
 	}
 	return status;
 }
@@ -497,6 +494,7 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 				  unsigned char LogicalUnit,
 				  myrs_devmap *devmap)
 {
+	struct pci_dev *pdev = cs->common.pdev;
 	dma_addr_t devmap_addr;
 	myrs_cmdblk *cmd_blk;
 	myrs_cmd_mbox *mbox;
@@ -504,9 +502,9 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 	unsigned char status;
 
 	memset(devmap, 0x0, sizeof(myrs_devmap));
-	devmap_addr = dma_map_single(&c->pdev->dev, devmap,
+	devmap_addr = dma_map_single(&pdev->dev, devmap,
 				     sizeof(myrs_devmap), DMA_FROM_DEVICE);
-	if (dma_mapping_error(&c->pdev->dev, devmap_addr))
+	if (dma_mapping_error(&pdev->dev, devmap_addr))
 		return DAC960_V2_AbnormalCompletion;
 
 	mutex_lock(&cs->dcmd_mutex);
@@ -528,7 +526,7 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
-	dma_unmap_single(&c->pdev->dev, devmap_addr,
+	dma_unmap_single(&pdev->dev, devmap_addr,
 			 sizeof(myrs_devmap), DMA_FROM_DEVICE);
 	return status;
 }
@@ -538,15 +536,16 @@ static unsigned char DAC960_V2_MonitorGetEvent(myrs_hba *cs,
 					       unsigned short event_num,
 					       myrs_event *event_buf)
 {
+	struct pci_dev *pdev = cs->common.pdev;
 	dma_addr_t event_addr;
 	myrs_cmdblk *cmd_blk = &cs->mcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
 	myrs_sgl *sgl;
 	unsigned char status;
 
-	event_addr = dma_map_single(&c->pdev->dev, event_buf,
+	event_addr = dma_map_single(&pdev->dev, event_buf,
 				    sizeof(myrs_event), DMA_FROM_DEVICE);
-	if (dma_mapping_error(&c->pdev->dev, event_addr))
+	if (dma_mapping_error(&pdev->dev, event_addr))
 		return DAC960_V2_AbnormalCompletion;
 
 	mbox->GetEvent.opcode = DAC960_V2_IOCTL;
@@ -560,7 +559,7 @@ static unsigned char DAC960_V2_MonitorGetEvent(myrs_hba *cs,
 	sgl->sge[0].sge_count = mbox->GetEvent.dma_size;
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
-	dma_unmap_single(&c->pdev->dev, event_addr,
+	dma_unmap_single(&pdev->dev, event_addr,
 			 sizeof(myrs_event), DMA_FROM_DEVICE);
 
 	return status;
@@ -625,14 +624,13 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 						CommandMailboxesSize, &CommandMailboxesMemoryDMA);
 
 	/* These are the base addresses for the command memory mailbox array */
-	cs->FirstCommandMailbox = CommandMailboxesMemory;
-	cs->FirstCommandMailboxDMA = CommandMailboxesMemoryDMA;
-
+	cs->first_cmd_mbox = CommandMailboxesMemory;
+	cs->cmd_mbox_addr = CommandMailboxesMemoryDMA;
 	CommandMailboxesMemory += DAC960_V2_CommandMailboxCount - 1;
-	cs->LastCommandMailbox = CommandMailboxesMemory;
-	cs->NextCommandMailbox = cs->FirstCommandMailbox;
-	cs->PreviousCommandMailbox1 = cs->LastCommandMailbox;
-	cs->PreviousCommandMailbox2 = cs->LastCommandMailbox - 1;
+	cs->last_cmd_mbox = CommandMailboxesMemory;
+	cs->next_cmd_mbox = cs->first_cmd_mbox;
+	cs->prev_cmd_mbox1 = cs->last_cmd_mbox;
+	cs->prev_cmd_mbox2 = cs->last_cmd_mbox - 1;
 
 	/* These are the base addresses for the status memory mailbox array */
 	StatusMailboxesMemory = slice_dma_loaf(DmaPages,
@@ -647,8 +645,15 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 	cs->fwstat_buf = slice_dma_loaf(DmaPages, sizeof(myrs_fwstat),
 					  &cs->fwstat_addr);
 
-	cs->ctlr_info_buf = slice_dma_loaf(DmaPages, sizeof(myrs_ctlr_info),
-					     &cs->ctlr_info_addr);
+	cs->ctlr_info = dma_alloc_coherent(&c->pdev->dev,
+					   sizeof(myrs_ctlr_info),
+					   &cs->ctlr_info_addr, GFP_ATOMIC);
+	if (dma_mapping_error(&c->pdev->dev, cs->ctlr_info_addr)) {
+		cs->ctlr_info = NULL;
+		pci_free_consistent(pdev, sizeof(myrs_cmd_mbox),
+				    mbox, CommandMailboxDMA);
+		return false;
+	}
 
 	/*
 	  Enable the Memory Mailbox Interface.
@@ -673,7 +678,7 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 	mbox->SetMemoryMailbox.HealthStatusBufferBusAddress =
 		cs->fwstat_addr;
 	mbox->SetMemoryMailbox.FirstCommandMailboxBusAddress =
-		cs->FirstCommandMailboxDMA;
+		cs->cmd_mbox_addr;
 	mbox->SetMemoryMailbox.FirstStatusMailboxBusAddress =
 		cs->FirstStatusMailboxDMA;
 	switch (c->HardwareType) {
@@ -732,7 +737,7 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 int DAC960_V2_ReadControllerConfiguration(myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
-	myrs_ctlr_info *info = &cs->ctlr_info;
+	myrs_ctlr_info *info = cs->ctlr_info;
 	struct Scsi_Host *shost = c->host;
 	unsigned char status;
 	int i, ModelNameLength;
@@ -781,11 +786,11 @@ int DAC960_V2_ReadControllerConfiguration(myr_hba *c)
 	/*
 	  Initialize the Controller Channels, Targets, and Memory Size.
 	*/
-	c->PhysicalChannelMax = info->NumberOfPhysicalChannelsPossible;
-	c->PhysicalChannelCount = info->NumberOfPhysicalChannelsPresent;
-	c->LogicalChannelMax = info->NumberOfVirtualChannelsPossible;
-	c->LogicalChannelCount = info->NumberOfVirtualChannelsPresent;
-	shost->max_channel = c->PhysicalChannelCount + c->LogicalChannelCount;
+	c->PhysicalChannelMax = info->physchan_max;
+	c->PhysicalChannelCount = info->physchan_present;
+	c->LogicalChannelMax = info->virtchan_max;
+	c->LogicalChannelCount = info->virtchan_present;
+	shost->max_channel = info->physchan_present + info->virtchan_present;
 	shost->max_id = info->MaximumTargetsPerChannel[0];
 	for (i = 1; i < 16; i++) {
 		if (!info->MaximumTargetsPerChannel[i])
@@ -802,7 +807,7 @@ int DAC960_V2_ReadControllerConfiguration(myr_hba *c)
 	 * the Controller Queue Depth; tag '1' is reserved for
 	 * direct commands, and tag '2' for monitoring commands.
 	 */
-	shost->can_queue = info->MaximumParallelCommands - 3;
+	shost->can_queue = info->max_tcq - 3;
 	if (shost->can_queue > DAC960_MaxDriverQueueDepth)
 		shost->can_queue = DAC960_MaxDriverQueueDepth;
 	shost->max_sectors = info->MaximumDataTransferSizeInBlocks;
@@ -985,7 +990,7 @@ static void DAC960_V2_ReportEvent(myrs_hba *cs, myrs_event *ev)
 					  ev->target, 0);
 		sdev_printk(KERN_INFO, sdev, "%s\n", ev_msg);
 		if (sdev && sdev->hostdata &&
-		    sdev->channel < cs->common.PhysicalChannelCount) {
+		    sdev->channel < cs->ctlr_info->physchan_present) {
 			myrs_pdev_info *pdev_info = sdev->hostdata;
 			switch (ev->ev_code) {
 			case 0x0001:
@@ -1063,14 +1068,14 @@ void myrs_get_ctlr_info(myr_hba *c)
 {
 	int i;
 	myrs_hba *cs = container_of(c, myrs_hba, common);
-	myrs_ctlr_info *info = &cs->ctlr_info;
+	myrs_ctlr_info *info = cs->ctlr_info;
 
 	shost_printk(KERN_INFO, c->host,
 		     "  Driver Queue Depth: %d,"
 		     " Scatter/Gather Limit: %d of %d Segments\n",
 		     c->host->can_queue, c->host->sg_tablesize,
 		     DAC960_V2_ScatterGatherLimit);
-	for (i = 0; i < c->PhysicalChannelMax; i++) {
+	for (i = 0; i < info->physchan_max; i++) {
 		if (!info->MaximumTargetsPerChannel[i])
 			continue;
 		shost_printk(KERN_INFO, c->host,
@@ -1079,9 +1084,8 @@ void myrs_get_ctlr_info(myr_hba *c)
 	}
 	shost_printk(KERN_INFO, c->host,
 		     "  Physical: %d/%d channels, %d disks, %d devices\n",
-		     c->PhysicalChannelCount, c->PhysicalChannelMax,
-		     info->PhysicalDisksPresent,
-		     info->PhysicalDevicesPresent);
+		     info->physchan_present, info->physchan_max,
+		     info->pdisk_present, info->pdev_present);
 }
 
 static ssize_t myrs_show_dev_state(struct device *dev,
@@ -1094,7 +1098,7 @@ static ssize_t myrs_show_dev_state(struct device *dev,
 	if (!sdev->hostdata)
 		return snprintf(buf, 16, "Unknown\n");
 
-	if (sdev->channel >= cs->common.PhysicalChannelCount) {
+	if (sdev->channel >= cs->ctlr_info->physchan_present) {
 		myrs_ldev_info *ldev_info = sdev->hostdata;
 		const char *name;
 
@@ -1140,7 +1144,7 @@ static ssize_t myrs_store_dev_state(struct device *dev,
 	else
 		return -EINVAL;
 
-	if (sdev->channel < cs->common.PhysicalChannelCount) {
+	if (sdev->channel < cs->ctlr_info->physchan_present) {
 		myrs_pdev_info *pdev_info = sdev->hostdata;
 		myrs_devmap *pdev_devmap = (myrs_devmap *)&pdev_info->rsvd13;
 
@@ -1155,7 +1159,7 @@ static ssize_t myrs_store_dev_state(struct device *dev,
 							   pdev_devmap);
 		if (status != DAC960_V2_NormalCompletion)
 			return -ENXIO;
-		ldev_num = pdev_demap->LogicalDeviceNumber;
+		ldev_num = pdev_devmap->ldev_num;
 	} else {
 		myrs_ldev_info *ldev_info = sdev->hostdata;
 
@@ -1165,7 +1169,7 @@ static ssize_t myrs_store_dev_state(struct device *dev,
 				    myrs_devstate_name(new_state));
 			return count;
 		}
-		ldev_num = ldev_info->LogicalDeviceNumber;
+		ldev_num = ldev_info->ldev_num;
 	}
 	mutex_lock(&cs->dcmd_mutex);
 	cmd_blk = &cs->dcmd_blk;
@@ -1177,12 +1181,12 @@ static ssize_t myrs_store_dev_state(struct device *dev,
 	mbox->Common.control.NoAutoRequestSense = true;
 	mbox->SetDeviceState.ioctl_opcode = DAC960_V2_SetDeviceState;
 	mbox->SetDeviceState.state = new_state;
-	mbox->SetDeviceState.ldev.LogicalDeviceNumber = ldev_num;
+	mbox->SetDeviceState.ldev.ldev_num = ldev_num;
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
 	if (status == DAC960_V2_NormalCompletion) {
-		if (sdev->channel < cs->common.PhysicalChannelCount) {
+		if (sdev->channel < cs->ctlr_info->physchan_present) {
 			myrs_pdev_info *pdev_info = sdev->hostdata;
 
 			pdev_info->State = new_state;
@@ -1215,7 +1219,7 @@ static ssize_t myrs_show_dev_level(struct device *dev,
 	if (!sdev->hostdata)
 		return snprintf(buf, 16, "Unknown\n");
 
-	if (sdev->channel >= cs->common.PhysicalChannelCount) {
+	if (sdev->channel >= cs->ctlr_info->physchan_present) {
 		myrs_ldev_info *ldev_info;
 
 		ldev_info = sdev->hostdata;
@@ -1240,11 +1244,11 @@ static ssize_t myrs_show_dev_rebuild(struct device *dev,
 	unsigned short ldev_num;
 	unsigned char status;
 
-	if (sdev->channel < cs->common.PhysicalChannelCount)
+	if (sdev->channel < cs->ctlr_info->physchan_present)
 		return snprintf(buf, 32, "physical device - not rebuilding\n");
 
 	ldev_info = sdev->hostdata;
-	ldev_num = ldev_info->LogicalDeviceNumber;
+	ldev_num = ldev_info->ldev_num;
 	status = myrs_get_ldev_info(cs, ldev_num, ldev_info);
 	if (status != DAC960_V2_NormalCompletion) {
 		sdev_printk(KERN_INFO, sdev,
@@ -1252,10 +1256,10 @@ static ssize_t myrs_show_dev_rebuild(struct device *dev,
 			    status);
 		return -EIO;
 	}
-	if (ldev_info->RebuildInProgress) {
+	if (ldev_info->rbld_active) {
 		return snprintf(buf, 32, "rebuilding block %zu of %zu\n",
-				(size_t)ldev_info->RebuildBlockNumber,
-				(size_t)ldev_info->ConfigurableDeviceSize);
+				(size_t)ldev_info->rbld_lba,
+				(size_t)ldev_info->cfg_devsize);
 	} else
 		return snprintf(buf, 32, "not rebuilding\n");
 }
@@ -1275,13 +1279,13 @@ static ssize_t myrs_store_dev_rebuild(struct device *dev,
 	int rebuild;
 	int ret = count;
 
-	if (sdev->channel < cs->common.PhysicalChannelCount)
+	if (sdev->channel < cs->ctlr_info->physchan_present)
 		return -EINVAL;
 
 	ldev_info = sdev->hostdata;
 	if (!ldev_info)
 		return -ENXIO;
-	ldev_num = ldev_info->LogicalDeviceNumber;
+	ldev_num = ldev_info->ldev_num;
 
 	len = count > sizeof(tmpbuf) - 1 ? sizeof(tmpbuf) - 1 : count;
 	strncpy(tmpbuf, buf, len);
@@ -1297,12 +1301,12 @@ static ssize_t myrs_store_dev_rebuild(struct device *dev,
 		return -EIO;
 	}
 
-	if (rebuild && ldev_info->RebuildInProgress) {
+	if (rebuild && ldev_info->rbld_active) {
 		sdev_printk(KERN_INFO, sdev,
 			    "Rebuild Not Initiated; already in progress\n");
 		return -EALREADY;
 	}
-	if (!rebuild && !ldev_info->RebuildInProgress) {
+	if (!rebuild && !ldev_info->rbld_active) {
 		sdev_printk(KERN_INFO, sdev,
 			    "Rebuild Not Cancelled; no rebuild in progress\n");
 		return ret;
@@ -1317,11 +1321,11 @@ static ssize_t myrs_store_dev_rebuild(struct device *dev,
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	if (rebuild) {
-		mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
+		mbox->LogicalDeviceInfo.ldev.ldev_num = ldev_num;
 		mbox->LogicalDeviceInfo.ioctl_opcode =
 			DAC960_V2_RebuildDeviceStart;
 	} else {
-		mbox->LogicalDeviceInfo.ldev.LogicalDeviceNumber = ldev_num;
+		mbox->LogicalDeviceInfo.ldev.ldev_num = ldev_num;
 		mbox->LogicalDeviceInfo.ioctl_opcode =
 			DAC960_V2_RebuildDeviceStop;
 	}
@@ -1352,18 +1356,18 @@ static ssize_t myrs_show_consistency_check(struct device *dev,
 	unsigned short ldev_num;
 	unsigned char status;
 
-	if (sdev->channel < cs->common.PhysicalChannelCount)
+	if (sdev->channel < cs->ctlr_info->physchan_present)
 		return snprintf(buf, 32, "physical device - not checking\n");
 
 	ldev_info = sdev->hostdata;
 	if (!ldev_info)
 		return -ENXIO;
-	ldev_num = ldev_info->LogicalDeviceNumber;
+	ldev_num = ldev_info->ldev_num;
 	status = myrs_get_ldev_info(cs, ldev_num, ldev_info);
-	if (ldev_info->ConsistencyCheckInProgress)
+	if (ldev_info->cc_active)
 		return snprintf(buf, 32, "checking block %zu of %zu\n",
-				(size_t)ldev_info->ConsistencyCheckBlockNumber,
-				(size_t)ldev_info->ConfigurableDeviceSize);
+				(size_t)ldev_info->cc_lba,
+				(size_t)ldev_info->cfg_devsize);
 	else
 		return snprintf(buf, 32, "not checking\n");
 }
@@ -1383,13 +1387,13 @@ static ssize_t myrs_store_consistency_check(struct device *dev,
 	int check;
 	int ret = count;
 
-	if (sdev->channel < cs->common.PhysicalChannelCount)
+	if (sdev->channel < cs->ctlr_info->physchan_present)
 		return -EINVAL;
 
 	ldev_info = sdev->hostdata;
 	if (!ldev_info)
 		return -ENXIO;
-	ldev_num = ldev_info->LogicalDeviceNumber;
+	ldev_num = ldev_info->ldev_num;
 
 	len = count > sizeof(tmpbuf) - 1 ? sizeof(tmpbuf) - 1 : count;
 	strncpy(tmpbuf, buf, len);
@@ -1404,13 +1408,13 @@ static ssize_t myrs_store_consistency_check(struct device *dev,
 			    status);
 		return -EIO;
 	}
-	if (check && ldev_info->ConsistencyCheckInProgress) {
+	if (check && ldev_info->cc_active) {
 		sdev_printk(KERN_INFO, sdev,
 			    "Consistency Check Not Initiated; "
 			    "already in progress\n");
 		return -EALREADY;
 	}
-	if (!check && !ldev_info->ConsistencyCheckInProgress) {
+	if (!check && !ldev_info->cc_active) {
 		sdev_printk(KERN_INFO, sdev,
 			    "Consistency Check Not Cancelled; "
 			    "check not in progress\n");
@@ -1426,13 +1430,13 @@ static ssize_t myrs_store_consistency_check(struct device *dev,
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	if (check) {
-		mbox->ConsistencyCheck.ldev.LogicalDeviceNumber = ldev_num;
+		mbox->ConsistencyCheck.ldev.ldev_num = ldev_num;
 		mbox->ConsistencyCheck.ioctl_opcode =
 			DAC960_V2_ConsistencyCheckStart;
 		mbox->ConsistencyCheck.RestoreConsistency = true;
 		mbox->ConsistencyCheck.InitializedAreaOnly = false;
 	} else {
-		mbox->ConsistencyCheck.ldev.LogicalDeviceNumber = ldev_num;
+		mbox->ConsistencyCheck.ldev.ldev_num = ldev_num;
 		mbox->ConsistencyCheck.ioctl_opcode =
 			DAC960_V2_ConsistencyCheckStop;
 	}
@@ -1538,7 +1542,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 
 	timeout = scmd->request->timeout;
 	if (scmd->cmd_len <= 10) {
-		if (scmd->device->channel >= cs->common.PhysicalChannelCount) {
+		if (scmd->device->channel >= cs->ctlr_info->physchan_present) {
 			myrs_ldev_info *ldev_info = sdev->hostdata;
 
 			mbox->SCSI_10.opcode = DAC960_V2_SCSI_10;
@@ -1584,7 +1588,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 			return SCSI_MLQUEUE_HOST_BUSY;
 		}
 		cmd_blk->DCDB_dma = DCDB_dma;
-		if (scmd->device->channel >= cs->common.PhysicalChannelCount) {
+		if (scmd->device->channel >= cs->ctlr_info->physchan_present) {
 			myrs_ldev_info *ldev_info = sdev->hostdata;
 
 			mbox->SCSI_255.opcode = DAC960_V2_SCSI_256;
@@ -1683,13 +1687,14 @@ submit:
 	return 0;
 }
 
-static unsigned short myrs_translate_ldev(myr_hba *c,
+static unsigned short myrs_translate_ldev(myrs_hba *cs,
 					  struct scsi_device *sdev)
 {
 	unsigned short ldev_num;
+	unsigned int chan_offset =
+		sdev->channel - cs->ctlr_info->physchan_present;
 
-	ldev_num = sdev->id +
-		(sdev->channel - c->PhysicalChannelCount) * c->host->max_id;
+	ldev_num = sdev->id + chan_offset * cs->common.host->max_id;
 
 	return ldev_num;
 }
@@ -1702,14 +1707,14 @@ static int myrs_slave_alloc(struct scsi_device *sdev)
 	if (sdev->channel > sdev->host->max_channel)
 		return 0;
 
-	if (sdev->channel >= cs->common.PhysicalChannelCount) {
+	if (sdev->channel >= cs->ctlr_info->physchan_present) {
 		myrs_ldev_info *ldev_info;
 		unsigned short ldev_num;
 
 		if (sdev->lun > 0)
 			return -ENXIO;
 
-		ldev_num = myrs_translate_ldev(&cs->common, sdev);
+		ldev_num = myrs_translate_ldev(cs, sdev);
 
 		ldev_info = kzalloc(sizeof(*ldev_info), GFP_KERNEL);
 		if (!ldev_info)
@@ -1726,7 +1731,7 @@ static int myrs_slave_alloc(struct scsi_device *sdev)
 				"Logical device mapping %d:%d:%d -> %d\n",
 				ldev_info->Channel, ldev_info->TargetID,
 				ldev_info->LogicalUnit,
-				ldev_info->LogicalDeviceNumber);
+				ldev_info->ldev_num);
 
 			sdev->hostdata = ldev_info;
 			switch (ldev_info->RAIDLevel) {
@@ -1799,7 +1804,7 @@ static int myrs_slave_configure(struct scsi_device *sdev)
 	if (sdev->channel > sdev->host->max_channel)
 		return -ENXIO;
 
-	if (sdev->channel < cs->common.PhysicalChannelCount) {
+	if (sdev->channel < cs->ctlr_info->physchan_present) {
 		/* Skip HBA device */
 		if (sdev->type == TYPE_RAID)
 			return -ENXIO;
@@ -1812,9 +1817,9 @@ static int myrs_slave_configure(struct scsi_device *sdev)
 	ldev_info = sdev->hostdata;
 	if (!ldev_info)
 		return -ENXIO;
-	if (ldev_info->LogicalDeviceControl.WriteCache ==
+	if (ldev_info->ldev_control.WriteCache ==
 	    DAC960_V2_WriteCacheEnabled ||
-	    ldev_info->LogicalDeviceControl.WriteCache ==
+	    ldev_info->ldev_control.WriteCache ==
 	    DAC960_V2_IntelligentWriteCacheEnabled)
 		sdev->wce_default_on = 1;
 	sdev->tagged_supported = 1;
@@ -1846,7 +1851,7 @@ static ssize_t myrs_show_ctlr_serial(struct device *dev,
 	myrs_hba *cs = (myrs_hba *)shost->hostdata;
 	char serial[17];
 
-	memcpy(serial, cs->ctlr_info.ControllerSerialNumber, 16);
+	memcpy(serial, cs->ctlr_info->ControllerSerialNumber, 16);
 	serial[16] = '\0';
 	return snprintf(buf, 16, "%s\n", serial);
 }
@@ -1874,7 +1879,7 @@ static ssize_t myrs_show_processor(struct device *dev,
 	struct DAC960_V2_ProcessorTypeTbl *tbl = DAC960_V2_ProcessorTypeNames;
 	const char *first_processor = NULL;
 	const char *second_processor = NULL;
-	myrs_ctlr_info *info = &cs->ctlr_info;
+	myrs_ctlr_info *info = cs->ctlr_info;
 	ssize_t ret;
 
 	if (info->FirstProcessorCount) {
@@ -1946,7 +1951,7 @@ static ssize_t myrs_store_discovery_command(struct device *dev,
 		return -EINVAL;
 	}
 	shost_printk(KERN_INFO, shost, "Discovery Initiated\n");
-	cs->NextEventSequenceNumber = 0;
+	cs->next_evseq = 0;
 	cs->NeedControllerInformation = true;
 	queue_delayed_work(cs->common.work_q, &cs->common.monitor_work, 1);
 	flush_delayed_work(&cs->common.monitor_work);
@@ -2023,7 +2028,7 @@ myr_is_raid(struct device *dev)
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myrs_hba *cs = (myrs_hba *)sdev->host->hostdata;
 
-	return (sdev->channel >= cs->common.PhysicalChannelCount) ? 1 : 0;
+	return (sdev->channel >= cs->ctlr_info->physchan_present) ? 1 : 0;
 }
 
 /**
@@ -2038,14 +2043,14 @@ myrs_get_resync(struct device *dev)
 	myrs_ldev_info *ldev_info = sdev->hostdata;
 	u8 percent_complete = 0, status;
 
-	if (sdev->channel < cs->common.PhysicalChannelCount || !ldev_info)
+	if (sdev->channel < cs->ctlr_info->physchan_present || !ldev_info)
 		return;
-	if (ldev_info->RebuildInProgress) {
-		unsigned short ldev_num = ldev_info->LogicalDeviceNumber;
+	if (ldev_info->rbld_active) {
+		unsigned short ldev_num = ldev_info->ldev_num;
 
 		status = myrs_get_ldev_info(cs, ldev_num, ldev_info);
-		percent_complete = ldev_info->RebuildBlockNumber * 100 /
-			ldev_info->ConfigurableDeviceSize;
+		percent_complete = ldev_info->rbld_lba * 100 /
+			ldev_info->cfg_devsize;
 	}
 	raid_set_resync(myrs_raid_template, dev, percent_complete);
 }
@@ -2062,7 +2067,7 @@ myrs_get_state(struct device *dev)
 	myrs_ldev_info *ldev_info = sdev->hostdata;
 	enum raid_state state = RAID_STATE_UNKNOWN;
 
-	if (sdev->channel < cs->common.PhysicalChannelCount || !ldev_info)
+	if (sdev->channel < cs->ctlr_info->physchan_present || !ldev_info)
 		state = RAID_STATE_UNKNOWN;
 	else {
 		switch (ldev_info->State) {
@@ -2216,9 +2221,8 @@ static unsigned char DAC960_V2_MonitoringGetHealthStatus(myrs_hba *cs)
 unsigned long myrs_monitor(myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
-	myrs_ctlr_info *info = &cs->ctlr_info;
-	unsigned int StatusChangeCounter =
-		cs->fwstat_buf->StatusChangeCounter;
+	myrs_ctlr_info *info = cs->ctlr_info;
+	unsigned int epoch = cs->fwstat_buf->epoch;
 	unsigned long interval = DAC960_MonitoringTimerInterval;
 	unsigned char status;
 
@@ -2230,14 +2234,12 @@ unsigned long myrs_monitor(myr_hba *c)
 		status = DAC960_V2_NewControllerInfo(cs);
 		mutex_unlock(&cs->cinfo_mutex);
 	}
-	if (cs->fwstat_buf->NextEventSequenceNumber
-	    - cs->NextEventSequenceNumber > 0) {
-		status = DAC960_V2_MonitorGetEvent(cs,
-						   cs->NextEventSequenceNumber,
+	if (cs->fwstat_buf->next_evseq - cs->next_evseq > 0) {
+		status = DAC960_V2_MonitorGetEvent(cs, cs->next_evseq,
 						   cs->event_buf);
 		if (status == DAC960_V2_NormalCompletion) {
 			DAC960_V2_ReportEvent(cs, cs->event_buf);
-			cs->NextEventSequenceNumber++;
+			cs->next_evseq++;
 			interval = 1;
 		}
 	}
@@ -2246,30 +2248,29 @@ unsigned long myrs_monitor(myr_hba *c)
 		       + DAC960_SecondaryMonitoringInterval))
 		c->SecondaryMonitoringTime = jiffies;
 
-	if (info->BackgroundInitializationsActive +
-	    info->LogicalDeviceInitializationsActive +
-	    info->PhysicalDeviceInitializationsActive +
-	    info->ConsistencyChecksActive +
-	    info->RebuildsActive +
-	    info->OnlineExpansionsActive != 0) {
+	if (info->bg_init_active +
+	    info->ldev_init_active +
+	    info->pdev_init_active +
+	    info->cc_active +
+	    info->rbld_active +
+	    info->exp_active != 0) {
 		struct scsi_device *sdev;
 		shost_for_each_device(sdev, c->host) {
 			myrs_ldev_info *ldev_info;
 			int ldev_num;
 
-			if (sdev->channel < c->PhysicalChannelCount)
+			if (sdev->channel < info->physchan_present)
 				continue;
 			ldev_info = sdev->hostdata;
 			if (!ldev_info)
 				continue;
-			ldev_num = ldev_info->LogicalDeviceNumber;
+			ldev_num = ldev_info->ldev_num;
 			myrs_get_ldev_info(cs, ldev_num, ldev_info);
 		}
 		cs->NeedControllerInformation = true;
 	}
-	if (StatusChangeCounter == cs->StatusChangeCounter &&
-	    cs->fwstat_buf->NextEventSequenceNumber
-	    == cs->NextEventSequenceNumber &&
+	if (epoch == cs->epoch &&
+	    cs->fwstat_buf->next_evseq == cs->next_evseq &&
 	    (cs->NeedControllerInformation == false ||
 	     time_before(jiffies, c->PrimaryMonitoringTime
 			 + DAC960_MonitoringTimerInterval))) {

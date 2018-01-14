@@ -228,28 +228,28 @@ typedef struct myrs_ctlr_info_s
 	unsigned char :8;				/* Byte 149 */
 	unsigned short :16;				/* Bytes 150-151 */
 	/* Physical Device Scan Information */
-	bool PhysicalScanActive:1;			/* Byte 152 Bit 0 */
+	bool pscan_active:1;			/* Byte 152 Bit 0 */
 	unsigned char :7;				/* Byte 152 Bits 1-7 */
-	unsigned char PhysicalDeviceChannelNumber;	/* Byte 153 */
-	unsigned char PhysicalDeviceTargetID;		/* Byte 154 */
-	unsigned char PhysicalDeviceLogicalUnit;	/* Byte 155 */
+	unsigned char pscan_chan;	/* Byte 153 */
+	unsigned char pscan_target;		/* Byte 154 */
+	unsigned char pscan_lun;	/* Byte 155 */
 	/* Maximum Command Data Transfer Sizes */
 	unsigned short MaximumDataTransferSizeInBlocks;	/* Bytes 156-157 */
 	unsigned short MaximumScatterGatherEntries;	/* Bytes 158-159 */
 	/* Logical/Physical Device Counts */
-	unsigned short LogicalDevicesPresent;		/* Bytes 160-161 */
-	unsigned short LogicalDevicesCritical;		/* Bytes 162-163 */
-	unsigned short LogicalDevicesOffline;		/* Bytes 164-165 */
-	unsigned short PhysicalDevicesPresent;		/* Bytes 166-167 */
-	unsigned short PhysicalDisksPresent;		/* Bytes 168-169 */
-	unsigned short PhysicalDisksCritical;		/* Bytes 170-171 */
-	unsigned short PhysicalDisksOffline;		/* Bytes 172-173 */
-	unsigned short MaximumParallelCommands;		/* Bytes 174-175 */
+	unsigned short ldev_present;		/* Bytes 160-161 */
+	unsigned short ldev_critical;		/* Bytes 162-163 */
+	unsigned short ldev_offline;		/* Bytes 164-165 */
+	unsigned short pdev_present;		/* Bytes 166-167 */
+	unsigned short pdisk_present;		/* Bytes 168-169 */
+	unsigned short pdisk_critical;		/* Bytes 170-171 */
+	unsigned short pdisk_offline;		/* Bytes 172-173 */
+	unsigned short max_tcq;		/* Bytes 174-175 */
 	/* Channel and Target ID Information */
-	unsigned char NumberOfPhysicalChannelsPresent;	/* Byte 176 */
-	unsigned char NumberOfVirtualChannelsPresent;	/* Byte 177 */
-	unsigned char NumberOfPhysicalChannelsPossible;	/* Byte 178 */
-	unsigned char NumberOfVirtualChannelsPossible;	/* Byte 179 */
+	unsigned char physchan_present;	/* Byte 176 */
+	unsigned char virtchan_present;	/* Byte 177 */
+	unsigned char physchan_max;	/* Byte 178 */
+	unsigned char virtchan_max;	/* Byte 179 */
 	unsigned char MaximumTargetsPerChannel[16];	/* Bytes 180-195 */
 	unsigned char Reserved4[12];			/* Bytes 196-207 */
 	/* Memory/Cache Information */
@@ -312,13 +312,13 @@ typedef struct myrs_ctlr_info_s
 	unsigned short ControllerHostCommandAbortsDone;	/* Bytes 394-395 */
 	unsigned int :32;					/* Bytes 396-399 */
 	/* Long Duration Activity Information */
-	unsigned short BackgroundInitializationsActive;	/* Bytes 400-401 */
-	unsigned short LogicalDeviceInitializationsActive;	/* Bytes 402-403 */
-	unsigned short PhysicalDeviceInitializationsActive;	/* Bytes 404-405 */
-	unsigned short ConsistencyChecksActive;		/* Bytes 406-407 */
-	unsigned short RebuildsActive;			/* Bytes 408-409 */
-	unsigned short OnlineExpansionsActive;		/* Bytes 410-411 */
-	unsigned short PatrolActivitiesActive;		/* Bytes 412-413 */
+	unsigned short bg_init_active;	/* Bytes 400-401 */
+	unsigned short ldev_init_active;	/* Bytes 402-403 */
+	unsigned short pdev_init_active;	/* Bytes 404-405 */
+	unsigned short cc_active;		/* Bytes 406-407 */
+	unsigned short rbld_active;			/* Bytes 408-409 */
+	unsigned short exp_active;		/* Bytes 410-411 */
+	unsigned short patrol_active;		/* Bytes 412-413 */
 	unsigned short :16;					/* Bytes 414-415 */
 	/* Flash ROM Information */
 	unsigned char FlashType;				/* Byte 416 */
@@ -329,10 +329,10 @@ typedef struct myrs_ctlr_info_s
 	unsigned int :32;					/* Bytes 428-431 */
 	unsigned char FlashTypeName[16];			/* Bytes 432-447 */
 	/* Firmware Run Time Information */
-	unsigned char RebuildRate;				/* Byte 448 */
-	unsigned char BackgroundInitializationRate;		/* Byte 449 */
-	unsigned char ForegroundInitializationRate;		/* Byte 450 */
-	unsigned char ConsistencyCheckRate;			/* Byte 451 */
+	unsigned char rbld_rate;				/* Byte 448 */
+	unsigned char bg_init_rate;		/* Byte 449 */
+	unsigned char fg_init_rate;		/* Byte 450 */
+	unsigned char cc_rate;			/* Byte 451 */
 	unsigned int :32;					/* Bytes 452-455 */
 	unsigned int MaximumDP;				/* Bytes 456-459 */
 	unsigned int FreeDP;					/* Bytes 460-463 */
@@ -450,19 +450,19 @@ typedef struct myrs_ldev_info_s
 			DAC960_V2_WriteCache_Last =		0x7
 		} __attribute__ ((packed)) WriteCache:3; /* Byte 8 Bits 3-5 */
 		bool rsvd1:1;				/* Byte 8 Bit 6 */
-		bool LogicalDeviceInitialized:1;	/* Byte 8 Bit 7 */
-	} LogicalDeviceControl;				/* Byte 8 */
+		bool ldev_init_done:1;	/* Byte 8 Bit 7 */
+	} ldev_control;				/* Byte 8 */
 	/* Logical Device Operations Status */
-	bool ConsistencyCheckInProgress:1;		/* Byte 9 Bit 0 */
-	bool RebuildInProgress:1;			/* Byte 9 Bit 1 */
-	bool BackgroundInitializationInProgress:1;	/* Byte 9 Bit 2 */
-	bool ForegroundInitializationInProgress:1;	/* Byte 9 Bit 3 */
-	bool DataMigrationInProgress:1;			/* Byte 9 Bit 4 */
-	bool PatrolOperationInProgress:1;		/* Byte 9 Bit 5 */
+	bool cc_active:1;		/* Byte 9 Bit 0 */
+	bool rbld_active:1;			/* Byte 9 Bit 1 */
+	bool bg_init_active:1;	/* Byte 9 Bit 2 */
+	bool fg_init_active:1;	/* Byte 9 Bit 3 */
+	bool migration_active:1;			/* Byte 9 Bit 4 */
+	bool patrol_active:1;		/* Byte 9 Bit 5 */
 	unsigned char rsvd2:2;				/* Byte 9 Bits 6-7 */
 	unsigned char RAID5WriteUpdate;			/* Byte 10 */
 	unsigned char RAID5Algorithm;			/* Byte 11 */
-	unsigned short LogicalDeviceNumber;		/* Bytes 12-13 */
+	unsigned short ldev_num;		/* Bytes 12-13 */
 	/* BIOS Info */
 	bool BIOSDisabled:1;				/* Byte 14 Bit 0 */
 	bool CDROMBootEnabled:1;			/* Byte 14 Bit 1 */
@@ -487,20 +487,20 @@ typedef struct myrs_ldev_info_s
 	/* Device Size Information */
 	unsigned short rsvd6:16;			/* Bytes 32-33 */
 	unsigned short DeviceBlockSizeInBytes;		/* Bytes 34-35 */
-	unsigned int OriginalDeviceSize;		/* Bytes 36-39 */
-	unsigned int ConfigurableDeviceSize;		/* Bytes 40-43 */
+	unsigned int orig_devsize;		/* Bytes 36-39 */
+	unsigned int cfg_devsize;		/* Bytes 40-43 */
 	unsigned int rsvd7:32;				/* Bytes 44-47 */
-	unsigned char LogicalDeviceName[32];		/* Bytes 48-79 */
+	unsigned char ldev_name[32];			/* Bytes 48-79 */
 	unsigned char SCSI_InquiryData[36];		/* Bytes 80-115 */
 	unsigned char Reserved1[12];			/* Bytes 116-127 */
-	u64 LastReadBlockNumber;			/* Bytes 128-135 */
-	u64 LastWrittenBlockNumber;			/* Bytes 136-143 */
-	u64 ConsistencyCheckBlockNumber;		/* Bytes 144-151 */
-	u64 RebuildBlockNumber;				/* Bytes 152-159 */
-	u64 BackgroundInitializationBlockNumber;	/* Bytes 160-167 */
-	u64 ForegroundInitializationBlockNumber;	/* Bytes 168-175 */
-	u64 DataMigrationBlockNumber;			/* Bytes 176-183 */
-	u64 PatrolOperationBlockNumber;			/* Bytes 184-191 */
+	u64 last_read_lba;			/* Bytes 128-135 */
+	u64 last_write_lba;			/* Bytes 136-143 */
+	u64 cc_lba;		/* Bytes 144-151 */
+	u64 rbld_lba;				/* Bytes 152-159 */
+	u64 bg_init_lba;	/* Bytes 160-167 */
+	u64 fg_init_lba;	/* Bytes 168-175 */
+	u64 migration_lba;			/* Bytes 176-183 */
+	u64 patrol_lba;			/* Bytes 184-191 */
 	unsigned char rsvd8[64];			/* Bytes 192-255 */
 } myrs_ldev_info;
 
@@ -553,8 +553,8 @@ typedef struct myrs_pdev_info_s
 	unsigned int rsvd6:32;				/* Bytes 44-47 */
 	unsigned short rsvd7:16;			/* Bytes 48-49 */
 	unsigned short DeviceBlockSizeInBytes;		/* Bytes 50-51 */
-	unsigned int OriginalDeviceSize;		/* Bytes 52-55 */
-	unsigned int ConfigurableDeviceSize;		/* Bytes 56-59 */
+	unsigned int orig_devsize;		/* Bytes 52-55 */
+	unsigned int cfg_devsize;		/* Bytes 56-59 */
 	unsigned int rsvd8:32;				/* Bytes 60-63 */
 	unsigned char PhysicalDeviceName[16];		/* Bytes 64-79 */
 	unsigned char rsvd9[16];			/* Bytes 80-95 */
@@ -584,13 +584,13 @@ typedef struct myrs_fwstat_s
 	unsigned int MillisecondsFromControllerStartTime;	/* Bytes 4-7 */
 	unsigned int SecondsFrom1January1970;			/* Bytes 8-11 */
 	unsigned int :32;					/* Bytes 12-15 */
-	unsigned int StatusChangeCounter;			/* Bytes 16-19 */
+	unsigned int epoch;			/* Bytes 16-19 */
 	unsigned int :32;					/* Bytes 20-23 */
 	unsigned int DebugOutputMessageBufferIndex;		/* Bytes 24-27 */
 	unsigned int CodedMessageBufferIndex;			/* Bytes 28-31 */
 	unsigned int CurrentTimeTracePageNumber;		/* Bytes 32-35 */
 	unsigned int CurrentProfilerPageNumber;		/* Bytes 36-39 */
-	unsigned int NextEventSequenceNumber;			/* Bytes 40-43 */
+	unsigned int next_evseq;			/* Bytes 40-43 */
 	unsigned int :32;					/* Bytes 44-47 */
 	unsigned char Reserved1[16];				/* Bytes 48-63 */
 	unsigned char Reserved2[64];				/* Bytes 64-127 */
@@ -670,7 +670,7 @@ myrs_pdev;
 
 typedef struct myrs_ldev_s
 {
-	unsigned short LogicalDeviceNumber;			/* Bytes 0-1 */
+	unsigned short ldev_num;			/* Bytes 0-1 */
 	unsigned char :3;					/* Byte 2 Bits 0-2 */
 	unsigned char Controller:5;				/* Byte 2 Bits 3-7 */
 }
@@ -703,7 +703,7 @@ myrs_opdev;
 
 typedef struct myrs_devmap_s
 {
-	unsigned short LogicalDeviceNumber;			/* Bytes 0-1 */
+	unsigned short ldev_num;			/* Bytes 0-1 */
 	unsigned short :16;					/* Bytes 2-3 */
 	unsigned char PreviousBootController;			/* Byte 4 */
 	unsigned char PreviousBootChannel;			/* Byte 5 */
@@ -970,8 +970,8 @@ typedef struct myrs_hba_s
 {
 	struct myr_hba_s common;
 
-	unsigned int StatusChangeCounter;
-	unsigned int NextEventSequenceNumber;
+	unsigned int epoch;
+	unsigned int next_evseq;
 	/* Monitor flags */
 	bool NeedControllerInformation;
 	struct pci_pool *RequestSensePool;
@@ -980,12 +980,12 @@ typedef struct myrs_hba_s
 	void (*WriteCommandMailbox)(myrs_cmd_mbox *, myrs_cmd_mbox *);
 	void (*MailboxNewCommand)(void __iomem *);
 
-	dma_addr_t	FirstCommandMailboxDMA;
-	myrs_cmd_mbox *FirstCommandMailbox;
-	myrs_cmd_mbox *LastCommandMailbox;
-	myrs_cmd_mbox *NextCommandMailbox;
-	myrs_cmd_mbox *PreviousCommandMailbox1;
-	myrs_cmd_mbox *PreviousCommandMailbox2;
+	dma_addr_t cmd_mbox_addr;
+	myrs_cmd_mbox *first_cmd_mbox;
+	myrs_cmd_mbox *last_cmd_mbox;
+	myrs_cmd_mbox *next_cmd_mbox;
+	myrs_cmd_mbox *prev_cmd_mbox1;
+	myrs_cmd_mbox *prev_cmd_mbox2;
 
 	dma_addr_t	FirstStatusMailboxDMA;
 	myrs_stat_mbox *FirstStatusMailbox;
@@ -999,8 +999,7 @@ typedef struct myrs_hba_s
 	myrs_fwstat *fwstat_buf;
 	dma_addr_t fwstat_addr;
 
-	myrs_ctlr_info ctlr_info;
-	myrs_ctlr_info *ctlr_info_buf;
+	myrs_ctlr_info *ctlr_info;
 	dma_addr_t ctlr_info_addr;
 	struct mutex cinfo_mutex;
 } myrs_hba;
