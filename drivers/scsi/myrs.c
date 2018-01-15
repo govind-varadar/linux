@@ -602,8 +602,38 @@ static unsigned char myrs_get_event(myrs_hba *cs,
 	return status;
 }
 
+
 /*
-  DAC960_V2_EnableMemoryMailboxInterface enables the Memory Mailbox Interface
+  myrs_get_fwstatus queues a Get Health Status Command
+  to DAC960 V2 Firmware Controllers.
+*/
+
+static unsigned char myrs_get_fwstatus(myrs_hba *cs)
+{
+	myrs_cmdblk *cmd_blk = &cs->mcmd_blk;
+	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
+	myrs_sgl *sgl;
+	unsigned char status = cmd_blk->status;
+
+	myrs_reset_cmd(cmd_blk);
+	mbox->Common.opcode = DAC960_V2_IOCTL;
+	mbox->Common.id = DAC960_MonitoringIdentifier;
+	mbox->Common.control.DataTransferControllerToHost = true;
+	mbox->Common.control.NoAutoRequestSense = true;
+	mbox->Common.dma_size = sizeof(myrs_fwstat);
+	mbox->Common.ioctl_opcode = DAC960_V2_GetHealthStatus;
+	sgl = &mbox->Common.dma_addr;
+	sgl->sge[0].sge_addr = cs->fwstat_addr;
+	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
+	dev_dbg(&cs->common.host->shost_gendev, "Sending GetHealthStatus\n");
+	myrs_exec_cmd(cs, cmd_blk);
+	status = cmd_blk->status;
+
+	return status;
+}
+
+/*
+  myrs_enable_mmio_mbox enables the Memory Mailbox Interface
   for DAC960 V2 Firmware Controllers.
 
   Aggregate the space needed for the controller's memory mailbox and
@@ -613,7 +643,7 @@ static unsigned char myrs_get_event(myrs_hba *cs,
   the structures that are contained in that region.
 */
 
-static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
+static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 {
 	myr_hba *c = &cs->common;
 	void __iomem *base = c->io_addr;
@@ -758,11 +788,11 @@ out_free:
 
 
 /*
-  DAC960_V2_ReadControllerConfiguration reads the Configuration Information
+  myrs_get_config reads the Configuration Information
   from DAC960 V2 Firmware Controllers and initializes the Controller structure.
 */
 
-int DAC960_V2_ReadControllerConfiguration(myr_hba *c)
+int myrs_get_config(myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
 	myrs_ctlr_info *info = cs->ctlr_info;
@@ -846,7 +876,7 @@ int DAC960_V2_ReadControllerConfiguration(myr_hba *c)
 }
 
 /*
-  DAC960_V2_ReportEvent prints an appropriate message when a Controller Event
+  myrs_log_event prints an appropriate message when a Controller Event
   occurs.
 */
 
@@ -976,7 +1006,7 @@ static struct {
 	{ 0, "" }
 };
 
-static void DAC960_V2_ReportEvent(myrs_hba *cs, myrs_event *ev)
+static void myrs_log_event(myrs_hba *cs, myrs_event *ev)
 {
 	unsigned char MessageBuffer[DAC960_LineBufferSize];
 	int ev_idx = 0, ev_code;
@@ -1016,7 +1046,8 @@ static void DAC960_V2_ReportEvent(myrs_hba *cs, myrs_event *ev)
 	case 'P':
 		sdev = scsi_device_lookup(shost, ev->channel,
 					  ev->target, 0);
-		sdev_printk(KERN_INFO, sdev, "%s\n", ev_msg);
+		sdev_printk(KERN_INFO, sdev, "event %d: Physical Device %s\n",
+			    ev->ev_seq, ev_msg);
 		if (sdev && sdev->hostdata &&
 		    sdev->channel < cs->ctlr_info->physchan_present) {
 			myrs_pdev_info *pdev_info = sdev->hostdata;
@@ -1042,13 +1073,15 @@ static void DAC960_V2_ReportEvent(myrs_hba *cs, myrs_event *ev)
 		}
 		break;
 	case 'L':
-		shost_printk(KERN_INFO, shost, "Logical Drive %d %s\n",
-			     ev->lun, ev_msg);
+		shost_printk(KERN_INFO, shost,
+			     "event %d: Logical Drive %d %s\n",
+			     ev->ev_seq, ev->lun, ev_msg);
 		cs->needs_update = true;
 		break;
 	case 'M':
-		shost_printk(KERN_INFO, shost, "Logical Drive %d %s\n",
-			     ev->lun, ev_msg);
+		shost_printk(KERN_INFO, shost,
+			     "event %d: Logical Drive %d %s\n",
+			     ev->ev_seq, ev->lun, ev_msg);
 		cs->needs_update = true;
 		break;
 	case 'S':
@@ -1057,8 +1090,9 @@ static void DAC960_V2_ReportEvent(myrs_hba *cs, myrs_event *ev)
 		     sshdr.asc == 0x04 && (sshdr.ascq == 0x01 ||
 					    sshdr.ascq == 0x02)))
 			break;
-		shost_printk(KERN_INFO, shost, "Physical Device %d:%d %s\n",
-			     ev->channel, ev->target, ev_msg);
+		shost_printk(KERN_INFO, shost,
+			     "event %d: Physical Device %d:%d %s\n",
+			     ev->ev_seq, ev->channel, ev->target, ev_msg);
 		shost_printk(KERN_INFO, shost,
 			     "Physical Device %d:%d Request Sense: "
 			     "Sense Key = %X, ASC = %02X, ASCQ = %02X\n",
@@ -1078,16 +1112,17 @@ static void DAC960_V2_ReportEvent(myrs_hba *cs, myrs_event *ev)
 		if (cs->common.SuppressEnclosureMessages)
 			break;
 		sprintf(MessageBuffer, ev_msg, ev->lun);
-		shost_printk(KERN_INFO, shost, "Enclosure %d %s\n",
-			     ev->target, MessageBuffer);
+		shost_printk(KERN_INFO, shost, "event %d: Enclosure %d %s\n",
+			     ev->ev_seq, ev->target, MessageBuffer);
 		break;
 	case 'C':
-		shost_printk(KERN_INFO, shost, "Controller %s\n", ev_msg);
+		shost_printk(KERN_INFO, shost, "event %d: Controller %s\n",
+			     ev->ev_seq, ev_msg);
 		break;
 	default:
 		shost_printk(KERN_INFO, shost,
-			     "Unknown Controller Event Code %04X\n",
-			     ev->ev_code);
+			     "event %d: Unknown Event Code %04X\n",
+			     ev->ev_seq, ev->ev_code);
 		break;
 	}
 }
@@ -2217,35 +2252,6 @@ static void myrs_handle_cmdblk(myrs_hba *cs, myrs_cmdblk *cmd_blk)
 	}
 }
 
-/*
-  DAC960_V2_MonitoringGetHealthStatus queues a Get Health Status Command
-  to DAC960 V2 Firmware Controllers.
-*/
-
-static unsigned char DAC960_V2_MonitoringGetHealthStatus(myrs_hba *cs)
-{
-	myrs_cmdblk *cmd_blk = &cs->mcmd_blk;
-	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
-	myrs_sgl *sgl;
-	unsigned char status = cmd_blk->status;
-
-	myrs_reset_cmd(cmd_blk);
-	mbox->Common.opcode = DAC960_V2_IOCTL;
-	mbox->Common.id = DAC960_MonitoringIdentifier;
-	mbox->Common.control.DataTransferControllerToHost = true;
-	mbox->Common.control.NoAutoRequestSense = true;
-	mbox->Common.dma_size = sizeof(myrs_fwstat);
-	mbox->Common.ioctl_opcode = DAC960_V2_GetHealthStatus;
-	sgl = &mbox->Common.dma_addr;
-	sgl->sge[0].sge_addr = cs->fwstat_addr;
-	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
-	dev_dbg(&cs->common.host->shost_gendev, "Sending GetHealthStatus\n");
-	myrs_exec_cmd(cs, cmd_blk);
-	status = cmd_blk->status;
-
-	return status;
-}
-
 unsigned long myrs_monitor(myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
@@ -2254,7 +2260,7 @@ unsigned long myrs_monitor(myr_hba *c)
 	unsigned long interval = DAC960_MonitoringTimerInterval;
 	unsigned char status;
 
-	status = DAC960_V2_MonitoringGetHealthStatus(cs);
+	status = myrs_get_fwstatus(cs);
 
 	if (cs->needs_update) {
 		cs->needs_update = false;
@@ -2266,7 +2272,7 @@ unsigned long myrs_monitor(myr_hba *c)
 		status = myrs_get_event(cs, cs->next_evseq,
 					cs->event_buf);
 		if (status == DAC960_V2_NormalCompletion) {
-			DAC960_V2_ReportEvent(cs, cs->event_buf);
+			myrs_log_event(cs, cs->event_buf);
 			cs->next_evseq++;
 			interval = 1;
 		}
@@ -2337,7 +2343,7 @@ static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
 			"Timeout waiting for Controller Initialisation\n");
 		return -ETIMEDOUT;
 	}
-	if (!DAC960_V2_EnableMemoryMailboxInterface(cs)) {
+	if (!myrs_enable_mmio_mbox(cs)) {
 		dev_err(&pdev->dev,
 			"Unable to Enable Memory Mailbox Interface\n");
 		DAC960_GEM_ControllerReset(base);
@@ -2346,8 +2352,7 @@ static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
 	DAC960_GEM_EnableInterrupts(base);
 	cs->write_cmd_mbox = DAC960_GEM_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_GEM_MemoryMailboxNewCommand;
-	c->ReadControllerConfiguration =
-		DAC960_V2_ReadControllerConfiguration;
+	c->ReadControllerConfiguration = myrs_get_config;
 	c->DisableInterrupts = DAC960_GEM_DisableInterrupts;
 	c->Reset = DAC960_GEM_ControllerReset;
 	return 0;
@@ -2445,7 +2450,7 @@ static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
 			"Timeout waiting for Controller Initialisation\n");
 		return -ETIMEDOUT;
 	}
-	if (!DAC960_V2_EnableMemoryMailboxInterface(cs)) {
+	if (!myrs_enable_mmio_mbox(cs)) {
 		dev_err(&pdev->dev,
 			"Unable to Enable Memory Mailbox Interface\n");
 		DAC960_BA_ControllerReset(base);
@@ -2454,8 +2459,7 @@ static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
 	DAC960_BA_EnableInterrupts(base);
 	cs->write_cmd_mbox = DAC960_BA_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_BA_MemoryMailboxNewCommand;
-	c->ReadControllerConfiguration =
-		DAC960_V2_ReadControllerConfiguration;
+	c->ReadControllerConfiguration = myrs_get_config;
 	c->DisableInterrupts = DAC960_BA_DisableInterrupts;
 	c->Reset = DAC960_BA_ControllerReset;
 	return 0;
@@ -2554,7 +2558,7 @@ static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
 			"Timeout waiting for Controller Initialisation\n");
 		return -ETIMEDOUT;
 	}
-	if (!DAC960_V2_EnableMemoryMailboxInterface(cs)) {
+	if (!myrs_enable_mmio_mbox(cs)) {
 		dev_err(&pdev->dev,
 			"Unable to Enable Memory Mailbox Interface\n");
 		DAC960_LP_ControllerReset(base);
@@ -2563,8 +2567,7 @@ static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
 	DAC960_LP_EnableInterrupts(base);
 	cs->write_cmd_mbox = DAC960_LP_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_LP_MemoryMailboxNewCommand;
-	c->ReadControllerConfiguration =
-		DAC960_V2_ReadControllerConfiguration;
+	c->ReadControllerConfiguration = myrs_get_config;
 	c->DisableInterrupts = DAC960_LP_DisableInterrupts;
 	c->Reset = DAC960_LP_ControllerReset;
 
