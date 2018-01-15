@@ -97,43 +97,41 @@ static char *myrs_raid_level_name(myrs_raid_level level)
 bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
-	struct pci_pool *ScatterGatherPool;
 	size_t elem_size, elem_align;
 
 	elem_align = sizeof(myrs_sge);
 	elem_size = c->host->sg_tablesize * elem_align;
-	ScatterGatherPool = pci_pool_create("DAC960_V2_ScatterGather",
-					    pdev, elem_size,
-					    elem_align, 0);
-	if (ScatterGatherPool == NULL) {
+	cs->sg_pool = pci_pool_create("myrs_sg", pdev,
+				      elem_size, elem_align, 0);
+	if (cs->sg_pool == NULL) {
 		shost_printk(KERN_ERR, c->host,
 			     "Failed to allocate SG pool\n");
 		return false;
 	}
 	elem_size = DAC960_V2_SENSE_BUFFERSIZE;
 	elem_align = sizeof(int);
-	cs->sense_pool = pci_pool_create("DAC960_V2_RequestSense",
-					 pdev, elem_size,
-					 elem_align, 0);
+	cs->sense_pool = pci_pool_create("myrs_sense", pdev,
+					 elem_size, elem_align, 0);
 	if (cs->sense_pool == NULL) {
-		pci_pool_destroy(ScatterGatherPool);
+		pci_pool_destroy(cs->sg_pool);
+		cs->sg_pool = NULL;
 		shost_printk(KERN_ERR, c->host,
 			     "Failed to allocate sense data pool\n");
 		return false;
 	}
 	elem_size = DAC960_V2_DCDB_SIZE;
 	elem_align = sizeof(unsigned char);
-	cs->dcdb_pool = pci_pool_create("DAC960_V2_DCDB",
-					pdev, elem_size, elem_align, 0);
+	cs->dcdb_pool = pci_pool_create("myrs_dcdb", pdev,
+					elem_size, elem_align, 0);
 	if (!cs->dcdb_pool) {
-		pci_pool_destroy(ScatterGatherPool);
+		pci_pool_destroy(cs->sg_pool);
+		cs->sg_pool = NULL;
 		pci_pool_destroy(cs->sense_pool);
 		cs->sense_pool = NULL;
 		shost_printk(KERN_ERR, c->host,
 			     "Failed to allocate DCDB pool\n");
 		return false;
 	}
-	c->ScatterGatherPool = ScatterGatherPool;
 
 	return true;
 }
@@ -142,8 +140,8 @@ void myrs_destroy_mempools(myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
 
-	if (c->ScatterGatherPool != NULL)
-		pci_pool_destroy(c->ScatterGatherPool);
+	if (cs->sg_pool)
+		pci_pool_destroy(cs->sg_pool);
 
 	if (cs->dcdb_pool) {
 		pci_pool_destroy(cs->dcdb_pool);
@@ -840,6 +838,7 @@ int myrs_get_config(myr_hba *c)
 			"STATUS MONITORING FUNCTIONALITY NEEDED BY THIS DRIVER.\n"
 			"PLEASE UPGRADE TO VERSION 6.00-01 OR ABOVE.\n",
 			c->FirmwareVersion);
+		return -ENODEV;
 	}
 	/*
 	  Initialize the Controller Channels and Targets.
@@ -1526,7 +1525,7 @@ static DEVICE_ATTR(consistency_check, S_IRUGO | S_IWUSR,
 		   myrs_show_consistency_check,
 		   myrs_store_consistency_check);
 
-static ssize_t myr_show_ctlr_num(struct device *dev,
+static ssize_t myrs_show_ctlr_num(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
@@ -1534,17 +1533,20 @@ static ssize_t myr_show_ctlr_num(struct device *dev,
 
 	return snprintf(buf, 20, "%d\n", cs->common.ControllerNumber);
 }
-static DEVICE_ATTR(myr_num, S_IRUGO, myr_show_ctlr_num, NULL);
+static DEVICE_ATTR(ctlr_num, S_IRUGO, myrs_show_ctlr_num, NULL);
 
-static ssize_t myr_show_firmware_version(struct device *dev,
+static ssize_t myrs_show_firmware_version(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
 	myrs_hba *cs = (myrs_hba *)shost->hostdata;
 
-	return snprintf(buf, 16, "%s\n", cs->common.FirmwareVersion);
+	return snprintf(buf, 16, "%d.%02d-%02d\n",
+			cs->ctlr_info->FirmwareMajorVersion,
+			cs->ctlr_info->FirmwareMinorVersion,
+			cs->ctlr_info->FirmwareTurnNumber);
 }
-static DEVICE_ATTR(firmware, S_IRUGO, myr_show_firmware_version, NULL);
+static DEVICE_ATTR(firmware, S_IRUGO, myrs_show_firmware_version, NULL);
 
 static ssize_t myrs_store_flush_cache(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
@@ -1773,8 +1775,8 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 		int i;
 
 		if (nsge > 2) {
-			hw_sgl = pci_pool_alloc(cs->common.ScatterGatherPool,
-						GFP_ATOMIC, &hw_sgl_addr);
+			hw_sgl = pci_pool_alloc(cs->sg_pool, GFP_ATOMIC,
+						&hw_sgl_addr);
 			if (WARN_ON(!hw_sgl)) {
 				if (cmd_blk->DCDB) {
 					pci_pool_free(cs->dcdb_pool,
@@ -1830,7 +1832,7 @@ static unsigned short myrs_translate_ldev(myrs_hba *cs,
 	unsigned int chan_offset =
 		sdev->channel - cs->ctlr_info->physchan_present;
 
-	ldev_num = sdev->id + chan_offset * cs->common.host->max_id;
+	ldev_num = sdev->id + chan_offset * sdev->host->max_id;
 
 	return ldev_num;
 }
@@ -1972,7 +1974,7 @@ static void myrs_slave_destroy(struct scsi_device *sdev)
 	}
 }
 
-static struct device_attribute *myr_sdev_attrs[] = {
+static struct device_attribute *myrs_sdev_attrs[] = {
 	&dev_attr_consistency_check,
 	&dev_attr_rebuild,
 	&dev_attr_raid_state,
@@ -2130,7 +2132,7 @@ static DEVICE_ATTR(disable_enclosure_messages, S_IRUGO | S_IWUSR,
 
 static struct device_attribute *myrs_shost_attrs[] = {
 	&dev_attr_serial,
-	&dev_attr_myr_num,
+	&dev_attr_ctlr_num,
 	&dev_attr_processor,
 	&dev_attr_firmware,
 	&dev_attr_discovery,
@@ -2150,16 +2152,16 @@ struct scsi_host_template myrs_template = {
 	.slave_destroy = myrs_slave_destroy,
 	.cmd_size = sizeof(myrs_cmdblk),
 	.shost_attrs = myrs_shost_attrs,
-	.sdev_attrs = myr_sdev_attrs,
+	.sdev_attrs = myrs_sdev_attrs,
 	.this_id = -1,
 };
 
 /**
- * myr_is_raid - return boolean indicating device is raid volume
+ * myrs_is_raid - return boolean indicating device is raid volume
  * @dev the device struct object
  */
 static int
-myr_is_raid(struct device *dev)
+myrs_is_raid(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myrs_hba *cs = (myrs_hba *)sdev->host->hostdata;
@@ -2230,7 +2232,7 @@ myrs_get_state(struct device *dev)
 
 struct raid_function_template myrs_raid_functions = {
 	.cookie		= &myrs_template,
-	.is_raid	= myr_is_raid,
+	.is_raid	= myrs_is_raid,
 	.get_resync	= myrs_get_resync,
 	.get_state	= myrs_get_state,
 };
@@ -2298,7 +2300,7 @@ static void myrs_handle_scsi(myrs_hba *cs, myrs_cmdblk *cmd_blk,
 		cmd_blk->DCDB_dma = 0;
 	}
 	if (cmd_blk->sgl) {
-		pci_pool_free(cs->common.ScatterGatherPool, cmd_blk->sgl,
+		pci_pool_free(cs->sg_pool, cmd_blk->sgl,
 			      cmd_blk->sgl_addr);
 		cmd_blk->sgl = NULL;
 		cmd_blk->sgl_addr = 0;

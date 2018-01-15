@@ -975,6 +975,7 @@ typedef struct myrs_hba_s
 	/* Monitor flags */
 	bool needs_update;
 
+	struct pci_pool *sg_pool;
 	struct pci_pool *sense_pool;
 	struct pci_pool *dcdb_pool;
 

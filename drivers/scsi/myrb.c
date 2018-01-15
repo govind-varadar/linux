@@ -92,16 +92,14 @@ static char *DAC960_V1_RAIDLevelName(DAC960_V1_RAIDLevel_T level)
 bool myrb_create_mempools(struct pci_dev *pdev, myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
-	struct pci_pool *ScatterGatherPool;
 	struct pci_pool *DCDBPool = NULL;
 	size_t elem_size, elem_align;
 
 	elem_align = sizeof(myrb_sge);
 	elem_size = c->host->sg_tablesize * elem_align;
-	ScatterGatherPool = pci_pool_create("DAC960_V1_ScatterGather",
-					    pdev, elem_size,
-					    elem_align, 0);
-	if (ScatterGatherPool == NULL) {
+	cb->sg_pool = pci_pool_create("myrb_sg", pdev,
+				      elem_size, elem_align, 0);
+	if (cb->sg_pool == NULL) {
 		shost_printk(KERN_ERR, c->host,
 			     "Failed to allocate SG pool\n");
 		return false;
@@ -111,12 +109,12 @@ bool myrb_create_mempools(struct pci_dev *pdev, myr_hba *c)
 	DCDBPool = pci_pool_create("DAC960_V1_DCDB",
 				   pdev, elem_size, elem_align, 0);
 	if (!DCDBPool) {
-		pci_pool_destroy(ScatterGatherPool);
+		pci_pool_destroy(cb->sg_pool);
+		cb->sg_pool = NULL;
 		shost_printk(KERN_ERR, c->host,
 			     "Failed to allocate DCDB pool\n");
 		return false;
 	}
-	c->ScatterGatherPool = ScatterGatherPool;
 	cb->DCDBPool = DCDBPool;
 	return true;
 }
@@ -125,8 +123,8 @@ void myrb_destroy_mempools(myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 
-	if (c->ScatterGatherPool != NULL)
-		pci_pool_destroy(c->ScatterGatherPool);
+	if (cb->sg_pool != NULL)
+		pci_pool_destroy(cb->sg_pool);
 
 	if (cb->DCDBPool) {
 		pci_pool_destroy(cb->DCDBPool);
@@ -1013,7 +1011,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	struct Scsi_Host *shost = c->host;
 	struct pci_dev *pdev = c->pdev;
 	unsigned short status;
-	int ret = -ENODEV;
+	int ret = -ENODEV, memsize;
 
 	Enquiry2 = pci_zalloc_consistent(pdev, sizeof(DAC960_V1_Enquiry2_T),
 					 &Enquiry2DMA);
@@ -1198,7 +1196,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 		channels = Enquiry2->MaxLogicalDrives / shost->max_id;
 		c->LogicalChannelCount = c->LogicalChannelMax = channels;
 	}
-	c->MemorySize = Enquiry2->MemorySize >> 20;
+	memsize = Enquiry2->MemorySize >> 20;
 	cb->safte_enabled = (Enquiry2->FaultManagementType == DAC960_V1_SAFTE);
 	/*
 	  Initialize the Controller Queue Depth, Driver Queue Depth, Logical Drive
@@ -1269,7 +1267,7 @@ out:
 		"Configuring %s PCI RAID Controller\n", c->ModelName);
 	shost_printk(KERN_INFO, c->host,
 		"  Firmware Version: %s, Channels: %d, Memory Size: %dMB\n",
-		c->FirmwareVersion, c->PhysicalChannelCount, c->MemorySize);
+		c->FirmwareVersion, c->PhysicalChannelCount, memsize);
 	if (c->IO_Address == 0)
 		shost_printk(KERN_INFO, c->host,
 			"  I/O Address: n/a, PCI Address: 0x%lX, IRQ Channel: %d\n",
@@ -1624,8 +1622,7 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 		dma_addr_t hw_sgl_addr;
 		int i;
 
-		hw_sgl = pci_pool_alloc(cb->common.ScatterGatherPool,
-					GFP_ATOMIC, &hw_sgl_addr);
+		hw_sgl = pci_pool_alloc(cb->sg_pool, GFP_ATOMIC, &hw_sgl_addr);
 		if (!hw_sgl)
 			return SCSI_MLQUEUE_HOST_BUSY;
 
@@ -2282,8 +2279,7 @@ static void myrb_handle_scsi(myrb_hba *cb, myrb_cmdblk *cmd_blk,
 		cmd_blk->DCDB = NULL;
 	}
 	if (cmd_blk->sgl) {
-		pci_pool_free(cb->common.ScatterGatherPool, cmd_blk->sgl,
-			      cmd_blk->sgl_addr);
+		pci_pool_free(cb->sg_pool, cmd_blk->sgl, cmd_blk->sgl_addr);
 		cmd_blk->sgl = NULL;
 		cmd_blk->sgl_addr = 0;
 	}

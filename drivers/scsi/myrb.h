@@ -817,6 +817,7 @@ typedef struct myrb_hba_s
 	void (*WriteCommandMailbox)(myrb_cmd_mbox *, myrb_cmd_mbox *);
 	void (*MailboxNewCommand)(void __iomem *);
 
+	struct pci_pool *sg_pool;
 	struct pci_pool *DCDBPool;
 
 	dma_addr_t	FirstCommandMailboxDMA;

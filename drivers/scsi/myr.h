@@ -187,7 +187,7 @@ struct DAC960_privdata {
 typedef struct myr_hba_s
 {
 	void __iomem *io_addr;
-	void __iomem *MemoryMappedAddress;
+	void __iomem *mmio_base;
 	DAC960_FirmwareType_T FirmwareType;
 	DAC960_HardwareType_T HardwareType;
 	phys_addr_t IO_Address;
@@ -200,7 +200,6 @@ typedef struct myr_hba_s
 	unsigned char FullModelName[28];
 	unsigned char FirmwareVersion[12];
 	unsigned char IRQ_Channel;
-	unsigned char MemorySize;
 	unsigned char LogicalDriveCount;
 	unsigned char PhysicalChannelCount;
 	unsigned char PhysicalChannelMax;
@@ -216,7 +215,6 @@ typedef struct myr_hba_s
 	bool SuppressEnclosureMessages;
 	struct workqueue_struct *work_q;
 	struct delayed_work monitor_work;
-	struct pci_pool *ScatterGatherPool;
 	spinlock_t queue_lock;
 	char work_q_name[20];
 	int (*ReadControllerConfiguration)(struct myr_hba_s *);

@@ -184,9 +184,9 @@ static void DAC960_DetectCleanup(myr_hba *c)
 	else
 		free_dma_loaf(pdev, &c->DmaPages);
 
-	if (c->MemoryMappedAddress) {
+	if (c->mmio_base) {
 		myr_disable_intr(c);
-		iounmap(c->MemoryMappedAddress);
+		iounmap(c->mmio_base);
 	}
 	if (c->IRQ_Channel)
 		free_irq(c->IRQ_Channel, c);
@@ -212,7 +212,7 @@ DAC960_DetectController(struct pci_dev *pdev,
 	struct DAC960_privdata *privdata =
 		(struct DAC960_privdata *)entry->driver_data;
 	irq_handler_t InterruptHandler = privdata->InterruptHandler;
-	unsigned int MemoryWindowSize = privdata->MemoryWindowSize;
+	unsigned int mmio_size = privdata->MemoryWindowSize;
 	myr_hba *c = NULL;
 
 	if (privdata->FirmwareType == DAC960_V1_Controller)
@@ -228,7 +228,6 @@ DAC960_DetectController(struct pci_dev *pdev,
 	c->FirmwareType = privdata->FirmwareType;
 	c->HardwareType = privdata->HardwareType;
 	c->pdev = pdev;
-	strcpy(c->FullModelName, "DAC960");
 
 	snprintf(c->work_q_name, sizeof(c->work_q_name),
 		 "myr_wq_%d", c->host->host_no);
@@ -255,17 +254,16 @@ DAC960_DetectController(struct pci_dev *pdev,
 	/*
 	  Map the Controller Register Window.
 	*/
-	if (MemoryWindowSize < PAGE_SIZE)
-		MemoryWindowSize = PAGE_SIZE;
-	c->MemoryMappedAddress =
-		ioremap_nocache(c->PCI_Address & PAGE_MASK, MemoryWindowSize);
-	if (c->MemoryMappedAddress == NULL) {
+	if (mmio_size < PAGE_SIZE)
+		mmio_size = PAGE_SIZE;
+	c->mmio_base = ioremap_nocache(c->PCI_Address & PAGE_MASK, mmio_size);
+	if (c->mmio_base == NULL) {
 		dev_err(&pdev->dev,
 			"Unable to map Controller Register Window\n");
 		goto Failure;
 	}
 
-	c->io_addr = c->MemoryMappedAddress + (c->PCI_Address & ~PAGE_MASK);
+	c->io_addr = c->mmio_base + (c->PCI_Address & ~PAGE_MASK);
 	if (privdata->HardwareInit(pdev, c, c->io_addr))
 		goto Failure;
 
