@@ -856,7 +856,7 @@ int myrs_get_config(myr_hba *c)
 		if (shost->max_id < info->MaximumTargetsPerChannel[i])
 			shost->max_id = info->MaximumTargetsPerChannel[i];
 	}
-	c->MemorySize = info->MemorySizeMB;
+
 	/*
 	 * Initialize the Controller Queue Depth, Driver Queue Depth,
 	 * Logical Drive Count, Maximum Blocks per Command, Controller
@@ -872,6 +872,41 @@ int myrs_get_config(myr_hba *c)
 	shost->sg_tablesize = info->MaximumScatterGatherEntries;
 	if (shost->sg_tablesize > DAC960_V2_ScatterGatherLimit)
 		shost->sg_tablesize = DAC960_V2_ScatterGatherLimit;
+
+	shost_printk(KERN_INFO, c->host,
+		"Configuring %s PCI RAID Controller\n", c->ModelName);
+	shost_printk(KERN_INFO, c->host,
+		"  Firmware Version: %s, Channels: %d, Memory Size: %dMB\n",
+		c->FirmwareVersion, c->PhysicalChannelCount, info->MemorySizeMB);
+
+	shost_printk(KERN_INFO, c->host,
+		     "  I/O Address: n/a, PCI Address: 0x%lX, IRQ Channel: %d\n",
+		     (unsigned long)c->PCI_Address, c->IRQ_Channel);
+	shost_printk(KERN_INFO, c->host,
+		"  Controller Queue Depth: %d, Maximum Blocks per Command: %d\n",
+		c->host->can_queue, c->host->max_sectors);
+
+	shost_printk(KERN_INFO, c->host,
+		     "  Driver Queue Depth: %d,"
+		     " Scatter/Gather Limit: %d of %d Segments\n",
+		     c->host->can_queue, c->host->sg_tablesize,
+		     DAC960_V2_ScatterGatherLimit);
+	for (i = 0; i < info->physchan_max; i++) {
+		if (!info->MaximumTargetsPerChannel[i])
+			continue;
+		shost_printk(KERN_INFO, c->host,
+			     "  Device Channel %d: max %d devices\n",
+			     i, info->MaximumTargetsPerChannel[i]);
+	}
+	shost_printk(KERN_INFO, c->host,
+		     "  Physical: %d/%d channels, %d disks, %d devices\n",
+		     info->physchan_present, info->physchan_max,
+		     info->pdisk_present, info->pdev_present);
+
+	shost_printk(KERN_INFO, c->host,
+		     "  Logical: %d/%d channels, %d disks\n",
+		     info->virtchan_present, info->virtchan_max,
+		     c->LogicalDriveCount);
 	return 0;
 }
 
@@ -1125,30 +1160,6 @@ static void myrs_log_event(myrs_hba *cs, myrs_event *ev)
 			     ev->ev_seq, ev->ev_code);
 		break;
 	}
-}
-
-void myrs_get_ctlr_info(myr_hba *c)
-{
-	int i;
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	myrs_ctlr_info *info = cs->ctlr_info;
-
-	shost_printk(KERN_INFO, c->host,
-		     "  Driver Queue Depth: %d,"
-		     " Scatter/Gather Limit: %d of %d Segments\n",
-		     c->host->can_queue, c->host->sg_tablesize,
-		     DAC960_V2_ScatterGatherLimit);
-	for (i = 0; i < info->physchan_max; i++) {
-		if (!info->MaximumTargetsPerChannel[i])
-			continue;
-		shost_printk(KERN_INFO, c->host,
-			     "  Device Channel %d: max %d devices\n",
-			     i, info->MaximumTargetsPerChannel[i]);
-	}
-	shost_printk(KERN_INFO, c->host,
-		     "  Physical: %d/%d channels, %d disks, %d devices\n",
-		     info->physchan_present, info->physchan_max,
-		     info->pdisk_present, info->pdev_present);
 }
 
 static ssize_t myrs_show_dev_state(struct device *dev,

@@ -1264,6 +1264,48 @@ out:
 			    Enquiry2, Enquiry2DMA);
 	pci_free_consistent(pdev, sizeof(DAC960_V1_Config2_T),
 			    Config2, Config2DMA);
+
+	shost_printk(KERN_INFO, c->host,
+		"Configuring %s PCI RAID Controller\n", c->ModelName);
+	shost_printk(KERN_INFO, c->host,
+		"  Firmware Version: %s, Channels: %d, Memory Size: %dMB\n",
+		c->FirmwareVersion, c->PhysicalChannelCount, c->MemorySize);
+	if (c->IO_Address == 0)
+		shost_printk(KERN_INFO, c->host,
+			"  I/O Address: n/a, PCI Address: 0x%lX, IRQ Channel: %d\n",
+			(unsigned long)c->PCI_Address, c->IRQ_Channel);
+	else
+		shost_printk(KERN_INFO, c->host,
+			"  I/O Address: 0x%lX, PCI Address: 0x%lX, IRQ Channel: %d\n",
+			(unsigned long)c->IO_Address,
+			(unsigned long)c->PCI_Address,
+			c->IRQ_Channel);
+	shost_printk(KERN_INFO, c->host,
+		"  Controller Queue Depth: %d, Maximum Blocks per Command: %d\n",
+		c->host->can_queue, c->host->max_sectors);
+	shost_printk(KERN_INFO, c->host,
+		     "  Driver Queue Depth: %d,"
+		     " Scatter/Gather Limit: %d of %d Segments\n",
+		     c->host->can_queue, c->host->sg_tablesize,
+		     DAC960_V1_ScatterGatherLimit);
+	shost_printk(KERN_INFO, c->host,
+		     "  Stripe Size: %dKB, Segment Size: %dKB, "
+		     "BIOS Geometry: %d/%d%s\n",
+		     cb->StripeSize,
+		     cb->SegmentSize,
+		     cb->GeometryTranslationHeads,
+		     cb->GeometryTranslationSectors,
+		     cb->safte_enabled ?
+		     "  SAF-TE Enclosure Management Enabled" : "");
+	shost_printk(KERN_INFO, c->host,
+		     "  Physical: %d/%d channels\n",
+		     c->PhysicalChannelCount, c->PhysicalChannelMax);
+
+	shost_printk(KERN_INFO, c->host,
+		     "  Logical: %d/%d channels, %d disks\n",
+		     c->LogicalChannelCount, c->LogicalChannelMax,
+		     c->LogicalDriveCount);
+
 	return ret;
 }
 
@@ -2379,29 +2421,6 @@ void myrb_flush_cache(myr_hba *c)
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 
 	myrb_exec_type3(cb, DAC960_V1_Flush, 0);
-}
-
-void myrb_get_ctlr_info(myr_hba *c)
-{
-	myrb_hba *cb = container_of(c, myrb_hba, common);
-
-	shost_printk(KERN_INFO, c->host,
-		     "  Driver Queue Depth: %d,"
-		     " Scatter/Gather Limit: %d of %d Segments\n",
-		     c->host->can_queue, c->host->sg_tablesize,
-		     DAC960_V1_ScatterGatherLimit);
-	shost_printk(KERN_INFO, c->host,
-		     "  Stripe Size: %dKB, Segment Size: %dKB, "
-		     "BIOS Geometry: %d/%d%s\n",
-		     cb->StripeSize,
-		     cb->SegmentSize,
-		     cb->GeometryTranslationHeads,
-		     cb->GeometryTranslationSectors,
-		     cb->safte_enabled ?
-		     "  SAF-TE Enclosure Management Enabled" : "");
-	shost_printk(KERN_INFO, c->host,
-		     "  Physical: %d/%d channels\n",
-		     c->PhysicalChannelCount, c->PhysicalChannelMax);
 }
 
 myr_hba *myrb_alloc_host(struct pci_dev *pdev,

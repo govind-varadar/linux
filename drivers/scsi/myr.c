@@ -110,42 +110,6 @@ static void free_dma_loaf(struct pci_dev *dev, struct dma_loaf *loaf_handle)
 }
 
 /*
-  DAC960_ReportControllerConfiguration reports the Configuration Information
-  for Controller.
-*/
-
-static void DAC960_ReportControllerConfiguration(myr_hba *c)
-{
-	shost_printk(KERN_INFO, c->host,
-		"Configuring %s PCI RAID Controller\n", c->ModelName);
-	shost_printk(KERN_INFO, c->host,
-		"  Firmware Version: %s, Channels: %d, Memory Size: %dMB\n",
-		c->FirmwareVersion, c->PhysicalChannelCount, c->MemorySize);
-	if (c->IO_Address == 0)
-		shost_printk(KERN_INFO, c->host,
-			"  I/O Address: n/a, PCI Address: 0x%lX, IRQ Channel: %d\n",
-			(unsigned long)c->PCI_Address, c->IRQ_Channel);
-	else
-		shost_printk(KERN_INFO, c->host,
-			"  I/O Address: 0x%lX, PCI Address: 0x%lX, IRQ Channel: %d\n",
-			(unsigned long)c->IO_Address,
-			(unsigned long)c->PCI_Address,
-			c->IRQ_Channel);
-	shost_printk(KERN_INFO, c->host,
-		"  Controller Queue Depth: %d, Maximum Blocks per Command: %d\n",
-		c->host->can_queue, c->host->max_sectors);
-	if (c->FirmwareType == DAC960_V1_Controller)
-		myrb_get_ctlr_info(c);
-	else
-		myrs_get_ctlr_info(c);
-
-	shost_printk(KERN_INFO, c->host,
-		     "  Logical: %d/%d channels, %d disks\n",
-		     c->LogicalChannelCount, c->LogicalChannelMax,
-		     c->LogicalDriveCount);
-}
-
-/*
   myr_err_status reports Controller BIOS Messages passed through
   the Error Status Register when the driver performs the BIOS handshaking.
   It returns true for fatal errors and false otherwise.
@@ -364,7 +328,6 @@ DAC960_Probe(struct pci_dev *dev, const struct pci_device_id *entry)
 		DAC960_DetectCleanup(c);
 		return ret;
 	}
-	DAC960_ReportControllerConfiguration(c);
 
 	if (!DAC960_CreateAuxiliaryStructures(c)) {
 		ret = -ENOMEM;
