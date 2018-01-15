@@ -206,17 +206,12 @@ typedef struct myr_hba_s
 	unsigned char LogicalChannelCount;
 	unsigned char LogicalChannelMax;
 	struct dma_loaf DmaPages;
-	unsigned long PrimaryMonitoringTime;
-	unsigned long SecondaryMonitoringTime;
 	unsigned long ShutdownMonitoringTimer;
 	unsigned long LastProgressReportTime;
 	unsigned long LastCurrentStatusTime;
 	bool DriveSpinUpMessageDisplayed;
 	bool SuppressEnclosureMessages;
-	struct workqueue_struct *work_q;
-	struct delayed_work monitor_work;
 	spinlock_t queue_lock;
-	char work_q_name[20];
 	int (*ReadControllerConfiguration)(struct myr_hba_s *);
 	void (*DisableInterrupts)(void __iomem *);
 	void (*Reset)(void __iomem *);
@@ -267,7 +262,6 @@ extern struct scsi_host_template myrb_template;
 bool myrb_create_mempools(struct pci_dev *pdev, myr_hba *c);
 void myrb_destroy_mempools(myr_hba *c);
 void myrb_flush_cache(myr_hba *c);
-unsigned long myrb_monitor(myr_hba *c);
 void myrb_get_ctlr_info(myr_hba *c);
 myr_hba *myrb_alloc_host(struct pci_dev *, const struct pci_device_id *);
 
@@ -287,7 +281,6 @@ bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c);
 void myrs_destroy_mempools(myr_hba *c);
 void myrs_unmap(myr_hba *c);
 void myrs_flush_cache(myr_hba *c);
-unsigned long myrs_monitor(myr_hba *c);
 void myrs_get_ctlr_info(myr_hba *c);
 myr_hba *myrs_alloc_host(struct pci_dev *, const struct pci_device_id *);
 

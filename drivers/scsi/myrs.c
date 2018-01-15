@@ -33,6 +33,8 @@
 #include "myr.h"
 #include "myrs.h"
 
+static void myrs_monitor(struct work_struct *work);
+
 static struct myrs_devstate_name_entry {
 	myrs_devstate state;
 	char *name;
@@ -133,12 +135,36 @@ bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c)
 		return false;
 	}
 
+	snprintf(cs->work_q_name, sizeof(cs->work_q_name),
+		 "myrs_wq_%d", c->host->host_no);
+	cs->work_q = create_singlethread_workqueue(cs->work_q_name);
+	if (!cs->work_q) {
+		pci_pool_destroy(cs->dcdb_pool);
+		cs->dcdb_pool = NULL;
+		pci_pool_destroy(cs->sg_pool);
+		cs->sg_pool = NULL;
+		pci_pool_destroy(cs->sense_pool);
+		cs->sense_pool = NULL;
+		shost_printk(KERN_ERR, c->host,
+			     "Failed to create workqueue\n");
+		return false;
+	}
+
+	/*
+	  Initialize the Monitoring Timer.
+	*/
+	INIT_DELAYED_WORK(&cs->monitor_work, myrs_monitor);
+	queue_delayed_work(cs->work_q, &cs->monitor_work, 1);
+
 	return true;
 }
 
 void myrs_destroy_mempools(myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
+
+	cancel_delayed_work_sync(&cs->monitor_work);
+	destroy_workqueue(cs->work_q);
 
 	if (cs->sg_pool)
 		pci_pool_destroy(cs->sg_pool);
@@ -2091,8 +2117,8 @@ static ssize_t myrs_store_discovery_command(struct device *dev,
 	shost_printk(KERN_INFO, shost, "Discovery Initiated\n");
 	cs->next_evseq = 0;
 	cs->needs_update = true;
-	queue_delayed_work(cs->common.work_q, &cs->common.monitor_work, 1);
-	flush_delayed_work(&cs->common.monitor_work);
+	queue_delayed_work(cs->work_q, &cs->monitor_work, 1);
+	flush_delayed_work(&cs->monitor_work);
 	shost_printk(KERN_INFO, shost, "Discovery Completed\n");
 
 	return count;
@@ -2327,13 +2353,16 @@ static void myrs_handle_cmdblk(myrs_hba *cs, myrs_cmdblk *cmd_blk)
 	}
 }
 
-unsigned long myrs_monitor(myr_hba *c)
+static void myrs_monitor(struct work_struct *work)
 {
-	myrs_hba *cs = container_of(c, myrs_hba, common);
+	myrs_hba *cs = container_of(work, myrs_hba, monitor_work.work);
+	struct Scsi_Host *shost = cs->common.host;
 	myrs_ctlr_info *info = cs->ctlr_info;
 	unsigned int epoch = cs->fwstat_buf->epoch;
 	unsigned long interval = DAC960_MonitoringTimerInterval;
 	unsigned char status;
+
+	dev_dbg(&shost->shost_gendev, "monitor tick\n");
 
 	status = myrs_get_fwstatus(cs);
 
@@ -2353,9 +2382,9 @@ unsigned long myrs_monitor(myr_hba *c)
 		}
 	}
 
-	if (time_after(jiffies, c->SecondaryMonitoringTime
+	if (time_after(jiffies, cs->secondary_monitor_time
 		       + DAC960_SecondaryMonitoringInterval))
-		c->SecondaryMonitoringTime = jiffies;
+		cs->secondary_monitor_time = jiffies;
 
 	if (info->bg_init_active +
 	    info->ldev_init_active +
@@ -2364,7 +2393,7 @@ unsigned long myrs_monitor(myr_hba *c)
 	    info->rbld_active +
 	    info->exp_active != 0) {
 		struct scsi_device *sdev;
-		shost_for_each_device(sdev, c->host) {
+		shost_for_each_device(sdev, shost) {
 			myrs_ldev_info *ldev_info;
 			int ldev_num;
 
@@ -2381,11 +2410,14 @@ unsigned long myrs_monitor(myr_hba *c)
 	if (epoch == cs->epoch &&
 	    cs->fwstat_buf->next_evseq == cs->next_evseq &&
 	    (cs->needs_update == false ||
-	     time_before(jiffies, c->PrimaryMonitoringTime
+	     time_before(jiffies, cs->primary_monitor_time
 			 + DAC960_MonitoringTimerInterval))) {
 		interval = DAC960_SecondaryMonitoringInterval;
 	}
-	return interval;
+
+	if (interval > 1)
+		cs->primary_monitor_time = jiffies;
+	queue_delayed_work(cs->work_q, &cs->monitor_work, interval);
 }
 
 /*

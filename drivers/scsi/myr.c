@@ -62,8 +62,6 @@ static int DAC960_ControllerCount;
 struct raid_template *myrb_raid_template;
 struct raid_template *myrs_raid_template;
 
-static void DAC960_MonitoringWork(struct work_struct *work);
-
 /*
   init_dma_loaf() and slice_dma_loaf() are helper functions for
   aggregating the dma-mapped memory for a well-known collection of
@@ -194,7 +192,6 @@ static void DAC960_DetectCleanup(myr_hba *c)
 		release_region(c->IO_Address, 0x80);
 	pci_set_drvdata(pdev, NULL);
 	pci_disable_device(pdev);
-	destroy_workqueue(c->work_q);
 	scsi_host_put(c->host);
 }
 
@@ -228,12 +225,6 @@ DAC960_DetectController(struct pci_dev *pdev,
 	c->FirmwareType = privdata->FirmwareType;
 	c->HardwareType = privdata->HardwareType;
 	c->pdev = pdev;
-
-	snprintf(c->work_q_name, sizeof(c->work_q_name),
-		 "myr_wq_%d", c->host->host_no);
-	c->work_q = create_singlethread_workqueue(c->work_q_name);
-	if (!c->work_q)
-		goto Failure;
 
 	if (pci_enable_device(pdev))
 		goto Failure;
@@ -332,16 +323,9 @@ DAC960_Probe(struct pci_dev *dev, const struct pci_device_id *entry)
 		goto failed;
 	}
 
-	/*
-	  Initialize the Monitoring Timer.
-	*/
-	INIT_DELAYED_WORK(&c->monitor_work, DAC960_MonitoringWork);
-	queue_delayed_work(c->work_q, &c->monitor_work, 1);
-
 	ret = scsi_add_host(c->host, &dev->dev);
 	if (ret) {
 		dev_err(&dev->dev, "scsi_add_host failed with %d\n", ret);
-		cancel_delayed_work_sync(&c->monitor_work);
 		DAC960_DestroyAuxiliaryStructures(c);
 		goto failed;
 	}
@@ -364,7 +348,6 @@ static void DAC960_Remove(struct pci_dev *pdev)
 	if (c == NULL)
 		return;
 
-	cancel_delayed_work_sync(&c->monitor_work);
 	if (c->FirmwareType == DAC960_V1_Controller) {
 		shost_printk(KERN_NOTICE, c->host, "Flushing Cache...");
 		myrb_flush_cache(c);
@@ -376,27 +359,6 @@ static void DAC960_Remove(struct pci_dev *pdev)
 	DAC960_DetectCleanup(c);
 }
 
-
-/*
-  DAC960_MonitoringTimerFunction is the timer function for monitoring
-  the status of DAC960 Controllers.
-*/
-
-static void DAC960_MonitoringWork(struct work_struct *work)
-{
-	myr_hba *c = container_of(work, myr_hba, monitor_work.work);
-	unsigned long interval;
-
-	dev_dbg(&c->host->shost_gendev, "monitor tick\n");
-	if (c->FirmwareType == DAC960_V1_Controller)
-		interval = myrb_monitor(c);
-	else
-		interval = myrs_monitor(c);
-
-	if (interval > 1)
-		c->PrimaryMonitoringTime = jiffies;
-	queue_delayed_work(c->work_q, &c->monitor_work, interval);
-}
 
 static const struct pci_device_id DAC960_id_table[] = {
 	{

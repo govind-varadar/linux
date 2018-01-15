@@ -975,6 +975,12 @@ typedef struct myrs_hba_s
 	/* Monitor flags */
 	bool needs_update;
 
+	struct workqueue_struct *work_q;
+	char work_q_name[20];
+	struct delayed_work monitor_work;
+	unsigned long primary_monitor_time;
+	unsigned long secondary_monitor_time;
+
 	struct pci_pool *sg_pool;
 	struct pci_pool *sense_pool;
 	struct pci_pool *dcdb_pool;

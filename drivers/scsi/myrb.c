@@ -33,6 +33,8 @@
 #include "myr.h"
 #include "myrb.h"
 
+static void myrb_monitor(struct work_struct *work);
+
 static struct myrb_devstate_name_entry {
 	myrb_devstate state;
 	char *name;
@@ -116,12 +118,35 @@ bool myrb_create_mempools(struct pci_dev *pdev, myr_hba *c)
 		return false;
 	}
 	cb->DCDBPool = DCDBPool;
+
+	snprintf(cb->work_q_name, sizeof(cb->work_q_name),
+		 "myrs_wq_%d", c->host->host_no);
+	cb->work_q = create_singlethread_workqueue(cb->work_q_name);
+	if (!cb->work_q) {
+		pci_pool_destroy(cb->DCDBPool);
+		cb->DCDBPool = NULL;
+		pci_pool_destroy(cb->sg_pool);
+		cb->sg_pool = NULL;
+		shost_printk(KERN_ERR, c->host,
+			     "Failed to create workqueue\n");
+		return false;
+	}
+
+	/*
+	  Initialize the Monitoring Timer.
+	*/
+	INIT_DELAYED_WORK(&cb->monitor_work, myrb_monitor);
+	queue_delayed_work(cb->work_q, &cb->monitor_work, 1);
+
 	return true;
 }
 
 void myrb_destroy_mempools(myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
+
+	cancel_delayed_work_sync(&cb->monitor_work);
+	destroy_workqueue(cb->work_q);
 
 	if (cb->sg_pool != NULL)
 		pci_pool_destroy(cb->sg_pool);
@@ -707,10 +732,10 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 		}
 		if ((new->DeadDriveCount > 0 ||
 		     new->DeadDriveCount != old->DeadDriveCount) ||
-		    time_after_eq(jiffies, c->SecondaryMonitoringTime
+		    time_after_eq(jiffies, cb->secondary_monitor_time
 				  + DAC960_SecondaryMonitoringInterval)) {
 			cb->need_bgi_status = cb->bgi_status_supported;
-			c->SecondaryMonitoringTime = jiffies;
+			cb->secondary_monitor_time = jiffies;
 		}
 		if (new->RebuildFlag == DAC960_V1_StandbyRebuildInProgress ||
 		    new->RebuildFlag == DAC960_V1_BackgroundRebuildInProgress ||
@@ -2350,14 +2375,17 @@ static void myrb_handle_cmdblk(myrb_hba *cb, myrb_cmdblk *cmd_blk)
 	}
 }
 
-unsigned long myrb_monitor(myr_hba *c)
+static void myrb_monitor(struct work_struct *work)
 {
-	myrb_hba *cb = container_of(c, myrb_hba, common);
+	myrb_hba *cb = container_of(work, myrb_hba, monitor_work.work);
+	struct Scsi_Host *shost = cb->common.host;
 	unsigned long interval = DAC960_MonitoringTimerInterval;
+
+	dev_dbg(&shost->shost_gendev, "monitor tick\n");
 
 	if (cb->new_ev_seq > cb->old_ev_seq) {
 		int event = cb->old_ev_seq;
-		dev_dbg(&c->host->shost_gendev,
+		dev_dbg(&shost->shost_gendev,
 			"get event log no %d/%d\n",
 			cb->new_ev_seq, event);
 		DAC960_V1_MonitorGetEventLog(cb, event);
@@ -2365,40 +2393,40 @@ unsigned long myrb_monitor(myr_hba *c)
 		interval = 10;
 	} else if (cb->need_err_info) {
 		cb->need_err_info = false;
-		dev_dbg(&c->host->shost_gendev, "get error table\n");
+		dev_dbg(&shost->shost_gendev, "get error table\n");
 		DAC960_V1_MonitorGetErrorTable(cb);
 		interval = 10;
 	} else if (cb->need_rbld && cb->rbld_first) {
 		cb->need_rbld = false;
-		dev_dbg(&c->host->shost_gendev,
+		dev_dbg(&shost->shost_gendev,
 			"get rebuild progress\n");
 		DAC960_V1_MonitorRebuildProgress(cb);
 		interval = 10;
 	} else if (cb->need_ldev_info) {
 		cb->need_ldev_info = false;
-		dev_dbg(&c->host->shost_gendev,
+		dev_dbg(&shost->shost_gendev,
 			"get logical drive info\n");
 		DAC960_V1_GetLogicalDriveInfo(cb);
 		interval = 10;
 	} else if (cb->need_rbld) {
 		cb->need_rbld = false;
-		dev_dbg(&c->host->shost_gendev,
+		dev_dbg(&shost->shost_gendev,
 			"get rebuild progress\n");
 		DAC960_V1_MonitorRebuildProgress(cb);
 		interval = 10;
 	} else if (cb->need_cc_status) {
 		cb->need_cc_status = false;
-		dev_dbg(&c->host->shost_gendev,
+		dev_dbg(&shost->shost_gendev,
 			"get consistency check progress\n");
 		DAC960_V1_ConsistencyCheckProgress(cb);
 		interval = 10;
 	} else if (cb->need_bgi_status) {
 		cb->need_bgi_status = false;
-		dev_dbg(&c->host->shost_gendev, "get background init status\n");
+		dev_dbg(&shost->shost_gendev, "get background init status\n");
 		myrb_bgi_control(cb);
 		interval = 10;
 	} else {
-		dev_dbg(&c->host->shost_gendev, "new enquiry\n");
+		dev_dbg(&shost->shost_gendev, "new enquiry\n");
 		mutex_lock(&cb->dma_mutex);
 		DAC960_V1_NewEnquiry(cb);
 		mutex_unlock(&cb->dma_mutex);
@@ -2406,10 +2434,12 @@ unsigned long myrb_monitor(myr_hba *c)
 		    cb->need_err_info || cb->need_rbld ||
 		    cb->need_ldev_info || cb->need_cc_status ||
 		    cb->need_bgi_status)
-			dev_dbg(&c->host->shost_gendev,
+			dev_dbg(&shost->shost_gendev,
 				"reschedule monitor\n");
 	}
-	return interval;
+	if (interval > 1)
+		cb->primary_monitor_time = jiffies;
+	queue_delayed_work(cb->work_q, &cb->monitor_work, interval);
 }
 
 void myrb_flush_cache(myr_hba *c)

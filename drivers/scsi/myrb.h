@@ -813,12 +813,18 @@ typedef struct myrb_hba_s
 	bool need_bgi_status;
 	bool rbld_first;
 
-	void (*QueueCommand)(struct myrb_hba_s *, myrb_cmdblk *);
-	void (*WriteCommandMailbox)(myrb_cmd_mbox *, myrb_cmd_mbox *);
-	void (*MailboxNewCommand)(void __iomem *);
+	struct workqueue_struct *work_q;
+	char work_q_name[20];
+	struct delayed_work monitor_work;
+	unsigned long primary_monitor_time;
+	unsigned long secondary_monitor_time;
 
 	struct pci_pool *sg_pool;
 	struct pci_pool *DCDBPool;
+
+	void (*QueueCommand)(struct myrb_hba_s *, myrb_cmdblk *);
+	void (*WriteCommandMailbox)(myrb_cmd_mbox *, myrb_cmd_mbox *);
+	void (*MailboxNewCommand)(void __iomem *);
 
 	dma_addr_t	FirstCommandMailboxDMA;
 	myrb_cmd_mbox *FirstCommandMailbox;
