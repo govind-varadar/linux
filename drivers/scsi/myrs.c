@@ -842,12 +842,8 @@ int myrs_get_config(myr_hba *c)
 			c->FirmwareVersion);
 	}
 	/*
-	  Initialize the Controller Channels, Targets, and Memory Size.
+	  Initialize the Controller Channels and Targets.
 	*/
-	c->PhysicalChannelMax = info->physchan_max;
-	c->PhysicalChannelCount = info->physchan_present;
-	c->LogicalChannelMax = info->virtchan_max;
-	c->LogicalChannelCount = info->virtchan_present;
 	shost->max_channel = info->physchan_present + info->virtchan_present;
 	shost->max_id = info->MaximumTargetsPerChannel[0];
 	for (i = 1; i < 16; i++) {
@@ -873,40 +869,38 @@ int myrs_get_config(myr_hba *c)
 	if (shost->sg_tablesize > DAC960_V2_ScatterGatherLimit)
 		shost->sg_tablesize = DAC960_V2_ScatterGatherLimit;
 
-	shost_printk(KERN_INFO, c->host,
+	shost_printk(KERN_INFO, shost,
 		"Configuring %s PCI RAID Controller\n", c->ModelName);
-	shost_printk(KERN_INFO, c->host,
+	shost_printk(KERN_INFO, shost,
 		"  Firmware Version: %s, Channels: %d, Memory Size: %dMB\n",
-		c->FirmwareVersion, c->PhysicalChannelCount, info->MemorySizeMB);
+		c->FirmwareVersion, info->physchan_present, info->MemorySizeMB);
 
-	shost_printk(KERN_INFO, c->host,
-		     "  I/O Address: n/a, PCI Address: 0x%lX, IRQ Channel: %d\n",
-		     (unsigned long)c->PCI_Address, c->IRQ_Channel);
-	shost_printk(KERN_INFO, c->host,
-		"  Controller Queue Depth: %d, Maximum Blocks per Command: %d\n",
-		c->host->can_queue, c->host->max_sectors);
+	shost_printk(KERN_INFO, shost,
+		     "  Controller Queue Depth: %d,"
+		     " Maximum Blocks per Command: %d\n",
+		     shost->can_queue, shost->max_sectors);
 
-	shost_printk(KERN_INFO, c->host,
+	shost_printk(KERN_INFO, shost,
 		     "  Driver Queue Depth: %d,"
 		     " Scatter/Gather Limit: %d of %d Segments\n",
-		     c->host->can_queue, c->host->sg_tablesize,
+		     shost->can_queue, shost->sg_tablesize,
 		     DAC960_V2_ScatterGatherLimit);
 	for (i = 0; i < info->physchan_max; i++) {
 		if (!info->MaximumTargetsPerChannel[i])
 			continue;
-		shost_printk(KERN_INFO, c->host,
+		shost_printk(KERN_INFO, shost,
 			     "  Device Channel %d: max %d devices\n",
 			     i, info->MaximumTargetsPerChannel[i]);
 	}
-	shost_printk(KERN_INFO, c->host,
+	shost_printk(KERN_INFO, shost,
 		     "  Physical: %d/%d channels, %d disks, %d devices\n",
 		     info->physchan_present, info->physchan_max,
 		     info->pdisk_present, info->pdev_present);
 
-	shost_printk(KERN_INFO, c->host,
+	shost_printk(KERN_INFO, shost,
 		     "  Logical: %d/%d channels, %d disks\n",
 		     info->virtchan_present, info->virtchan_max,
-		     c->LogicalDriveCount);
+		     info->ldev_present);
 	return 0;
 }
 
