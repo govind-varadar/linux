@@ -33,7 +33,10 @@
 #include "myr.h"
 #include "myrs.h"
 
+struct raid_template *myrs_raid_template;
 static void myrs_monitor(struct work_struct *work);
+static myrs_hba *myrs_alloc_host(struct pci_dev *pdev,
+				 const struct pci_device_id *entry);
 
 static struct myrs_devstate_name_entry {
 	myrs_devstate state;
@@ -96,17 +99,17 @@ static char *myrs_raid_level_name(myrs_raid_level level)
 	return NULL;
 }
 
-bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c)
+bool myrs_create_mempools(struct pci_dev *pdev, myrs_hba *cs)
 {
-	myrs_hba *cs = container_of(c, myrs_hba, common);
+	struct Scsi_Host *shost = cs->host;
 	size_t elem_size, elem_align;
 
 	elem_align = sizeof(myrs_sge);
-	elem_size = c->host->sg_tablesize * elem_align;
+	elem_size = shost->sg_tablesize * elem_align;
 	cs->sg_pool = pci_pool_create("myrs_sg", pdev,
 				      elem_size, elem_align, 0);
 	if (cs->sg_pool == NULL) {
-		shost_printk(KERN_ERR, c->host,
+		shost_printk(KERN_ERR, shost,
 			     "Failed to allocate SG pool\n");
 		return false;
 	}
@@ -117,7 +120,7 @@ bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c)
 	if (cs->sense_pool == NULL) {
 		pci_pool_destroy(cs->sg_pool);
 		cs->sg_pool = NULL;
-		shost_printk(KERN_ERR, c->host,
+		shost_printk(KERN_ERR, shost,
 			     "Failed to allocate sense data pool\n");
 		return false;
 	}
@@ -130,13 +133,13 @@ bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c)
 		cs->sg_pool = NULL;
 		pci_pool_destroy(cs->sense_pool);
 		cs->sense_pool = NULL;
-		shost_printk(KERN_ERR, c->host,
+		shost_printk(KERN_ERR, shost,
 			     "Failed to allocate DCDB pool\n");
 		return false;
 	}
 
 	snprintf(cs->work_q_name, sizeof(cs->work_q_name),
-		 "myrs_wq_%d", c->host->host_no);
+		 "myrs_wq_%d", shost->host_no);
 	cs->work_q = create_singlethread_workqueue(cs->work_q_name);
 	if (!cs->work_q) {
 		pci_pool_destroy(cs->dcdb_pool);
@@ -145,7 +148,7 @@ bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c)
 		cs->sg_pool = NULL;
 		pci_pool_destroy(cs->sense_pool);
 		cs->sense_pool = NULL;
-		shost_printk(KERN_ERR, c->host,
+		shost_printk(KERN_ERR, shost,
 			     "Failed to create workqueue\n");
 		return false;
 	}
@@ -159,10 +162,8 @@ bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c)
 	return true;
 }
 
-void myrs_destroy_mempools(myr_hba *c)
+void myrs_destroy_mempools(myrs_hba *cs)
 {
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-
 	cancel_delayed_work_sync(&cs->monitor_work);
 	destroy_workqueue(cs->work_q);
 
@@ -179,10 +180,8 @@ void myrs_destroy_mempools(myr_hba *c)
 	}
 }
 
-void myrs_unmap(myr_hba *c)
+void myrs_unmap(myrs_hba *cs)
 {
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-
 	if (cs->event_buf) {
 		kfree(cs->event_buf);
 		cs->event_buf = NULL;
@@ -192,20 +191,100 @@ void myrs_unmap(myr_hba *c)
 		cs->ctlr_info = NULL;
 	}
 	if (cs->fwstat_buf) {
-		dma_free_coherent(&c->pdev->dev, sizeof(myrs_fwstat),
+		dma_free_coherent(&cs->pdev->dev, sizeof(myrs_fwstat),
 				  cs->fwstat_buf, cs->fwstat_addr);
 		cs->fwstat_buf = NULL;
 	}
 	if (cs->first_stat_mbox) {
-		dma_free_coherent(&c->pdev->dev, cs->stat_mbox_size,
+		dma_free_coherent(&cs->pdev->dev, cs->stat_mbox_size,
 				  cs->first_stat_mbox, cs->stat_mbox_addr);
 		cs->first_stat_mbox = NULL;
 	}
 	if (cs->first_cmd_mbox) {
-		dma_free_coherent(&c->pdev->dev, cs->cmd_mbox_size,
+		dma_free_coherent(&cs->pdev->dev, cs->cmd_mbox_size,
 				  cs->first_cmd_mbox, cs->cmd_mbox_addr);
 		cs->first_cmd_mbox = NULL;
 	}
+}
+
+void myrs_cleanup(myrs_hba *cs)
+{
+	struct pci_dev *pdev = cs->pdev;
+
+	/* Free the memory mailbox, status, and related structures */
+	myrs_unmap(cs);
+
+	if (cs->mmio_base) {
+		cs->disable_intr(cs);
+		iounmap(cs->mmio_base);
+	}
+	if (cs->irq)
+		free_irq(cs->irq, cs);
+	if (cs->io_addr)
+		release_region(cs->io_addr, 0x80);
+	iounmap(cs->mmio_base);
+	pci_set_drvdata(pdev, NULL);
+	pci_disable_device(pdev);
+	scsi_host_put(cs->host);
+}
+
+static myrs_hba *myrs_detect(struct pci_dev *pdev,
+			     const struct pci_device_id *entry)
+{
+	struct myrs_privdata *privdata =
+		(struct myrs_privdata *)entry->driver_data;
+	irq_handler_t irq_handler = privdata->irq_handler;
+	unsigned int mmio_size = privdata->io_mem_size;
+	myrs_hba *cs = NULL;
+
+	cs = myrs_alloc_host(pdev, entry);
+	if (!cs) {
+		dev_err(&pdev->dev, "Unable to allocate Controller\n");
+		return NULL;
+	}
+	cs->hwtype = privdata->hw_type;
+	cs->pdev = pdev;
+
+	if (pci_enable_device(pdev))
+		goto Failure;
+
+	cs->pci_addr = pci_resource_start(pdev, 0);
+
+	pci_set_drvdata(pdev, cs);
+	spin_lock_init(&cs->queue_lock);
+	/*
+	  Map the Controller Register Window.
+	*/
+	if (mmio_size < PAGE_SIZE)
+		mmio_size = PAGE_SIZE;
+	cs->mmio_base = ioremap_nocache(cs->pci_addr & PAGE_MASK, mmio_size);
+	if (cs->mmio_base == NULL) {
+		dev_err(&pdev->dev,
+			"Unable to map Controller Register Window\n");
+		goto Failure;
+	}
+
+	cs->io_base = cs->mmio_base + (cs->pci_addr & ~PAGE_MASK);
+	if (privdata->hw_init(pdev, cs, cs->io_base))
+		goto Failure;
+
+	/*
+	  Acquire shared access to the IRQ Channel.
+	*/
+	if (request_irq(pdev->irq, irq_handler, IRQF_SHARED,
+			cs->model_name, cs) < 0) {
+		dev_err(&pdev->dev,
+			"Unable to acquire IRQ Channel %d\n", pdev->irq);
+		goto Failure;
+	}
+	cs->irq = pdev->irq;
+	return cs;
+
+Failure:
+	dev_err(&pdev->dev,
+		"Failed to initialize Controller\n");
+	myrs_cleanup(cs);
+	return NULL;
 }
 
 /*
@@ -227,7 +306,7 @@ static inline void myrs_reset_cmd(myrs_cmdblk *cmd_blk)
  */
 static void myrs_qcmd(myrs_hba *cs, myrs_cmdblk *cmd_blk)
 {
-	void __iomem *base = cs->common.io_addr;
+	void __iomem *base = cs->io_base;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
 	myrs_cmd_mbox *next_mbox = cs->next_cmd_mbox;
 
@@ -257,9 +336,9 @@ static void myrs_exec_cmd(myrs_hba *cs,
 	unsigned long flags;
 
 	cmd_blk->Completion = &Completion;
-	spin_lock_irqsave(&cs->common.queue_lock, flags);
+	spin_lock_irqsave(&cs->queue_lock, flags);
 	myrs_qcmd(cs, cmd_blk);
-	spin_unlock_irqrestore(&cs->common.queue_lock, flags);
+	spin_unlock_irqrestore(&cs->queue_lock, flags);
 
 	if (in_interrupt())
 		return;
@@ -272,13 +351,13 @@ static void myrs_exec_cmd(myrs_hba *cs,
   Logical Device Long Operations.
 */
 
-static void DAC960_V2_ReportProgress(myr_hba *c,
+static void DAC960_V2_ReportProgress(myrs_hba *cs,
 				     unsigned short ldev_num,
 				     unsigned char *msg,
 				     unsigned long blocks,
 				     unsigned long size)
 {
-	shost_printk(KERN_INFO, c->host,
+	shost_printk(KERN_INFO, cs->host,
 		     "Logical Drive %d: %s in Progress: %ld%% completed\n",
 		     ldev_num, msg, (100 * (blocks >> 7)) / (size >> 7));
 }
@@ -294,7 +373,6 @@ static void DAC960_V2_ReportProgress(myr_hba *c,
 
 static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 {
-	myr_hba *c = &cs->common;
 	myrs_cmdblk *cmd_blk = &cs->dcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
 	dma_addr_t ctlr_info_addr;
@@ -303,10 +381,10 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 	myrs_ctlr_info old;
 
 	memcpy(&old, cs->ctlr_info, sizeof(myrs_ctlr_info));
-	ctlr_info_addr = dma_map_single(&c->pdev->dev, cs->ctlr_info,
+	ctlr_info_addr = dma_map_single(&cs->pdev->dev, cs->ctlr_info,
 					sizeof(myrs_ctlr_info),
 					DMA_FROM_DEVICE);
-	if (dma_mapping_error(&c->pdev->dev, ctlr_info_addr))
+	if (dma_mapping_error(&cs->pdev->dev, ctlr_info_addr))
 		return DAC960_V2_AbnormalCompletion;
 
 	mutex_lock(&cs->dcmd_mutex);
@@ -321,11 +399,11 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 	sgl = &mbox->ControllerInfo.dma_addr;
 	sgl->sge[0].sge_addr = ctlr_info_addr;
 	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
-	dev_dbg(&c->host->shost_gendev, "Sending GetControllerInfo\n");
+	dev_dbg(&cs->host->shost_gendev, "Sending GetControllerInfo\n");
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
-	dma_unmap_single(&c->pdev->dev, ctlr_info_addr,
+	dma_unmap_single(&cs->pdev->dev, ctlr_info_addr,
 			 sizeof(myrs_ctlr_info), DMA_FROM_DEVICE);
 	if (status == DAC960_V2_NormalCompletion) {
 		if (cs->ctlr_info->bg_init_active +
@@ -338,7 +416,7 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 		if (cs->ctlr_info->ldev_present != old.ldev_present ||
 		    cs->ctlr_info->ldev_critical != old.ldev_critical ||
 		    cs->ctlr_info->ldev_offline != old.ldev_offline)
-			shost_printk(KERN_INFO, c->host,
+			shost_printk(KERN_INFO, cs->host,
 				     "Logical drive count changes (%d/%d/%d)\n",
 				     cs->ctlr_info->ldev_critical,
 				     cs->ctlr_info->ldev_offline,
@@ -359,7 +437,6 @@ static unsigned char
 myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 		   myrs_ldev_info *ldev_info)
 {
-	myr_hba *c = &cs->common;
 	myrs_cmdblk *cmd_blk = &cs->dcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
 	dma_addr_t ldev_info_addr;
@@ -368,10 +445,10 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 	unsigned char status;
 
 	memcpy(&ldev_info_orig, ldev_info, sizeof(myrs_ldev_info));
-	ldev_info_addr = dma_map_single(&c->pdev->dev, ldev_info,
+	ldev_info_addr = dma_map_single(&cs->pdev->dev, ldev_info,
 					sizeof(myrs_ldev_info),
 					DMA_FROM_DEVICE);
-	if (dma_mapping_error(&c->pdev->dev, ldev_info_addr))
+	if (dma_mapping_error(&cs->pdev->dev, ldev_info_addr))
 		return DAC960_V2_AbnormalCompletion;
 
 	mutex_lock(&cs->dcmd_mutex);
@@ -387,12 +464,12 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 	sgl = &mbox->LogicalDeviceInfo.dma_addr;
 	sgl->sge[0].sge_addr = ldev_info_addr;
 	sgl->sge[0].sge_count = mbox->LogicalDeviceInfo.dma_size;
-	dev_dbg(&c->host->shost_gendev,
+	dev_dbg(&cs->host->shost_gendev,
 		"Sending GetLogicalDeviceInfoValid for ldev %d\n", ldev_num);
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
-	dma_unmap_single(&c->pdev->dev, ldev_info_addr,
+	dma_unmap_single(&cs->pdev->dev, ldev_info_addr,
 			 sizeof(myrs_ldev_info), DMA_FROM_DEVICE);
 	if (status == DAC960_V2_NormalCompletion) {
 		unsigned short ldev_num = ldev_info->ldev_num;
@@ -404,7 +481,7 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 			const char *name;
 
 			name = myrs_devstate_name(new->State);
-			shost_printk(KERN_INFO, c->host,
+			shost_printk(KERN_INFO, cs->host,
 				     "Logical Drive %d is now %s\n",
 				     ldev_num, name ? name : "Invalid");
 		}
@@ -412,7 +489,7 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 		    (new->CommandsFailed != old->CommandsFailed) ||
 		    (new->DeferredWriteErrors !=
 		     old->DeferredWriteErrors))
-			shost_printk(KERN_INFO, c->host,
+			shost_printk(KERN_INFO, cs->host,
 				     "Logical Drive %d Errors: "
 				     "Soft = %d, Failed = %d, Deferred Write = %d\n",
 				     ldev_num,
@@ -420,27 +497,27 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 				     new->CommandsFailed,
 				     new->DeferredWriteErrors);
 		if (new->bg_init_active)
-			DAC960_V2_ReportProgress(c, ldev_num,
+			DAC960_V2_ReportProgress(cs, ldev_num,
 						 "Background Initialization",
 						 new->bg_init_lba,
 						 ldev_size);
 		else if (new->fg_init_active)
-			DAC960_V2_ReportProgress(c, ldev_num,
+			DAC960_V2_ReportProgress(cs, ldev_num,
 						 "Foreground Initialization",
 						 new->fg_init_lba,
 						 ldev_size);
 		else if (new->migration_active)
-			DAC960_V2_ReportProgress(c, ldev_num,
+			DAC960_V2_ReportProgress(cs, ldev_num,
 						 "Data Migration",
 						 new->migration_lba,
 						 ldev_size);
 		else if (new->patrol_active)
-			DAC960_V2_ReportProgress(c, ldev_num,
+			DAC960_V2_ReportProgress(cs, ldev_num,
 						 "Patrol Operation",
 						 new->patrol_lba,
 						 ldev_size);
 		if (old->bg_init_active && !new->bg_init_active)
-			shost_printk(KERN_INFO, c->host,
+			shost_printk(KERN_INFO, cs->host,
 				     "Logical Drive %d: "
 				     "Background Initialization %s\n",
 				     ldev_num,
@@ -474,17 +551,16 @@ DAC960_V2_NewPhysicalDeviceInfo(myrs_hba *cs,
 				unsigned char LogicalUnit,
 				myrs_pdev_info *pdev_info)
 {
-	myr_hba *c = &cs->common;
 	myrs_cmdblk *cmd_blk = &cs->dcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
 	dma_addr_t pdev_info_addr;
 	myrs_sgl *sgl;
 	unsigned char status;
 
-	pdev_info_addr = dma_map_single(&c->pdev->dev, pdev_info,
+	pdev_info_addr = dma_map_single(&cs->pdev->dev, pdev_info,
 					sizeof(myrs_pdev_info),
 					DMA_FROM_DEVICE);
-	if (dma_mapping_error(&c->pdev->dev, pdev_info_addr))
+	if (dma_mapping_error(&cs->pdev->dev, pdev_info_addr))
 		return DAC960_V2_AbnormalCompletion;
 
 	mutex_lock(&cs->dcmd_mutex);
@@ -502,13 +578,13 @@ DAC960_V2_NewPhysicalDeviceInfo(myrs_hba *cs,
 	sgl = &mbox->PhysicalDeviceInfo.dma_addr;
 	sgl->sge[0].sge_addr = pdev_info_addr;
 	sgl->sge[0].sge_count = mbox->PhysicalDeviceInfo.dma_size;
-	dev_dbg(&c->host->shost_gendev,
+	dev_dbg(&cs->host->shost_gendev,
 		"Sending GetPhysicalDeviceInfoValid for pdev %d:%d:%d\n",
 		Channel, TargetID, LogicalUnit);
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
-	dma_unmap_single(&c->pdev->dev, pdev_info_addr,
+	dma_unmap_single(&cs->pdev->dev, pdev_info_addr,
 			 sizeof(myrs_pdev_info), DMA_FROM_DEVICE);
 	return status;
 }
@@ -555,7 +631,7 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 				  unsigned char LogicalUnit,
 				  myrs_devmap *devmap)
 {
-	struct pci_dev *pdev = cs->common.pdev;
+	struct pci_dev *pdev = cs->pdev;
 	dma_addr_t devmap_addr;
 	myrs_cmdblk *cmd_blk;
 	myrs_cmd_mbox *mbox;
@@ -597,7 +673,7 @@ static unsigned char myrs_get_event(myrs_hba *cs,
 					       unsigned short event_num,
 					       myrs_event *event_buf)
 {
-	struct pci_dev *pdev = cs->common.pdev;
+	struct pci_dev *pdev = cs->pdev;
 	dma_addr_t event_addr;
 	myrs_cmdblk *cmd_blk = &cs->mcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
@@ -649,7 +725,7 @@ static unsigned char myrs_get_fwstatus(myrs_hba *cs)
 	sgl = &mbox->Common.dma_addr;
 	sgl->sge[0].sge_addr = cs->fwstat_addr;
 	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
-	dev_dbg(&cs->common.host->shost_gendev, "Sending GetHealthStatus\n");
+	dev_dbg(&cs->host->shost_gendev, "Sending GetHealthStatus\n");
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 
@@ -669,9 +745,8 @@ static unsigned char myrs_get_fwstatus(myrs_hba *cs)
 
 static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 {
-	myr_hba *c = &cs->common;
-	void __iomem *base = c->io_addr;
-	struct pci_dev *pdev = c->pdev;
+	void __iomem *base = cs->io_base;
+	struct pci_dev *pdev = cs->pdev;
 
 	myrs_cmd_mbox *cmd_mbox;
 	myrs_stat_mbox *stat_mbox;
@@ -762,7 +837,7 @@ static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 		cs->cmd_mbox_addr;
 	mbox->SetMemoryMailbox.FirstStatusMailboxBusAddress =
 		cs->stat_mbox_addr;
-	switch (c->HardwareType) {
+	switch (cs->hwtype) {
 	case DAC960_GEM_Controller:
 		while (DAC960_GEM_HardwareMailboxFullP(base))
 			udelay(1);
@@ -798,7 +873,7 @@ static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 		break;
 	default:
 		dev_err(&pdev->dev, "Unknown Controller Type %X\n",
-			c->HardwareType);
+			cs->hwtype);
 		return false;
 	}
 out_free:
@@ -816,12 +891,13 @@ out_free:
   from DAC960 V2 Firmware Controllers and initializes the Controller structure.
 */
 
-int myrs_get_config(myr_hba *c)
+int myrs_get_config(myrs_hba *cs)
 {
-	myrs_hba *cs = container_of(c, myrs_hba, common);
 	myrs_ctlr_info *info = cs->ctlr_info;
-	struct Scsi_Host *shost = c->host;
+	struct Scsi_Host *shost = cs->host;
 	unsigned char status;
+	unsigned char ModelName[20];
+	unsigned char fw_version[12];
 	int i, ModelNameLength;
 
 	/* Get data into dma-able area, then copy into permanent location */
@@ -838,21 +914,20 @@ int myrs_get_config(myr_hba *c)
 	  Initialize the Controller Model Name and Full Model Name fields.
 	*/
 	ModelNameLength = sizeof(info->ControllerName);
-	if (ModelNameLength > sizeof(c->ModelName)-1)
-		ModelNameLength = sizeof(c->ModelName)-1;
-	memcpy(c->ModelName, info->ControllerName,
-	       ModelNameLength);
+	if (ModelNameLength > sizeof(ModelName)-1)
+		ModelNameLength = sizeof(ModelName)-1;
+	memcpy(ModelName, info->ControllerName, ModelNameLength);
 	ModelNameLength--;
-	while (c->ModelName[ModelNameLength] == ' ' ||
-	       c->ModelName[ModelNameLength] == '\0')
+	while (ModelName[ModelNameLength] == ' ' ||
+	       ModelName[ModelNameLength] == '\0')
 		ModelNameLength--;
-	c->ModelName[++ModelNameLength] = '\0';
-	strcpy(c->FullModelName, "DAC960 ");
-	strcat(c->FullModelName, c->ModelName);
+	ModelName[++ModelNameLength] = '\0';
+	strcpy(cs->model_name, "DAC960 ");
+	strcat(cs->model_name, ModelName);
 	/*
 	  Initialize the Controller Firmware Version field.
 	*/
-	sprintf(c->FirmwareVersion, "%d.%02d-%02d",
+	sprintf(fw_version, "%d.%02d-%02d",
 		info->FirmwareMajorVersion,
 		info->FirmwareMinorVersion,
 		info->FirmwareTurnNumber);
@@ -863,7 +938,7 @@ int myrs_get_config(myr_hba *c)
 			"FIRMWARE VERSION %s DOES NOT PROVIDE THE CONTROLLER\n"
 			"STATUS MONITORING FUNCTIONALITY NEEDED BY THIS DRIVER.\n"
 			"PLEASE UPGRADE TO VERSION 6.00-01 OR ABOVE.\n",
-			c->FirmwareVersion);
+			fw_version);
 		return -ENODEV;
 	}
 	/*
@@ -895,10 +970,10 @@ int myrs_get_config(myr_hba *c)
 		shost->sg_tablesize = DAC960_V2_ScatterGatherLimit;
 
 	shost_printk(KERN_INFO, shost,
-		"Configuring %s PCI RAID Controller\n", c->ModelName);
+		"Configuring %s PCI RAID Controller\n", ModelName);
 	shost_printk(KERN_INFO, shost,
 		"  Firmware Version: %s, Channels: %d, Memory Size: %dMB\n",
-		c->FirmwareVersion, info->physchan_present, info->MemorySizeMB);
+		fw_version, info->physchan_present, info->MemorySizeMB);
 
 	shost_printk(KERN_INFO, shost,
 		     "  Controller Queue Depth: %d,"
@@ -1065,7 +1140,7 @@ static void myrs_log_event(myrs_hba *cs, myrs_event *ev)
 	unsigned char MessageBuffer[DAC960_LineBufferSize];
 	int ev_idx = 0, ev_code;
 	unsigned char ev_type, *ev_msg;
-	struct Scsi_Host *shost = cs->common.host;
+	struct Scsi_Host *shost = cs->host;
 	struct scsi_device *sdev;
 	struct scsi_sense_hdr sshdr;
 	unsigned char *sense_info;
@@ -1163,7 +1238,7 @@ static void myrs_log_event(myrs_hba *cs, myrs_event *ev)
 			     cmd_specific[2], cmd_specific[3]);
 		break;
 	case 'E':
-		if (cs->common.SuppressEnclosureMessages)
+		if (cs->disable_enc_msg)
 			break;
 		sprintf(MessageBuffer, ev_msg, ev->lun);
 		shost_printk(KERN_INFO, shost, "event %d: Enclosure %d %s\n",
@@ -1557,9 +1632,19 @@ static ssize_t myrs_show_ctlr_num(struct device *dev,
 	struct Scsi_Host *shost = class_to_shost(dev);
 	myrs_hba *cs = (myrs_hba *)shost->hostdata;
 
-	return snprintf(buf, 20, "%d\n", cs->common.ControllerNumber);
+	return snprintf(buf, 20, "%d\n", cs->host->host_no);
 }
 static DEVICE_ATTR(ctlr_num, S_IRUGO, myrs_show_ctlr_num, NULL);
+
+static ssize_t myrs_show_model_name(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 28, "%s\n", cs->model_name);
+}
+static DEVICE_ATTR(model, S_IRUGO, myrs_show_model_name, NULL);
 
 static ssize_t myrs_show_firmware_version(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -1598,7 +1683,7 @@ int myrs_host_reset(struct scsi_cmnd *scmd)
 	struct Scsi_Host *shost = scmd->device->host;
 	myrs_hba *cs = (myrs_hba *)shost->hostdata;
 
-	cs->common.Reset(cs->common.io_addr);
+	cs->reset(cs->io_base);
 	return SUCCESS;
 }
 
@@ -1844,9 +1929,9 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 		}
 	}
 submit:
-	spin_lock_irqsave(&cs->common.queue_lock, flags);
+	spin_lock_irqsave(&cs->queue_lock, flags);
 	myrs_qcmd(cs, cmd_blk);
-	spin_unlock_irqrestore(&cs->common.queue_lock, flags);
+	spin_unlock_irqrestore(&cs->queue_lock, flags);
 
 	return 0;
 }
@@ -2131,7 +2216,7 @@ static ssize_t myrs_show_suppress_enclosure_messages(struct device *dev,
 	struct Scsi_Host *shost = class_to_shost(dev);
 	myrs_hba *cs = (myrs_hba *)shost->hostdata;
 
-	return snprintf(buf, 3, "%d\n", cs->common.SuppressEnclosureMessages);
+	return snprintf(buf, 3, "%d\n", cs->disable_enc_msg);
 }
 
 static ssize_t myrs_store_suppress_enclosure_messages(struct device *dev,
@@ -2149,7 +2234,7 @@ static ssize_t myrs_store_suppress_enclosure_messages(struct device *dev,
 	if (sscanf(tmpbuf, "%d", &value) != 1 || value > 2)
 		return -EINVAL;
 
-	cs->common.SuppressEnclosureMessages = value;
+	cs->disable_enc_msg = value;
 	return count;
 }
 static DEVICE_ATTR(disable_enclosure_messages, S_IRUGO | S_IWUSR,
@@ -2160,6 +2245,7 @@ static struct device_attribute *myrs_shost_attrs[] = {
 	&dev_attr_serial,
 	&dev_attr_ctlr_num,
 	&dev_attr_processor,
+	&dev_attr_model,
 	&dev_attr_firmware,
 	&dev_attr_discovery,
 	&dev_attr_flush_cache,
@@ -2263,12 +2349,11 @@ struct raid_function_template myrs_raid_functions = {
 	.get_state	= myrs_get_state,
 };
 
-myr_hba *myrs_alloc_host(struct pci_dev *pdev,
-			 const struct pci_device_id *entry)
+static myrs_hba *myrs_alloc_host(struct pci_dev *pdev,
+				 const struct pci_device_id *entry)
 {
 	struct Scsi_Host *shost;
 	myrs_hba *cs;
-	myr_hba *c;
 
 	shost = scsi_host_alloc(&myrs_template, sizeof(myrs_hba));
 	if (!shost)
@@ -2279,17 +2364,13 @@ myr_hba *myrs_alloc_host(struct pci_dev *pdev,
 	cs = (myrs_hba *)shost->hostdata;
 	mutex_init(&cs->dcmd_mutex);
 	mutex_init(&cs->cinfo_mutex);
+	cs->host = shost;
 
-	c = &cs->common;
-	c->host = shost;
-
-	return c;
+	return cs;
 }
 
-void myrs_flush_cache(myr_hba *c)
+void myrs_flush_cache(myrs_hba *cs)
 {
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-
 	DAC960_V2_DeviceOperation(cs, DAC960_V2_FlushDeviceData,
 				  DAC960_V2_RAID_Controller);
 }
@@ -2356,7 +2437,7 @@ static void myrs_handle_cmdblk(myrs_hba *cs, myrs_cmdblk *cmd_blk)
 static void myrs_monitor(struct work_struct *work)
 {
 	myrs_hba *cs = container_of(work, myrs_hba, monitor_work.work);
-	struct Scsi_Host *shost = cs->common.host;
+	struct Scsi_Host *shost = cs->host;
 	myrs_ctlr_info *info = cs->ctlr_info;
 	unsigned int epoch = cs->fwstat_buf->epoch;
 	unsigned long interval = DAC960_MonitoringTimerInterval;
@@ -2421,26 +2502,77 @@ static void myrs_monitor(struct work_struct *work)
 }
 
 /*
+  myrs_err_status reports Controller BIOS Messages passed through
+  the Error Status Register when the driver performs the BIOS handshaking.
+  It returns true for fatal errors and false otherwise.
+*/
+
+bool myrs_err_status(myrs_hba *cs, unsigned char status,
+		    unsigned char parm0, unsigned char parm1)
+{
+	struct pci_dev *pdev = cs->pdev;
+
+	switch (status) {
+	case 0x00:
+		dev_info(&pdev->dev,
+			 "Physical Device %d:%d Not Responding\n",
+			 parm1, parm0);
+		break;
+	case 0x08:
+		dev_notice(&pdev->dev, "Spinning Up Drives\n");
+		break;
+	case 0x30:
+		dev_notice(&pdev->dev, "Configuration Checksum Error\n");
+		break;
+	case 0x60:
+		dev_notice(&pdev->dev, "Mirror Race Recovery Failed\n");
+		break;
+	case 0x70:
+		dev_notice(&pdev->dev, "Mirror Race Recovery In Progress\n");
+		break;
+	case 0x90:
+		dev_notice(&pdev->dev, "Physical Device %d:%d COD Mismatch\n",
+			   parm1, parm0);
+		break;
+	case 0xA0:
+		dev_notice(&pdev->dev, "Logical Drive Installation Aborted\n");
+		break;
+	case 0xB0:
+		dev_notice(&pdev->dev, "Mirror Race On A Critical Logical Drive\n");
+		break;
+	case 0xD0:
+		dev_notice(&pdev->dev, "New Controller Configuration Found\n");
+		break;
+	case 0xF0:
+		dev_err(&pdev->dev, "Fatal Memory Parity Error\n");
+		return true;
+	default:
+		dev_err(&pdev->dev, "Unknown Initialization Error %02X\n",
+			status);
+		return true;
+	}
+	return false;
+}
+
+/*
   DAC960_GEM_HardwareInit initializes the hardware for DAC960 GEM Series
   Controllers.
 */
 
 static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
-				   myr_hba *c, void __iomem *base)
+				   myrs_hba *cs, void __iomem *base)
 {
-	myrs_hba *cs = container_of(c, myrs_hba, common);
 	int timeout = 0;
-	unsigned char ErrorStatus, Parameter0, Parameter1;
+	unsigned char status, parm0, parm1;
 
 	DAC960_GEM_DisableInterrupts(base);
 	DAC960_GEM_AcknowledgeHardwareMailboxStatus(base);
 	udelay(1000);
 	while (DAC960_GEM_InitializationInProgressP(base) &&
 	       timeout < DAC960_MAILBOX_TIMEOUT) {
-		if (DAC960_GEM_ReadErrorStatus(base, &ErrorStatus,
-					       &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus,
-					     Parameter0, Parameter1))
+		if (DAC960_GEM_ReadErrorStatus(base, &status,
+					       &parm0, &parm1) &&
+		    myrs_err_status(cs, status, parm0, parm1))
 			return -EIO;
 		udelay(10);
 		timeout++;
@@ -2459,9 +2591,8 @@ static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
 	DAC960_GEM_EnableInterrupts(base);
 	cs->write_cmd_mbox = DAC960_GEM_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_GEM_MemoryMailboxNewCommand;
-	c->ReadControllerConfiguration = myrs_get_config;
-	c->DisableInterrupts = DAC960_GEM_DisableInterrupts;
-	c->Reset = DAC960_GEM_ControllerReset;
+	cs->disable_intr = DAC960_GEM_DisableInterrupts;
+	cs->reset = DAC960_GEM_ControllerReset;
 	return 0;
 }
 
@@ -2470,16 +2601,15 @@ static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
   Controllers.
 */
 
-static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
+static irqreturn_t DAC960_GEM_InterruptHandler(int irq,
 					       void *DeviceIdentifier)
 {
-	myr_hba *c = DeviceIdentifier;
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	void __iomem *base = c->io_addr;
+	myrs_hba *cs = DeviceIdentifier;
+	void __iomem *base = cs->io_base;
 	myrs_stat_mbox *next_stat_mbox;
 	unsigned long flags;
 
-	spin_lock_irqsave(&c->queue_lock, flags);
+	spin_lock_irqsave(&cs->queue_lock, flags);
 	DAC960_GEM_AcknowledgeInterrupt(base);
 	next_stat_mbox = cs->next_stat_mbox;
 	while (next_stat_mbox->id > 0) {
@@ -2492,7 +2622,7 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 		else if (id == DAC960_MonitoringIdentifier)
 			cmd_blk = &cs->mcmd_blk;
 		else {
-			scmd = scsi_host_find_tag(c->host, id - 3);
+			scmd = scsi_host_find_tag(cs->host, id - 3);
 			if (scmd)
 				cmd_blk = scsi_cmd_priv(scmd);
 		}
@@ -2501,7 +2631,7 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 			cmd_blk->sense_len = next_stat_mbox->sense_len;
 			cmd_blk->residual = next_stat_mbox->residual;
 		} else
-			dev_err(&c->pdev->dev,
+			dev_err(&cs->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		memset(next_stat_mbox, 0, sizeof(myrs_stat_mbox));
@@ -2514,16 +2644,15 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int IRQ_Channel,
 			myrs_handle_scsi(cs, cmd_blk, scmd);
 	}
 	cs->next_stat_mbox = next_stat_mbox;
-	spin_unlock_irqrestore(&c->queue_lock, flags);
+	spin_unlock_irqrestore(&cs->queue_lock, flags);
 	return IRQ_HANDLED;
 }
 
-struct DAC960_privdata DAC960_GEM_privdata = {
-	.HardwareType =		DAC960_GEM_Controller,
-	.FirmwareType =		DAC960_V2_Controller,
-	.HardwareInit =		DAC960_GEM_HardwareInit,
-	.InterruptHandler =	DAC960_GEM_InterruptHandler,
-	.MemoryWindowSize =	DAC960_GEM_RegisterWindowSize,
+struct myrs_privdata DAC960_GEM_privdata = {
+	.hw_type =		DAC960_GEM_Controller,
+	.hw_init =		DAC960_GEM_HardwareInit,
+	.irq_handler =		DAC960_GEM_InterruptHandler,
+	.io_mem_size =		DAC960_GEM_RegisterWindowSize,
 };
 
 
@@ -2533,21 +2662,19 @@ struct DAC960_privdata DAC960_GEM_privdata = {
 */
 
 static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
-				  myr_hba *c, void __iomem *base)
+				  myrs_hba *cs, void __iomem *base)
 {
-	myrs_hba *cs = container_of(c, myrs_hba, common);
 	int timeout = 0;
-	unsigned char ErrorStatus, Parameter0, Parameter1;
+	unsigned char status, parm0, parm1;
 
 	DAC960_BA_DisableInterrupts(base);
 	DAC960_BA_AcknowledgeHardwareMailboxStatus(base);
 	udelay(1000);
 	while (DAC960_BA_InitializationInProgressP(base) &&
 	       timeout < DAC960_MAILBOX_TIMEOUT) {
-		if (DAC960_BA_ReadErrorStatus(base, &ErrorStatus,
-					      &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus,
-					     Parameter0, Parameter1))
+		if (DAC960_BA_ReadErrorStatus(base, &status,
+					      &parm0, &parm1) &&
+		    myrs_err_status(cs, status, parm0, parm1))
 			return -EIO;
 		udelay(10);
 		timeout++;
@@ -2566,9 +2693,8 @@ static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
 	DAC960_BA_EnableInterrupts(base);
 	cs->write_cmd_mbox = DAC960_BA_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_BA_MemoryMailboxNewCommand;
-	c->ReadControllerConfiguration = myrs_get_config;
-	c->DisableInterrupts = DAC960_BA_DisableInterrupts;
-	c->Reset = DAC960_BA_ControllerReset;
+	cs->disable_intr = DAC960_BA_DisableInterrupts;
+	cs->reset = DAC960_BA_ControllerReset;
 	return 0;
 }
 
@@ -2578,16 +2704,15 @@ static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
   Controllers.
 */
 
-static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
+static irqreturn_t DAC960_BA_InterruptHandler(int irq,
 					      void *DeviceIdentifier)
 {
-	myr_hba *c = DeviceIdentifier;
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	void __iomem *base = c->io_addr;
+	myrs_hba *cs = DeviceIdentifier;
+	void __iomem *base = cs->io_base;
 	myrs_stat_mbox *next_stat_mbox;
 	unsigned long flags;
 
-	spin_lock_irqsave(&c->queue_lock, flags);
+	spin_lock_irqsave(&cs->queue_lock, flags);
 	DAC960_BA_AcknowledgeInterrupt(base);
 	next_stat_mbox = cs->next_stat_mbox;
 	while (next_stat_mbox->id > 0) {
@@ -2600,7 +2725,7 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 		else if (id == DAC960_MonitoringIdentifier)
 			cmd_blk = &cs->mcmd_blk;
 		else {
-			scmd = scsi_host_find_tag(c->host, id - 3);
+			scmd = scsi_host_find_tag(cs->host, id - 3);
 			if (scmd)
 				cmd_blk = scsi_cmd_priv(scmd);
 		}
@@ -2609,7 +2734,7 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 			cmd_blk->sense_len = next_stat_mbox->sense_len;
 			cmd_blk->residual = next_stat_mbox->residual;
 		} else
-			dev_err(&c->pdev->dev,
+			dev_err(&cs->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		memset(next_stat_mbox, 0, sizeof(myrs_stat_mbox));
@@ -2622,16 +2747,15 @@ static irqreturn_t DAC960_BA_InterruptHandler(int IRQ_Channel,
 			myrs_handle_scsi(cs, cmd_blk, scmd);
 	}
 	cs->next_stat_mbox = next_stat_mbox;
-	spin_unlock_irqrestore(&c->queue_lock, flags);
+	spin_unlock_irqrestore(&cs->queue_lock, flags);
 	return IRQ_HANDLED;
 }
 
-struct DAC960_privdata DAC960_BA_privdata = {
-	.HardwareType =		DAC960_BA_Controller,
-	.FirmwareType =		DAC960_V2_Controller,
-	.HardwareInit =		DAC960_BA_HardwareInit,
-	.InterruptHandler =	DAC960_BA_InterruptHandler,
-	.MemoryWindowSize =	DAC960_BA_RegisterWindowSize,
+struct myrs_privdata DAC960_BA_privdata = {
+	.hw_type =		DAC960_BA_Controller,
+	.hw_init =		DAC960_BA_HardwareInit,
+	.irq_handler =		DAC960_BA_InterruptHandler,
+	.io_mem_size =		DAC960_BA_RegisterWindowSize,
 };
 
 
@@ -2641,21 +2765,19 @@ struct DAC960_privdata DAC960_BA_privdata = {
 */
 
 static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
-				  myr_hba *c, void __iomem *base)
+				  myrs_hba *cs, void __iomem *base)
 {
-	myrs_hba *cs = container_of(c, myrs_hba, common);
 	int timeout = 0;
-	unsigned char ErrorStatus, Parameter0, Parameter1;
+	unsigned char status, parm0, parm1;
 
 	DAC960_LP_DisableInterrupts(base);
 	DAC960_LP_AcknowledgeHardwareMailboxStatus(base);
 	udelay(1000);
 	while (DAC960_LP_InitializationInProgressP(base) &&
 	       timeout < DAC960_MAILBOX_TIMEOUT) {
-		if (DAC960_LP_ReadErrorStatus(base, &ErrorStatus,
-					      &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus,
-					     Parameter0, Parameter1))
+		if (DAC960_LP_ReadErrorStatus(base, &status,
+					      &parm0, &parm1) &&
+		    myrs_err_status(cs, status,parm0, parm1))
 			return -EIO;
 		udelay(10);
 		timeout++;
@@ -2674,9 +2796,8 @@ static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
 	DAC960_LP_EnableInterrupts(base);
 	cs->write_cmd_mbox = DAC960_LP_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_LP_MemoryMailboxNewCommand;
-	c->ReadControllerConfiguration = myrs_get_config;
-	c->DisableInterrupts = DAC960_LP_DisableInterrupts;
-	c->Reset = DAC960_LP_ControllerReset;
+	cs->disable_intr = DAC960_LP_DisableInterrupts;
+	cs->reset = DAC960_LP_ControllerReset;
 
 	return 0;
 }
@@ -2686,16 +2807,15 @@ static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
   Controllers.
 */
 
-static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
+static irqreturn_t DAC960_LP_InterruptHandler(int irq,
 					      void *DeviceIdentifier)
 {
-	myr_hba *c = DeviceIdentifier;
-	myrs_hba *cs = container_of(c, myrs_hba, common);
-	void __iomem *base = c->io_addr;
+	myrs_hba *cs = DeviceIdentifier;
+	void __iomem *base = cs->io_base;
 	myrs_stat_mbox *next_stat_mbox;
 	unsigned long flags;
 
-	spin_lock_irqsave(&c->queue_lock, flags);
+	spin_lock_irqsave(&cs->queue_lock, flags);
 	DAC960_LP_AcknowledgeInterrupt(base);
 	next_stat_mbox = cs->next_stat_mbox;
 	while (next_stat_mbox->id > 0) {
@@ -2708,7 +2828,7 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 		else if (id == DAC960_MonitoringIdentifier)
 			cmd_blk = &cs->mcmd_blk;
 		else {
-			scmd = scsi_host_find_tag(c->host, id - 3);
+			scmd = scsi_host_find_tag(cs->host, id - 3);
 			if (scmd)
 				cmd_blk = scsi_cmd_priv(scmd);
 		}
@@ -2717,7 +2837,7 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 			cmd_blk->sense_len = next_stat_mbox->sense_len;
 			cmd_blk->residual = next_stat_mbox->residual;
 		} else
-			dev_err(&c->pdev->dev,
+			dev_err(&cs->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
 		memset(next_stat_mbox, 0, sizeof(myrs_stat_mbox));
@@ -2730,15 +2850,124 @@ static irqreturn_t DAC960_LP_InterruptHandler(int IRQ_Channel,
 			myrs_handle_scsi(cs, cmd_blk, scmd);
 	}
 	cs->next_stat_mbox = next_stat_mbox;
-	spin_unlock_irqrestore(&c->queue_lock, flags);
+	spin_unlock_irqrestore(&cs->queue_lock, flags);
 	return IRQ_HANDLED;
 }
 
-struct DAC960_privdata DAC960_LP_privdata = {
-	.HardwareType =		DAC960_LP_Controller,
-	.FirmwareType =		DAC960_V2_Controller,
-	.HardwareInit =		DAC960_LP_HardwareInit,
-	.InterruptHandler =	DAC960_LP_InterruptHandler,
-	.MemoryWindowSize =	DAC960_LP_RegisterWindowSize,
+struct myrs_privdata DAC960_LP_privdata = {
+	.hw_type =		DAC960_LP_Controller,
+	.hw_init =		DAC960_LP_HardwareInit,
+	.irq_handler =		DAC960_LP_InterruptHandler,
+	.io_mem_size =		DAC960_LP_RegisterWindowSize,
 };
 
+static int
+myrs_probe(struct pci_dev *dev, const struct pci_device_id *entry)
+{
+	myrs_hba *cs;
+	int ret;
+
+	cs = myrs_detect(dev, entry);
+	if (!cs)
+		return -ENODEV;
+
+	ret = myrs_get_config(cs);
+	if (ret < 0) {
+		myrs_cleanup(cs);
+		return ret;
+	}
+
+	if (!myrs_create_mempools(dev, cs)) {
+		ret = -ENOMEM;
+		goto failed;
+	}
+
+	ret = scsi_add_host(cs->host, &dev->dev);
+	if (ret) {
+		dev_err(&dev->dev, "scsi_add_host failed with %d\n", ret);
+		myrs_destroy_mempools(cs);
+		goto failed;
+	}
+	scsi_scan_host(cs->host);
+	return 0;
+failed:
+	myrs_cleanup(cs);
+	return ret;
+}
+
+
+static void myrs_remove(struct pci_dev *pdev)
+{
+	myrs_hba *cs = pci_get_drvdata(pdev);
+
+	if (cs == NULL)
+		return;
+
+	shost_printk(KERN_NOTICE, cs->host, "Flushing Cache...");
+	myrs_flush_cache(cs);
+	myrs_destroy_mempools(cs);
+	myrs_cleanup(cs);
+}
+
+
+static const struct pci_device_id myrs_id_table[] = {
+	{
+		.vendor		= PCI_VENDOR_ID_MYLEX,
+		.device		= PCI_DEVICE_ID_MYLEX_DAC960_GEM,
+		.subvendor	= PCI_VENDOR_ID_MYLEX,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (unsigned long) &DAC960_GEM_privdata,
+	},
+	{
+		.vendor		= PCI_VENDOR_ID_MYLEX,
+		.device		= PCI_DEVICE_ID_MYLEX_DAC960_BA,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (unsigned long) &DAC960_BA_privdata,
+	},
+	{
+		.vendor		= PCI_VENDOR_ID_MYLEX,
+		.device		= PCI_DEVICE_ID_MYLEX_DAC960_LP,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (unsigned long) &DAC960_LP_privdata,
+	},
+	{0, },
+};
+
+MODULE_DEVICE_TABLE(pci, myrs_id_table);
+
+static struct pci_driver myrs_pci_driver = {
+	.name		= "myrs",
+	.id_table	= myrs_id_table,
+	.probe		= myrs_probe,
+	.remove		= myrs_remove,
+};
+
+static int __init myrs_init_module(void)
+{
+	int ret;
+
+	myrs_raid_template = raid_class_attach(&myrs_raid_functions);
+	if (!myrs_raid_template)
+		return -ENODEV;
+
+	ret = pci_register_driver(&myrs_pci_driver);
+	if (ret)
+		raid_class_release(myrs_raid_template);
+
+	return ret;
+}
+
+static void __exit myrs_cleanup_module(void)
+{
+	pci_unregister_driver(&myrs_pci_driver);
+	raid_class_release(myrs_raid_template);
+}
+
+module_init(myrs_init_module);
+module_exit(myrs_cleanup_module);
+
+MODULE_DESCRIPTION("Mylex DAC960/AcceleRAID/eXtremeRAID driver (SCSI Interface)");
+MODULE_AUTHOR("Hannes Reinecke <hare@suse.com>");
+MODULE_LICENSE("GPL");

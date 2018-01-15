@@ -968,12 +968,24 @@ typedef struct myrs_cmdblk_s
 
 typedef struct myrs_hba_s
 {
-	struct myr_hba_s common;
+	void __iomem *io_base;
+	void __iomem *mmio_base;
+	phys_addr_t io_addr;
+	phys_addr_t pci_addr;
+	unsigned int irq;
+	DAC960_HardwareType_T hwtype;
+
+	unsigned char model_name[28];
+	unsigned char fw_version[12];
+
+	struct Scsi_Host *host;
+	struct pci_dev *pdev;
 
 	unsigned int epoch;
 	unsigned int next_evseq;
 	/* Monitor flags */
 	bool needs_update;
+	bool disable_enc_msg;
 
 	struct workqueue_struct *work_q;
 	char work_q_name[20];
@@ -981,12 +993,16 @@ typedef struct myrs_hba_s
 	unsigned long primary_monitor_time;
 	unsigned long secondary_monitor_time;
 
+	spinlock_t queue_lock;
+
 	struct pci_pool *sg_pool;
 	struct pci_pool *sense_pool;
 	struct pci_pool *dcdb_pool;
 
 	void (*write_cmd_mbox)(myrs_cmd_mbox *, myrs_cmd_mbox *);
 	void (*get_cmd_mbox)(void __iomem *);
+	void (*disable_intr)(void __iomem *);
+	void (*reset)(void __iomem *);
 
 	dma_addr_t cmd_mbox_addr;
 	size_t cmd_mbox_size;
@@ -1014,6 +1030,16 @@ typedef struct myrs_hba_s
 
 	myrs_event *event_buf;
 } myrs_hba;
+
+typedef int (*myrs_hwinit_t)(struct pci_dev *pdev,
+			     struct myrs_hba_s *c, void __iomem *base);
+
+struct myrs_privdata {
+	DAC960_HardwareType_T	hw_type;
+	myrs_hwinit_t		hw_init;
+	irq_handler_t		irq_handler;
+	unsigned int		io_mem_size;
+};
 
 /*
   Define the DAC960 GEM Series Controller Interface Register Offsets.

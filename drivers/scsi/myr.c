@@ -60,7 +60,6 @@ static DEFINE_MUTEX(DAC960_mutex);
 static int DAC960_ControllerCount;
 
 struct raid_template *myrb_raid_template;
-struct raid_template *myrs_raid_template;
 
 /*
   init_dma_loaf() and slice_dma_loaf() are helper functions for
@@ -177,10 +176,7 @@ static void DAC960_DetectCleanup(myr_hba *c)
 	struct pci_dev *pdev = c->pdev;
 
 	/* Free the memory mailbox, status, and related structures */
-	if (c->FirmwareType == DAC960_V2_Controller)
-		myrs_unmap(c);
-	else
-		free_dma_loaf(pdev, &c->DmaPages);
+	free_dma_loaf(pdev, &c->DmaPages);
 
 	if (c->mmio_base) {
 		myr_disable_intr(c);
@@ -212,11 +208,7 @@ DAC960_DetectController(struct pci_dev *pdev,
 	unsigned int mmio_size = privdata->MemoryWindowSize;
 	myr_hba *c = NULL;
 
-	if (privdata->FirmwareType == DAC960_V1_Controller)
-		c = myrb_alloc_host(pdev, entry);
-	else
-		c = myrs_alloc_host(pdev, entry);
-
+	c = myrb_alloc_host(pdev, entry);
 	if (!c) {
 		dev_err(&pdev->dev, "Unable to allocate Controller\n");
 		return NULL;
@@ -282,18 +274,12 @@ static bool DAC960_CreateAuxiliaryStructures(myr_hba *c)
 {
 	struct pci_dev *pdev = c->pdev;
 
-	if (c->FirmwareType == DAC960_V1_Controller)
-		return myrb_create_mempools(pdev, c);
-	else
-		return myrs_create_mempools(pdev, c);
+	return myrb_create_mempools(pdev, c);
 }
 
 static void DAC960_DestroyAuxiliaryStructures(myr_hba *c)
 {
-	if (c->FirmwareType == DAC960_V1_Controller)
-		myrb_destroy_mempools(c);
-	else
-		myrs_destroy_mempools(c);
+	myrb_destroy_mempools(c);
 }
 
 
@@ -348,40 +334,14 @@ static void DAC960_Remove(struct pci_dev *pdev)
 	if (c == NULL)
 		return;
 
-	if (c->FirmwareType == DAC960_V1_Controller) {
-		shost_printk(KERN_NOTICE, c->host, "Flushing Cache...");
-		myrb_flush_cache(c);
-	} else {
-		shost_printk(KERN_NOTICE, c->host, "Flushing Cache...");
-		myrs_flush_cache(c);
-	}
+	shost_printk(KERN_NOTICE, c->host, "Flushing Cache...");
+	myrb_flush_cache(c);
 	DAC960_DestroyAuxiliaryStructures(c);
 	DAC960_DetectCleanup(c);
 }
 
 
 static const struct pci_device_id DAC960_id_table[] = {
-	{
-		.vendor		= PCI_VENDOR_ID_MYLEX,
-		.device		= PCI_DEVICE_ID_MYLEX_DAC960_GEM,
-		.subvendor	= PCI_VENDOR_ID_MYLEX,
-		.subdevice	= PCI_ANY_ID,
-		.driver_data	= (unsigned long) &DAC960_GEM_privdata,
-	},
-	{
-		.vendor		= PCI_VENDOR_ID_MYLEX,
-		.device		= PCI_DEVICE_ID_MYLEX_DAC960_BA,
-		.subvendor	= PCI_ANY_ID,
-		.subdevice	= PCI_ANY_ID,
-		.driver_data	= (unsigned long) &DAC960_BA_privdata,
-	},
-	{
-		.vendor		= PCI_VENDOR_ID_MYLEX,
-		.device		= PCI_DEVICE_ID_MYLEX_DAC960_LP,
-		.subvendor	= PCI_ANY_ID,
-		.subdevice	= PCI_ANY_ID,
-		.driver_data	= (unsigned long) &DAC960_LP_privdata,
-	},
 	{
 		.vendor		= PCI_VENDOR_ID_DEC,
 		.device		= PCI_DEVICE_ID_DEC_21285,
@@ -429,24 +389,17 @@ static int __init DAC960_init_module(void)
 	myrb_raid_template = raid_class_attach(&myrb_raid_functions);
 	if (!myrb_raid_template)
 		return -ENODEV;
-	myrs_raid_template = raid_class_attach(&myrs_raid_functions);
-	if (!myrs_raid_template) {
-		raid_class_release(myrb_raid_template);
-		return -ENODEV;
-	}
 
 	ret = pci_register_driver(&DAC960_pci_driver);
-	if (ret) {
-		raid_class_release(myrs_raid_template);
+	if (ret)
 		raid_class_release(myrb_raid_template);
-	}
+
 	return ret;
 }
 
 static void __exit DAC960_cleanup_module(void)
 {
 	pci_unregister_driver(&DAC960_pci_driver);
-	raid_class_release(myrs_raid_template);
 	raid_class_release(myrb_raid_template);
 }
 

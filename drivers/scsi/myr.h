@@ -270,22 +270,4 @@ extern struct DAC960_privdata DAC960_PG_privdata;
 extern struct DAC960_privdata DAC960_PD_privdata;
 extern struct DAC960_privdata DAC960_P_privdata;
 
-/*
- * myraid scsi:
- * driver for the newer, scsi-based firmware interface
- */
-extern struct raid_function_template myrs_raid_functions;
-extern struct scsi_host_template myrs_template;
-
-bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c);
-void myrs_destroy_mempools(myr_hba *c);
-void myrs_unmap(myr_hba *c);
-void myrs_flush_cache(myr_hba *c);
-void myrs_get_ctlr_info(myr_hba *c);
-myr_hba *myrs_alloc_host(struct pci_dev *, const struct pci_device_id *);
-
-extern struct DAC960_privdata DAC960_GEM_privdata;
-extern struct DAC960_privdata DAC960_BA_privdata;
-extern struct DAC960_privdata DAC960_LP_privdata;
-
 #endif /* _MYR_H */

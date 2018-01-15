@@ -568,6 +568,17 @@ config SCSI_MYLEX
 	  To compile this driver as a module, choose M here: the
 	  module will be called mylex.
 
+config SCSI_MYRS
+	tristate "Mylex DAC960 RAID Controller support (SCSI Interface)"
+	depends on PCI
+	help
+	  This driver adds support for the Mylex DAC960, AcceleRAID, and
+	  eXtremeRAID PCI RAID controllers.  This driver supports the
+	  newer, SCSI-based interface only.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called myrs.
+
 config VMWARE_PVSCSI
 	tristate "VMware PVSCSI driver support"
 	depends on PCI && SCSI && X86
