@@ -982,6 +982,7 @@ typedef struct myrs_hba_s
 	void (*get_cmd_mbox)(void __iomem *);
 
 	dma_addr_t cmd_mbox_addr;
+	size_t cmd_mbox_size;
 	myrs_cmd_mbox *first_cmd_mbox;
 	myrs_cmd_mbox *last_cmd_mbox;
 	myrs_cmd_mbox *next_cmd_mbox;
@@ -989,6 +990,7 @@ typedef struct myrs_hba_s
 	myrs_cmd_mbox *prev_cmd_mbox2;
 
 	dma_addr_t stat_mbox_addr;
+	size_t stat_mbox_size;
 	myrs_stat_mbox *first_stat_mbox;
 	myrs_stat_mbox *last_stat_mbox;
 	myrs_stat_mbox *next_stat_mbox;
@@ -1001,11 +1003,9 @@ typedef struct myrs_hba_s
 	dma_addr_t fwstat_addr;
 
 	myrs_ctlr_info *ctlr_info;
-	dma_addr_t ctlr_info_addr;
 	struct mutex cinfo_mutex;
 
 	myrs_event *event_buf;
-	dma_addr_t event_addr;
 } myrs_hba;
 
 /*

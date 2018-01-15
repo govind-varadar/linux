@@ -160,14 +160,27 @@ void myrs_unmap(myr_hba *c)
 	myrs_hba *cs = container_of(c, myrs_hba, common);
 
 	if (cs->event_buf) {
-		dma_free_coherent(&c->pdev->dev, sizeof(myrs_event),
-				  cs->event_buf, cs->event_addr);
+		kfree(cs->event_buf);
 		cs->event_buf = NULL;
 	}
 	if (cs->ctlr_info) {
-		dma_free_coherent(&c->pdev->dev, sizeof(myrs_ctlr_info),
-				  cs->ctlr_info, cs->ctlr_info_addr);
+		kfree(cs->ctlr_info);
 		cs->ctlr_info = NULL;
+	}
+	if (cs->fwstat_buf) {
+		dma_free_coherent(&c->pdev->dev, sizeof(myrs_fwstat),
+				  cs->fwstat_buf, cs->fwstat_addr);
+		cs->fwstat_buf = NULL;
+	}
+	if (cs->first_stat_mbox) {
+		dma_free_coherent(&c->pdev->dev, cs->stat_mbox_size,
+				  cs->first_stat_mbox, cs->stat_mbox_addr);
+		cs->first_stat_mbox = NULL;
+	}
+	if (cs->first_cmd_mbox) {
+		dma_free_coherent(&c->pdev->dev, cs->cmd_mbox_size,
+				  cs->first_cmd_mbox, cs->cmd_mbox_addr);
+		cs->first_cmd_mbox = NULL;
 	}
 }
 
@@ -260,11 +273,17 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 	myr_hba *c = &cs->common;
 	myrs_cmdblk *cmd_blk = &cs->dcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
+	dma_addr_t ctlr_info_addr;
 	myrs_sgl *sgl;
 	unsigned char status;
 	myrs_ctlr_info old;
 
 	memcpy(&old, cs->ctlr_info, sizeof(myrs_ctlr_info));
+	ctlr_info_addr = dma_map_single(&c->pdev->dev, cs->ctlr_info,
+					sizeof(myrs_ctlr_info),
+					DMA_FROM_DEVICE);
+	if (dma_mapping_error(&c->pdev->dev, ctlr_info_addr))
+		return DAC960_V2_AbnormalCompletion;
 
 	mutex_lock(&cs->dcmd_mutex);
 	myrs_reset_cmd(cmd_blk);
@@ -276,12 +295,14 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 	mbox->ControllerInfo.ctlr_num = 0;
 	mbox->ControllerInfo.ioctl_opcode = DAC960_V2_GetControllerInfo;
 	sgl = &mbox->ControllerInfo.dma_addr;
-	sgl->sge[0].sge_addr = cs->ctlr_info_addr;
+	sgl->sge[0].sge_addr = ctlr_info_addr;
 	sgl->sge[0].sge_count = mbox->ControllerInfo.dma_size;
 	dev_dbg(&c->host->shost_gendev, "Sending GetControllerInfo\n");
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
+	dma_unmap_single(&c->pdev->dev, ctlr_info_addr,
+			 sizeof(myrs_ctlr_info), DMA_FROM_DEVICE);
 	if (status == DAC960_V2_NormalCompletion) {
 		if (cs->ctlr_info->bg_init_active +
 		    cs->ctlr_info->ldev_init_active +
@@ -548,7 +569,7 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 }
 
 
-static unsigned char DAC960_V2_MonitorGetEvent(myrs_hba *cs,
+static unsigned char myrs_get_event(myrs_hba *cs,
 					       unsigned short event_num,
 					       myrs_event *event_buf)
 {
@@ -597,20 +618,13 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 	myr_hba *c = &cs->common;
 	void __iomem *base = c->io_addr;
 	struct pci_dev *pdev = c->pdev;
-	struct dma_loaf *DmaPages = &c->DmaPages;
-	size_t DmaPagesSize;
-	size_t CommandMailboxesSize;
-	size_t StatusMailboxesSize;
 
-	myrs_cmd_mbox *CommandMailboxesMemory;
-	dma_addr_t CommandMailboxesMemoryDMA;
-
-	myrs_stat_mbox *StatusMailboxesMemory;
-	dma_addr_t StatusMailboxesMemoryDMA;
+	myrs_cmd_mbox *cmd_mbox;
+	myrs_stat_mbox *stat_mbox;
 
 	myrs_cmd_mbox *mbox;
-	dma_addr_t	CommandMailboxDMA;
-	unsigned char status;
+	dma_addr_t mbox_addr;
+	unsigned char status = DAC960_V2_AbnormalCompletion;
 
 	if (pci_set_dma_mask(pdev, DMA_BIT_MASK(64)))
 		if (pci_set_dma_mask(pdev, DMA_BIT_MASK(32))) {
@@ -619,69 +633,61 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 		}
 
 	/* This is a temporary dma mapping, used only in the scope of this function */
-	mbox = pci_alloc_consistent(pdev,
-				    sizeof(myrs_cmd_mbox),
-				    &CommandMailboxDMA);
-	if (mbox == NULL)
+	mbox = dma_alloc_coherent(&pdev->dev, sizeof(myrs_cmd_mbox),
+				  &mbox_addr, GFP_KERNEL);
+	if (dma_mapping_error(&pdev->dev, mbox_addr))
 		return false;
-
-	CommandMailboxesSize = DAC960_V2_CommandMailboxCount * sizeof(myrs_cmd_mbox);
-	StatusMailboxesSize = DAC960_V2_StatusMailboxCount * sizeof(myrs_stat_mbox);
-	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
-		sizeof(myrs_fwstat) + sizeof(myrs_ctlr_info);
-
-	if (!init_dma_loaf(pdev, DmaPages, DmaPagesSize)) {
-		pci_free_consistent(pdev, sizeof(myrs_cmd_mbox),
-				    mbox, CommandMailboxDMA);
-		return false;
-	}
-
-	CommandMailboxesMemory = slice_dma_loaf(DmaPages,
-						CommandMailboxesSize, &CommandMailboxesMemoryDMA);
 
 	/* These are the base addresses for the command memory mailbox array */
-	cs->first_cmd_mbox = CommandMailboxesMemory;
-	cs->cmd_mbox_addr = CommandMailboxesMemoryDMA;
-	CommandMailboxesMemory += DAC960_V2_CommandMailboxCount - 1;
-	cs->last_cmd_mbox = CommandMailboxesMemory;
+	cs->cmd_mbox_size = DAC960_V2_CommandMailboxCount * sizeof(myrs_cmd_mbox);
+	cmd_mbox = dma_alloc_coherent(&pdev->dev, cs->cmd_mbox_size,
+				      &cs->cmd_mbox_addr, GFP_KERNEL);
+	if (dma_mapping_error(&pdev->dev, cs->cmd_mbox_addr)) {
+		dev_err(&pdev->dev, "Failed to map command mailbox\n");
+		goto out_free;
+	}
+	cs->first_cmd_mbox = cmd_mbox;
+	cmd_mbox += DAC960_V2_CommandMailboxCount - 1;
+	cs->last_cmd_mbox = cmd_mbox;
 	cs->next_cmd_mbox = cs->first_cmd_mbox;
 	cs->prev_cmd_mbox1 = cs->last_cmd_mbox;
 	cs->prev_cmd_mbox2 = cs->last_cmd_mbox - 1;
 
 	/* These are the base addresses for the status memory mailbox array */
-	StatusMailboxesMemory = slice_dma_loaf(DmaPages,
-					       StatusMailboxesSize, &StatusMailboxesMemoryDMA);
-
-	cs->first_stat_mbox = StatusMailboxesMemory;
-	cs->stat_mbox_addr = StatusMailboxesMemoryDMA;
-	StatusMailboxesMemory += DAC960_V2_StatusMailboxCount - 1;
-	cs->last_stat_mbox = StatusMailboxesMemory;
-	cs->next_stat_mbox = cs->first_stat_mbox;
-
-	cs->fwstat_buf = slice_dma_loaf(DmaPages, sizeof(myrs_fwstat),
-					  &cs->fwstat_addr);
-
-	cs->ctlr_info = dma_alloc_coherent(&c->pdev->dev,
-					   sizeof(myrs_ctlr_info),
-					   &cs->ctlr_info_addr, GFP_ATOMIC);
-	if (dma_mapping_error(&c->pdev->dev, cs->ctlr_info_addr)) {
-		cs->ctlr_info = NULL;
-		return false;
+	cs->stat_mbox_size = DAC960_V2_StatusMailboxCount * sizeof(myrs_stat_mbox);
+	stat_mbox = dma_alloc_coherent(&pdev->dev, cs->stat_mbox_size,
+				       &cs->stat_mbox_addr, GFP_KERNEL);
+	if (dma_mapping_error(&pdev->dev, cs->stat_mbox_addr)) {
+		dev_err(&pdev->dev, "Failed to map status mailbox\n");
+		goto out_free;
 	}
 
-	cs->event_buf = dma_alloc_coherent(&pdev->dev, sizeof(myrs_event),
-					   &cs->event_addr, GFP_ATOMIC);
-	if (dma_mapping_error(&pdev->dev, cs->event_addr)) {
-		cs->event_buf = NULL;
-		return false;
+	cs->first_stat_mbox = stat_mbox;
+	stat_mbox += DAC960_V2_StatusMailboxCount - 1;
+	cs->last_stat_mbox = stat_mbox;
+	cs->next_stat_mbox = cs->first_stat_mbox;
+
+	cs->fwstat_buf = dma_alloc_coherent(&pdev->dev, sizeof(myrs_fwstat),
+					    &cs->fwstat_addr, GFP_KERNEL);
+	if (dma_mapping_error(&pdev->dev, cs->fwstat_addr)) {
+		dev_err(&pdev->dev, "Failed to map firmware health buffer\n");
+		cs->fwstat_buf = NULL;
+		goto out_free;
+	}
+	cs->ctlr_info = kzalloc(sizeof(myrs_ctlr_info), GFP_KERNEL | GFP_DMA);
+	if (!cs->ctlr_info) {
+		dev_err(&pdev->dev, "Failed to allocate controller info\n");
+		goto out_free;
+	}
+
+	cs->event_buf = kzalloc(sizeof(myrs_event), GFP_KERNEL | GFP_DMA);
+	if (!cs->event_buf) {
+		dev_err(&pdev->dev, "Failed to allocate event buffer\n");
+		goto out_free;
 	}
 
 	/*
 	  Enable the Memory Mailbox Interface.
-
-	  I don't know why we can't just use one of the memory mailboxes
-	  we just allocated to do this, instead of using this temporary one.
-	  Try this change later.
 	*/
 	memset(mbox, 0, sizeof(myrs_cmd_mbox));
 	mbox->SetMemoryMailbox.id = 1;
@@ -706,7 +712,7 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 	case DAC960_GEM_Controller:
 		while (DAC960_GEM_HardwareMailboxFullP(base))
 			udelay(1);
-		DAC960_GEM_WriteHardwareMailbox(base, CommandMailboxDMA);
+		DAC960_GEM_WriteHardwareMailbox(base, mbox_addr);
 		DAC960_GEM_HardwareMailboxNewCommand(base);
 		while (!DAC960_GEM_HardwareMailboxStatusAvailableP(base))
 			udelay(1);
@@ -717,7 +723,7 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 	case DAC960_BA_Controller:
 		while (DAC960_BA_HardwareMailboxFullP(base))
 			udelay(1);
-		DAC960_BA_WriteHardwareMailbox(base, CommandMailboxDMA);
+		DAC960_BA_WriteHardwareMailbox(base, mbox_addr);
 		DAC960_BA_HardwareMailboxNewCommand(base);
 		while (!DAC960_BA_HardwareMailboxStatusAvailableP(base))
 			udelay(1);
@@ -728,7 +734,7 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 	case DAC960_LP_Controller:
 		while (DAC960_LP_HardwareMailboxFullP(base))
 			udelay(1);
-		DAC960_LP_WriteHardwareMailbox(base, CommandMailboxDMA);
+		DAC960_LP_WriteHardwareMailbox(base, mbox_addr);
 		DAC960_LP_HardwareMailboxNewCommand(base);
 		while (!DAC960_LP_HardwareMailboxStatusAvailableP(base))
 			udelay(1);
@@ -741,8 +747,9 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 			c->HardwareType);
 		return false;
 	}
-	pci_free_consistent(pdev, sizeof(myrs_cmd_mbox),
-			    mbox, CommandMailboxDMA);
+out_free:
+	dma_free_coherent(&pdev->dev, sizeof(myrs_cmd_mbox),
+			  mbox, mbox_addr);
 	if (status != DAC960_V2_NormalCompletion)
 		dev_err(&pdev->dev, "Failed to enable mailbox, status %X\n",
 			status);
@@ -1737,7 +1744,7 @@ static int myrs_slave_alloc(struct scsi_device *sdev)
 
 		ldev_num = myrs_translate_ldev(cs, sdev);
 
-		ldev_info = kzalloc(sizeof(*ldev_info), GFP_KERNEL);
+		ldev_info = kzalloc(sizeof(*ldev_info), GFP_KERNEL|GFP_DMA);
 		if (!ldev_info)
 			return -ENOMEM;
 
@@ -1800,7 +1807,7 @@ static int myrs_slave_alloc(struct scsi_device *sdev)
 	} else {
 		myrs_pdev_info *pdev_info;
 
-		pdev_info = kzalloc(sizeof(*pdev_info), GFP_KERNEL);
+		pdev_info = kzalloc(sizeof(*pdev_info), GFP_KERNEL|GFP_DMA);
 		if (!pdev_info)
 			return -ENOMEM;
 
@@ -2256,8 +2263,8 @@ unsigned long myrs_monitor(myr_hba *c)
 		mutex_unlock(&cs->cinfo_mutex);
 	}
 	if (cs->fwstat_buf->next_evseq - cs->next_evseq > 0) {
-		status = DAC960_V2_MonitorGetEvent(cs, cs->next_evseq,
-						   cs->event_buf);
+		status = myrs_get_event(cs, cs->next_evseq,
+					cs->event_buf);
 		if (status == DAC960_V2_NormalCompletion) {
 			DAC960_V2_ReportEvent(cs, cs->event_buf);
 			cs->next_evseq++;

@@ -217,8 +217,8 @@ static void DAC960_DetectCleanup(myr_hba *c)
 	/* Free the memory mailbox, status, and related structures */
 	if (c->FirmwareType == DAC960_V2_Controller)
 		myrs_unmap(c);
-
-	free_dma_loaf(pdev, &c->DmaPages);
+	else
+		free_dma_loaf(pdev, &c->DmaPages);
 
 	if (c->MemoryMappedAddress) {
 		myr_disable_intr(c);
