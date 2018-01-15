@@ -973,12 +973,13 @@ typedef struct myrs_hba_s
 	unsigned int epoch;
 	unsigned int next_evseq;
 	/* Monitor flags */
-	bool NeedControllerInformation;
-	struct pci_pool *RequestSensePool;
-	struct pci_pool *DCDBPool;
+	bool needs_update;
 
-	void (*WriteCommandMailbox)(myrs_cmd_mbox *, myrs_cmd_mbox *);
-	void (*MailboxNewCommand)(void __iomem *);
+	struct pci_pool *sense_pool;
+	struct pci_pool *dcdb_pool;
+
+	void (*write_cmd_mbox)(myrs_cmd_mbox *, myrs_cmd_mbox *);
+	void (*get_cmd_mbox)(void __iomem *);
 
 	dma_addr_t cmd_mbox_addr;
 	myrs_cmd_mbox *first_cmd_mbox;
@@ -987,10 +988,10 @@ typedef struct myrs_hba_s
 	myrs_cmd_mbox *prev_cmd_mbox1;
 	myrs_cmd_mbox *prev_cmd_mbox2;
 
-	dma_addr_t	FirstStatusMailboxDMA;
-	myrs_stat_mbox *FirstStatusMailbox;
-	myrs_stat_mbox *LastStatusMailbox;
-	myrs_stat_mbox *NextStatusMailbox;
+	dma_addr_t stat_mbox_addr;
+	myrs_stat_mbox *first_stat_mbox;
+	myrs_stat_mbox *last_stat_mbox;
+	myrs_stat_mbox *next_stat_mbox;
 
 	myrs_cmdblk dcmd_blk;
 	myrs_cmdblk mcmd_blk;
