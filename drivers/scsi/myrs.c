@@ -1569,6 +1569,51 @@ int myrs_host_reset(struct scsi_cmnd *scmd)
 	return SUCCESS;
 }
 
+static void
+myrs_mode_sense(myrs_hba *cs, struct scsi_cmnd *scmd,
+		myrs_ldev_info *ldev_info)
+{
+	unsigned char modes[32], *mode_pg;
+	bool dbd;
+	size_t mode_len;
+
+	dbd = (scmd->cmnd[1] & 0x08) == 0x08;
+	if (dbd) {
+		mode_len = 24;
+		mode_pg = &modes[4];
+	} else {
+		mode_len = 32;
+		mode_pg = &modes[12];
+	}
+	memset(modes, 0, sizeof(modes));
+	modes[0] = mode_len - 1;
+	modes[2] = 0x10; /* Enable FUA */
+	if (ldev_info->ldev_control.WriteCache ==
+	    DAC960_V2_LogicalDeviceReadOnly)
+		modes[2] |= 0x80;
+	if (!dbd) {
+		unsigned char *block_desc = &modes[4];
+		modes[3] = 8;
+		put_unaligned_be32(ldev_info->cfg_devsize, &block_desc[0]);
+		put_unaligned_be32(ldev_info->DeviceBlockSizeInBytes,
+				   &block_desc[5]);
+	}
+	mode_pg[0] = 0x08;
+	mode_pg[1] = 0x12;
+	if (ldev_info->ldev_control.ReadCache == DAC960_V2_ReadCacheDisabled)
+		mode_pg[2] |= 0x01;
+	if (ldev_info->ldev_control.WriteCache == DAC960_V2_WriteCacheEnabled ||
+	    ldev_info->ldev_control.WriteCache ==
+	    DAC960_V2_IntelligentWriteCacheEnabled)
+		mode_pg[2] |= 0x04;
+	if (ldev_info->CacheLineSize) {
+		mode_pg[2] |= 0x08;
+		put_unaligned_be16(1 << ldev_info->CacheLineSize, &mode_pg[14]);
+	}
+
+	scsi_sg_copy_from_buffer(scmd, modes, mode_len);
+}
+
 static int myrs_queuecommand(struct Scsi_Host *shost,
 			     struct scsi_cmnd *scmd)
 {
@@ -1588,12 +1633,31 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 		return 0;
 	}
 
-	if (scmd->cmnd[0] == REPORT_LUNS) {
+	switch (scmd->cmnd[0]) {
+	case REPORT_LUNS:
 		scsi_build_sense_buffer(0, scmd->sense_buffer, ILLEGAL_REQUEST,
 					0x20, 0x0);
 		scmd->result = (DRIVER_SENSE << 24) | SAM_STAT_CHECK_CONDITION;
 		scmd->scsi_done(scmd);
 		return 0;
+	case MODE_SENSE:
+		if (scmd->device->channel >= cs->ctlr_info->physchan_present) {
+			myrs_ldev_info *ldev_info = sdev->hostdata;
+			if ((scmd->cmnd[2] & 0x3F) != 0x3F &&
+			    (scmd->cmnd[2] & 0x3F) != 0x08) {
+				/* Illegal request, invalid field in CDB */
+				scsi_build_sense_buffer(0, scmd->sense_buffer,
+							ILLEGAL_REQUEST, 0x24, 0);
+				scmd->result = (DRIVER_SENSE << 24) |
+					SAM_STAT_CHECK_CONDITION;
+			} else {
+				myrs_mode_sense(cs, scmd, ldev_info);
+				scmd->result = (DID_OK << 16);
+			}
+			scmd->scsi_done(scmd);
+			return 0;
+		}
+		break;
 	}
 
 	myrs_reset_cmd(cmd_blk);
@@ -1622,6 +1686,8 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 		mbox->SCSI_10.id = scmd->request->tag + 3;
 		mbox->SCSI_10.control.DataTransferControllerToHost =
 			(scmd->sc_data_direction == DMA_FROM_DEVICE);
+		if (scmd->request->cmd_flags & REQ_FUA)
+			mbox->SCSI_10.control.ForceUnitAccess = true;
 		mbox->SCSI_10.dma_size = scsi_bufflen(scmd);
 		mbox->SCSI_10.sense_addr = cmd_blk->sense_addr;
 		mbox->SCSI_10.sense_len = DAC960_V2_SENSE_BUFFERSIZE;
@@ -1670,6 +1736,8 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 		mbox->SCSI_255.id = scmd->request->tag + 3;
 		mbox->SCSI_255.control.DataTransferControllerToHost =
 			(scmd->sc_data_direction == DMA_FROM_DEVICE);
+		if (scmd->request->cmd_flags & REQ_FUA)
+			mbox->SCSI_255.control.ForceUnitAccess = true;
 		mbox->SCSI_255.dma_size = scsi_bufflen(scmd);
 		mbox->SCSI_255.sense_addr = cmd_blk->sense_addr;
 		mbox->SCSI_255.sense_len = DAC960_V2_SENSE_BUFFERSIZE;
