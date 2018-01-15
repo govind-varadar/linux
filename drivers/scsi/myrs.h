@@ -1002,6 +1002,9 @@ typedef struct myrs_hba_s
 	myrs_ctlr_info *ctlr_info;
 	dma_addr_t ctlr_info_addr;
 	struct mutex cinfo_mutex;
+
+	myrs_event *event_buf;
+	dma_addr_t event_addr;
 } myrs_hba;
 
 /*

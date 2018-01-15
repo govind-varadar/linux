@@ -125,6 +125,9 @@ void myrb_destroy_mempools(myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 
+	if (c->ScatterGatherPool != NULL)
+		pci_pool_destroy(c->ScatterGatherPool);
+
 	if (cb->DCDBPool) {
 		pci_pool_destroy(cb->DCDBPool);
 		cb->DCDBPool = NULL;

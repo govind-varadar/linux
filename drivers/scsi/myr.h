@@ -287,6 +287,7 @@ extern struct scsi_host_template myrs_template;
 
 bool myrs_create_mempools(struct pci_dev *pdev, myr_hba *c);
 void myrs_destroy_mempools(myr_hba *c);
+void myrs_unmap(myr_hba *c);
 void myrs_flush_cache(myr_hba *c);
 unsigned long myrs_monitor(myr_hba *c);
 void myrs_get_ctlr_info(myr_hba *c);

@@ -145,6 +145,9 @@ void myrs_destroy_mempools(myr_hba *c)
 {
 	myrs_hba *cs = container_of(c, myrs_hba, common);
 
+	if (c->ScatterGatherPool != NULL)
+		pci_pool_destroy(c->ScatterGatherPool);
+
 	if (cs->DCDBPool) {
 		pci_pool_destroy(cs->DCDBPool);
 		cs->DCDBPool = NULL;
@@ -152,6 +155,22 @@ void myrs_destroy_mempools(myr_hba *c)
 	if (cs->RequestSensePool) {
 		pci_pool_destroy(cs->RequestSensePool);
 		cs->RequestSensePool = NULL;
+	}
+}
+
+void myrs_unmap(myr_hba *c)
+{
+	myrs_hba *cs = container_of(c, myrs_hba, common);
+
+	if (cs->event_buf) {
+		dma_free_coherent(&c->pdev->dev, sizeof(myrs_event),
+				  cs->event_buf, cs->event_addr);
+		cs->event_buf = NULL;
+	}
+	if (cs->ctlr_info) {
+		dma_free_coherent(&c->pdev->dev, sizeof(myrs_ctlr_info),
+				  cs->ctlr_info, cs->ctlr_info_addr);
+		cs->ctlr_info = NULL;
 	}
 }
 
@@ -650,8 +669,13 @@ static bool DAC960_V2_EnableMemoryMailboxInterface(myrs_hba *cs)
 					   &cs->ctlr_info_addr, GFP_ATOMIC);
 	if (dma_mapping_error(&c->pdev->dev, cs->ctlr_info_addr)) {
 		cs->ctlr_info = NULL;
-		pci_free_consistent(pdev, sizeof(myrs_cmd_mbox),
-				    mbox, CommandMailboxDMA);
+		return false;
+	}
+
+	cs->event_buf = dma_alloc_coherent(&pdev->dev, sizeof(myrs_event),
+					   &cs->event_addr, GFP_ATOMIC);
+	if (dma_mapping_error(&pdev->dev, cs->event_addr)) {
+		cs->event_buf = NULL;
 		return false;
 	}
 

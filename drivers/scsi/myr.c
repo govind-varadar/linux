@@ -215,7 +215,11 @@ static void DAC960_DetectCleanup(myr_hba *c)
 	struct pci_dev *pdev = c->pdev;
 
 	/* Free the memory mailbox, status, and related structures */
+	if (c->FirmwareType == DAC960_V2_Controller)
+		myrs_unmap(c);
+
 	free_dma_loaf(pdev, &c->DmaPages);
+
 	if (c->MemoryMappedAddress) {
 		myr_disable_intr(c);
 		iounmap(c->MemoryMappedAddress);
@@ -333,9 +337,6 @@ static bool DAC960_CreateAuxiliaryStructures(myr_hba *c)
 
 static void DAC960_DestroyAuxiliaryStructures(myr_hba *c)
 {
-	if (c->ScatterGatherPool != NULL)
-		pci_pool_destroy(c->ScatterGatherPool);
-
 	if (c->FirmwareType == DAC960_V1_Controller)
 		myrb_destroy_mempools(c);
 	else
