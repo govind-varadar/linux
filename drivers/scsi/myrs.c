@@ -34,9 +34,6 @@
 #include "myrs.h"
 
 struct raid_template *myrs_raid_template;
-static void myrs_monitor(struct work_struct *work);
-static myrs_hba *myrs_alloc_host(struct pci_dev *pdev,
-				 const struct pci_device_id *entry);
 
 static struct myrs_devstate_name_entry {
 	myrs_devstate state;
@@ -99,193 +96,6 @@ static char *myrs_raid_level_name(myrs_raid_level level)
 	return NULL;
 }
 
-bool myrs_create_mempools(struct pci_dev *pdev, myrs_hba *cs)
-{
-	struct Scsi_Host *shost = cs->host;
-	size_t elem_size, elem_align;
-
-	elem_align = sizeof(myrs_sge);
-	elem_size = shost->sg_tablesize * elem_align;
-	cs->sg_pool = pci_pool_create("myrs_sg", pdev,
-				      elem_size, elem_align, 0);
-	if (cs->sg_pool == NULL) {
-		shost_printk(KERN_ERR, shost,
-			     "Failed to allocate SG pool\n");
-		return false;
-	}
-	elem_size = DAC960_V2_SENSE_BUFFERSIZE;
-	elem_align = sizeof(int);
-	cs->sense_pool = pci_pool_create("myrs_sense", pdev,
-					 elem_size, elem_align, 0);
-	if (cs->sense_pool == NULL) {
-		pci_pool_destroy(cs->sg_pool);
-		cs->sg_pool = NULL;
-		shost_printk(KERN_ERR, shost,
-			     "Failed to allocate sense data pool\n");
-		return false;
-	}
-	elem_size = DAC960_V2_DCDB_SIZE;
-	elem_align = sizeof(unsigned char);
-	cs->dcdb_pool = pci_pool_create("myrs_dcdb", pdev,
-					elem_size, elem_align, 0);
-	if (!cs->dcdb_pool) {
-		pci_pool_destroy(cs->sg_pool);
-		cs->sg_pool = NULL;
-		pci_pool_destroy(cs->sense_pool);
-		cs->sense_pool = NULL;
-		shost_printk(KERN_ERR, shost,
-			     "Failed to allocate DCDB pool\n");
-		return false;
-	}
-
-	snprintf(cs->work_q_name, sizeof(cs->work_q_name),
-		 "myrs_wq_%d", shost->host_no);
-	cs->work_q = create_singlethread_workqueue(cs->work_q_name);
-	if (!cs->work_q) {
-		pci_pool_destroy(cs->dcdb_pool);
-		cs->dcdb_pool = NULL;
-		pci_pool_destroy(cs->sg_pool);
-		cs->sg_pool = NULL;
-		pci_pool_destroy(cs->sense_pool);
-		cs->sense_pool = NULL;
-		shost_printk(KERN_ERR, shost,
-			     "Failed to create workqueue\n");
-		return false;
-	}
-
-	/*
-	  Initialize the Monitoring Timer.
-	*/
-	INIT_DELAYED_WORK(&cs->monitor_work, myrs_monitor);
-	queue_delayed_work(cs->work_q, &cs->monitor_work, 1);
-
-	return true;
-}
-
-void myrs_destroy_mempools(myrs_hba *cs)
-{
-	cancel_delayed_work_sync(&cs->monitor_work);
-	destroy_workqueue(cs->work_q);
-
-	if (cs->sg_pool)
-		pci_pool_destroy(cs->sg_pool);
-
-	if (cs->dcdb_pool) {
-		pci_pool_destroy(cs->dcdb_pool);
-		cs->dcdb_pool = NULL;
-	}
-	if (cs->sense_pool) {
-		pci_pool_destroy(cs->sense_pool);
-		cs->sense_pool = NULL;
-	}
-}
-
-void myrs_unmap(myrs_hba *cs)
-{
-	if (cs->event_buf) {
-		kfree(cs->event_buf);
-		cs->event_buf = NULL;
-	}
-	if (cs->ctlr_info) {
-		kfree(cs->ctlr_info);
-		cs->ctlr_info = NULL;
-	}
-	if (cs->fwstat_buf) {
-		dma_free_coherent(&cs->pdev->dev, sizeof(myrs_fwstat),
-				  cs->fwstat_buf, cs->fwstat_addr);
-		cs->fwstat_buf = NULL;
-	}
-	if (cs->first_stat_mbox) {
-		dma_free_coherent(&cs->pdev->dev, cs->stat_mbox_size,
-				  cs->first_stat_mbox, cs->stat_mbox_addr);
-		cs->first_stat_mbox = NULL;
-	}
-	if (cs->first_cmd_mbox) {
-		dma_free_coherent(&cs->pdev->dev, cs->cmd_mbox_size,
-				  cs->first_cmd_mbox, cs->cmd_mbox_addr);
-		cs->first_cmd_mbox = NULL;
-	}
-}
-
-void myrs_cleanup(myrs_hba *cs)
-{
-	struct pci_dev *pdev = cs->pdev;
-
-	/* Free the memory mailbox, status, and related structures */
-	myrs_unmap(cs);
-
-	if (cs->mmio_base) {
-		cs->disable_intr(cs);
-		iounmap(cs->mmio_base);
-	}
-	if (cs->irq)
-		free_irq(cs->irq, cs);
-	if (cs->io_addr)
-		release_region(cs->io_addr, 0x80);
-	iounmap(cs->mmio_base);
-	pci_set_drvdata(pdev, NULL);
-	pci_disable_device(pdev);
-	scsi_host_put(cs->host);
-}
-
-static myrs_hba *myrs_detect(struct pci_dev *pdev,
-			     const struct pci_device_id *entry)
-{
-	struct myrs_privdata *privdata =
-		(struct myrs_privdata *)entry->driver_data;
-	irq_handler_t irq_handler = privdata->irq_handler;
-	unsigned int mmio_size = privdata->io_mem_size;
-	myrs_hba *cs = NULL;
-
-	cs = myrs_alloc_host(pdev, entry);
-	if (!cs) {
-		dev_err(&pdev->dev, "Unable to allocate Controller\n");
-		return NULL;
-	}
-	cs->hwtype = privdata->hw_type;
-	cs->pdev = pdev;
-
-	if (pci_enable_device(pdev))
-		goto Failure;
-
-	cs->pci_addr = pci_resource_start(pdev, 0);
-
-	pci_set_drvdata(pdev, cs);
-	spin_lock_init(&cs->queue_lock);
-	/*
-	  Map the Controller Register Window.
-	*/
-	if (mmio_size < PAGE_SIZE)
-		mmio_size = PAGE_SIZE;
-	cs->mmio_base = ioremap_nocache(cs->pci_addr & PAGE_MASK, mmio_size);
-	if (cs->mmio_base == NULL) {
-		dev_err(&pdev->dev,
-			"Unable to map Controller Register Window\n");
-		goto Failure;
-	}
-
-	cs->io_base = cs->mmio_base + (cs->pci_addr & ~PAGE_MASK);
-	if (privdata->hw_init(pdev, cs, cs->io_base))
-		goto Failure;
-
-	/*
-	  Acquire shared access to the IRQ Channel.
-	*/
-	if (request_irq(pdev->irq, irq_handler, IRQF_SHARED, "myrs", cs) < 0) {
-		dev_err(&pdev->dev,
-			"Unable to acquire IRQ Channel %d\n", pdev->irq);
-		goto Failure;
-	}
-	cs->irq = pdev->irq;
-	return cs;
-
-Failure:
-	dev_err(&pdev->dev,
-		"Failed to initialize Controller\n");
-	myrs_cleanup(cs);
-	return NULL;
-}
-
 /*
   myrs_reset_cmd clears critical fields of Command for DAC960 V2
   Firmware Controllers.
@@ -329,7 +139,7 @@ static void myrs_qcmd(myrs_hba *cs, myrs_cmdblk *cmd_blk)
  */
 
 static void myrs_exec_cmd(myrs_hba *cs,
-				     myrs_cmdblk *cmd_blk)
+			  myrs_cmdblk *cmd_blk)
 {
 	DECLARE_COMPLETION_ONSTACK(Completion);
 	unsigned long flags;
@@ -346,15 +156,14 @@ static void myrs_exec_cmd(myrs_hba *cs,
 
 
 /*
-  DAC960_V2_ReportProgress prints an appropriate progress message for
+  myrs_report_progress prints an appropriate progress message for
   Logical Device Long Operations.
 */
 
-static void DAC960_V2_ReportProgress(myrs_hba *cs,
-				     unsigned short ldev_num,
-				     unsigned char *msg,
-				     unsigned long blocks,
-				     unsigned long size)
+static void
+myrs_report_progress(myrs_hba *cs, unsigned short ldev_num,
+		     unsigned char *msg, unsigned long blocks,
+		     unsigned long size)
 {
 	shost_printk(KERN_INFO, cs->host,
 		     "Logical Drive %d: %s in Progress: %ld%% completed\n",
@@ -493,25 +302,21 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 				     new->CommandsFailed,
 				     new->DeferredWriteErrors);
 		if (new->bg_init_active)
-			DAC960_V2_ReportProgress(cs, ldev_num,
-						 "Background Initialization",
-						 new->bg_init_lba,
-						 ldev_size);
+			myrs_report_progress(cs, ldev_num,
+					     "Background Initialization",
+					     new->bg_init_lba, ldev_size);
 		else if (new->fg_init_active)
-			DAC960_V2_ReportProgress(cs, ldev_num,
-						 "Foreground Initialization",
-						 new->fg_init_lba,
-						 ldev_size);
+			myrs_report_progress(cs, ldev_num,
+					     "Foreground Initialization",
+					     new->fg_init_lba, ldev_size);
 		else if (new->migration_active)
-			DAC960_V2_ReportProgress(cs, ldev_num,
-						 "Data Migration",
-						 new->migration_lba,
-						 ldev_size);
+			myrs_report_progress(cs, ldev_num,
+					     "Data Migration",
+					     new->migration_lba, ldev_size);
 		else if (new->patrol_active)
-			DAC960_V2_ReportProgress(cs, ldev_num,
-						 "Patrol Operation",
-						 new->patrol_lba,
-						 ldev_size);
+			myrs_report_progress(cs, ldev_num,
+					     "Patrol Operation",
+					     new->patrol_lba, ldev_size);
 		if (old->bg_init_active && !new->bg_init_active)
 			shost_printk(KERN_INFO, cs->host,
 				     "Logical Drive %d: "
@@ -1649,7 +1454,7 @@ static ssize_t myrs_store_flush_cache(struct device *dev,
 	unsigned char status;
 
 	status = myrs_dev_op(cs, DAC960_V2_FlushDeviceData,
-					   DAC960_V2_RAID_Controller);
+			     DAC960_V2_RAID_Controller);
 	if (status == DAC960_V2_NormalCompletion) {
 		shost_printk(KERN_INFO, shost, "Cache Flush Completed\n");
 		return count;
@@ -2250,6 +2055,26 @@ struct scsi_host_template myrs_template = {
 	.this_id = -1,
 };
 
+static myrs_hba *myrs_alloc_host(struct pci_dev *pdev,
+				 const struct pci_device_id *entry)
+{
+	struct Scsi_Host *shost;
+	myrs_hba *cs;
+
+	shost = scsi_host_alloc(&myrs_template, sizeof(myrs_hba));
+	if (!shost)
+		return NULL;
+
+	shost->max_cmd_len = 16;
+	shost->max_lun = 256;
+	cs = (myrs_hba *)shost->hostdata;
+	mutex_init(&cs->dcmd_mutex);
+	mutex_init(&cs->cinfo_mutex);
+	cs->host = shost;
+
+	return cs;
+}
+
 /**
  * myrs_is_raid - return boolean indicating device is raid volume
  * @dev the device struct object
@@ -2330,26 +2155,6 @@ struct raid_function_template myrs_raid_functions = {
 	.get_resync	= myrs_get_resync,
 	.get_state	= myrs_get_state,
 };
-
-static myrs_hba *myrs_alloc_host(struct pci_dev *pdev,
-				 const struct pci_device_id *entry)
-{
-	struct Scsi_Host *shost;
-	myrs_hba *cs;
-
-	shost = scsi_host_alloc(&myrs_template, sizeof(myrs_hba));
-	if (!shost)
-		return NULL;
-
-	shost->max_cmd_len = 16;
-	shost->max_lun = 256;
-	cs = (myrs_hba *)shost->hostdata;
-	mutex_init(&cs->dcmd_mutex);
-	mutex_init(&cs->cinfo_mutex);
-	cs->host = shost;
-
-	return cs;
-}
 
 void myrs_flush_cache(myrs_hba *cs)
 {
@@ -2480,6 +2285,193 @@ static void myrs_monitor(struct work_struct *work)
 	if (interval > 1)
 		cs->primary_monitor_time = jiffies;
 	queue_delayed_work(cs->work_q, &cs->monitor_work, interval);
+}
+
+bool myrs_create_mempools(struct pci_dev *pdev, myrs_hba *cs)
+{
+	struct Scsi_Host *shost = cs->host;
+	size_t elem_size, elem_align;
+
+	elem_align = sizeof(myrs_sge);
+	elem_size = shost->sg_tablesize * elem_align;
+	cs->sg_pool = pci_pool_create("myrs_sg", pdev,
+				      elem_size, elem_align, 0);
+	if (cs->sg_pool == NULL) {
+		shost_printk(KERN_ERR, shost,
+			     "Failed to allocate SG pool\n");
+		return false;
+	}
+	elem_size = DAC960_V2_SENSE_BUFFERSIZE;
+	elem_align = sizeof(int);
+	cs->sense_pool = pci_pool_create("myrs_sense", pdev,
+					 elem_size, elem_align, 0);
+	if (cs->sense_pool == NULL) {
+		pci_pool_destroy(cs->sg_pool);
+		cs->sg_pool = NULL;
+		shost_printk(KERN_ERR, shost,
+			     "Failed to allocate sense data pool\n");
+		return false;
+	}
+	elem_size = DAC960_V2_DCDB_SIZE;
+	elem_align = sizeof(unsigned char);
+	cs->dcdb_pool = pci_pool_create("myrs_dcdb", pdev,
+					elem_size, elem_align, 0);
+	if (!cs->dcdb_pool) {
+		pci_pool_destroy(cs->sg_pool);
+		cs->sg_pool = NULL;
+		pci_pool_destroy(cs->sense_pool);
+		cs->sense_pool = NULL;
+		shost_printk(KERN_ERR, shost,
+			     "Failed to allocate DCDB pool\n");
+		return false;
+	}
+
+	snprintf(cs->work_q_name, sizeof(cs->work_q_name),
+		 "myrs_wq_%d", shost->host_no);
+	cs->work_q = create_singlethread_workqueue(cs->work_q_name);
+	if (!cs->work_q) {
+		pci_pool_destroy(cs->dcdb_pool);
+		cs->dcdb_pool = NULL;
+		pci_pool_destroy(cs->sg_pool);
+		cs->sg_pool = NULL;
+		pci_pool_destroy(cs->sense_pool);
+		cs->sense_pool = NULL;
+		shost_printk(KERN_ERR, shost,
+			     "Failed to create workqueue\n");
+		return false;
+	}
+
+	/*
+	  Initialize the Monitoring Timer.
+	*/
+	INIT_DELAYED_WORK(&cs->monitor_work, myrs_monitor);
+	queue_delayed_work(cs->work_q, &cs->monitor_work, 1);
+
+	return true;
+}
+
+void myrs_destroy_mempools(myrs_hba *cs)
+{
+	cancel_delayed_work_sync(&cs->monitor_work);
+	destroy_workqueue(cs->work_q);
+
+	if (cs->sg_pool)
+		pci_pool_destroy(cs->sg_pool);
+
+	if (cs->dcdb_pool) {
+		pci_pool_destroy(cs->dcdb_pool);
+		cs->dcdb_pool = NULL;
+	}
+	if (cs->sense_pool) {
+		pci_pool_destroy(cs->sense_pool);
+		cs->sense_pool = NULL;
+	}
+}
+
+void myrs_unmap(myrs_hba *cs)
+{
+	if (cs->event_buf) {
+		kfree(cs->event_buf);
+		cs->event_buf = NULL;
+	}
+	if (cs->ctlr_info) {
+		kfree(cs->ctlr_info);
+		cs->ctlr_info = NULL;
+	}
+	if (cs->fwstat_buf) {
+		dma_free_coherent(&cs->pdev->dev, sizeof(myrs_fwstat),
+				  cs->fwstat_buf, cs->fwstat_addr);
+		cs->fwstat_buf = NULL;
+	}
+	if (cs->first_stat_mbox) {
+		dma_free_coherent(&cs->pdev->dev, cs->stat_mbox_size,
+				  cs->first_stat_mbox, cs->stat_mbox_addr);
+		cs->first_stat_mbox = NULL;
+	}
+	if (cs->first_cmd_mbox) {
+		dma_free_coherent(&cs->pdev->dev, cs->cmd_mbox_size,
+				  cs->first_cmd_mbox, cs->cmd_mbox_addr);
+		cs->first_cmd_mbox = NULL;
+	}
+}
+
+void myrs_cleanup(myrs_hba *cs)
+{
+	struct pci_dev *pdev = cs->pdev;
+
+	/* Free the memory mailbox, status, and related structures */
+	myrs_unmap(cs);
+
+	if (cs->mmio_base) {
+		cs->disable_intr(cs);
+		iounmap(cs->mmio_base);
+	}
+	if (cs->irq)
+		free_irq(cs->irq, cs);
+	if (cs->io_addr)
+		release_region(cs->io_addr, 0x80);
+	iounmap(cs->mmio_base);
+	pci_set_drvdata(pdev, NULL);
+	pci_disable_device(pdev);
+	scsi_host_put(cs->host);
+}
+
+static myrs_hba *myrs_detect(struct pci_dev *pdev,
+			     const struct pci_device_id *entry)
+{
+	struct myrs_privdata *privdata =
+		(struct myrs_privdata *)entry->driver_data;
+	irq_handler_t irq_handler = privdata->irq_handler;
+	unsigned int mmio_size = privdata->io_mem_size;
+	myrs_hba *cs = NULL;
+
+	cs = myrs_alloc_host(pdev, entry);
+	if (!cs) {
+		dev_err(&pdev->dev, "Unable to allocate Controller\n");
+		return NULL;
+	}
+	cs->hwtype = privdata->hw_type;
+	cs->pdev = pdev;
+
+	if (pci_enable_device(pdev))
+		goto Failure;
+
+	cs->pci_addr = pci_resource_start(pdev, 0);
+
+	pci_set_drvdata(pdev, cs);
+	spin_lock_init(&cs->queue_lock);
+	/*
+	  Map the Controller Register Window.
+	*/
+	if (mmio_size < PAGE_SIZE)
+		mmio_size = PAGE_SIZE;
+	cs->mmio_base = ioremap_nocache(cs->pci_addr & PAGE_MASK, mmio_size);
+	if (cs->mmio_base == NULL) {
+		dev_err(&pdev->dev,
+			"Unable to map Controller Register Window\n");
+		goto Failure;
+	}
+
+	cs->io_base = cs->mmio_base + (cs->pci_addr & ~PAGE_MASK);
+	if (privdata->hw_init(pdev, cs, cs->io_base))
+		goto Failure;
+
+	/*
+	  Acquire shared access to the IRQ Channel.
+	*/
+	if (request_irq(pdev->irq, irq_handler, IRQF_SHARED, "myrs", cs) < 0) {
+		dev_err(&pdev->dev,
+			"Unable to acquire IRQ Channel %d\n", pdev->irq);
+		goto Failure;
+	}
+	cs->irq = pdev->irq;
+	return cs;
+
+Failure:
+	dev_err(&pdev->dev,
+		"Failed to initialize Controller\n");
+	myrs_cleanup(cs);
+	return NULL;
 }
 
 /*
