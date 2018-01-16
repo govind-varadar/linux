@@ -30,7 +30,6 @@
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_tcq.h>
-#include "myr.h"
 #include "myrs.h"
 
 struct raid_template *myrs_raid_template;
@@ -195,7 +194,7 @@ myrs_get_ctlr_info(myrs_hba *cs)
 
 	mutex_lock(&cs->dcmd_mutex);
 	myrs_reset_cmd(cmd_blk);
-	mbox->ControllerInfo.id = DAC960_DirectCommandIdentifier;
+	mbox->ControllerInfo.id = MYRS_DCMD_TAG;
 	mbox->ControllerInfo.opcode = DAC960_V2_IOCTL;
 	mbox->ControllerInfo.control.DataTransferControllerToHost = true;
 	mbox->ControllerInfo.control.NoAutoRequestSense = true;
@@ -258,7 +257,7 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 
 	mutex_lock(&cs->dcmd_mutex);
 	myrs_reset_cmd(cmd_blk);
-	mbox->LogicalDeviceInfo.id = DAC960_DirectCommandIdentifier;
+	mbox->LogicalDeviceInfo.id = MYRS_DCMD_TAG;
 	mbox->LogicalDeviceInfo.opcode = DAC960_V2_IOCTL;
 	mbox->LogicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->LogicalDeviceInfo.control.NoAutoRequestSense = true;
@@ -354,7 +353,7 @@ myrs_get_pdev_info(myrs_hba *cs, unsigned char channel,
 	mutex_lock(&cs->dcmd_mutex);
 	myrs_reset_cmd(cmd_blk);
 	mbox->PhysicalDeviceInfo.opcode = DAC960_V2_IOCTL;
-	mbox->PhysicalDeviceInfo.id = DAC960_DirectCommandIdentifier;
+	mbox->PhysicalDeviceInfo.id = MYRS_DCMD_TAG;
 	mbox->PhysicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->PhysicalDeviceInfo.control.NoAutoRequestSense = true;
 	mbox->PhysicalDeviceInfo.dma_size = sizeof(myrs_pdev_info);
@@ -392,7 +391,7 @@ myrs_dev_op(myrs_hba *cs, myrs_ioctl_opcode opcode, myrs_opdev opdev)
 	mutex_lock(&cs->dcmd_mutex);
 	myrs_reset_cmd(cmd_blk);
 	mbox->DeviceOperation.opcode = DAC960_V2_IOCTL;
-	mbox->DeviceOperation.id = DAC960_DirectCommandIdentifier;
+	mbox->DeviceOperation.id = MYRS_DCMD_TAG;
 	mbox->DeviceOperation.control.DataTransferControllerToHost = true;
 	mbox->DeviceOperation.control.NoAutoRequestSense = true;
 	mbox->DeviceOperation.ioctl_opcode = opcode;
@@ -505,7 +504,7 @@ static unsigned char myrs_get_fwstatus(myrs_hba *cs)
 
 	myrs_reset_cmd(cmd_blk);
 	mbox->Common.opcode = DAC960_V2_IOCTL;
-	mbox->Common.id = DAC960_MonitoringIdentifier;
+	mbox->Common.id = MYRS_MCMD_TAG;
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	mbox->Common.dma_size = sizeof(myrs_fwstat);
@@ -556,7 +555,7 @@ static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 		return false;
 
 	/* These are the base addresses for the command memory mailbox array */
-	cs->cmd_mbox_size = DAC960_V2_CommandMailboxCount * sizeof(myrs_cmd_mbox);
+	cs->cmd_mbox_size = MYRS_MAX_CMD_MBOX * sizeof(myrs_cmd_mbox);
 	cmd_mbox = dma_alloc_coherent(&pdev->dev, cs->cmd_mbox_size,
 				      &cs->cmd_mbox_addr, GFP_KERNEL);
 	if (dma_mapping_error(&pdev->dev, cs->cmd_mbox_addr)) {
@@ -564,14 +563,14 @@ static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 		goto out_free;
 	}
 	cs->first_cmd_mbox = cmd_mbox;
-	cmd_mbox += DAC960_V2_CommandMailboxCount - 1;
+	cmd_mbox += MYRS_MAX_CMD_MBOX - 1;
 	cs->last_cmd_mbox = cmd_mbox;
 	cs->next_cmd_mbox = cs->first_cmd_mbox;
 	cs->prev_cmd_mbox1 = cs->last_cmd_mbox;
 	cs->prev_cmd_mbox2 = cs->last_cmd_mbox - 1;
 
 	/* These are the base addresses for the status memory mailbox array */
-	cs->stat_mbox_size = DAC960_V2_StatusMailboxCount * sizeof(myrs_stat_mbox);
+	cs->stat_mbox_size = MYRS_MAX_STAT_MBOX * sizeof(myrs_stat_mbox);
 	stat_mbox = dma_alloc_coherent(&pdev->dev, cs->stat_mbox_size,
 				       &cs->stat_mbox_addr, GFP_KERNEL);
 	if (dma_mapping_error(&pdev->dev, cs->stat_mbox_addr)) {
@@ -580,7 +579,7 @@ static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 	}
 
 	cs->first_stat_mbox = stat_mbox;
-	stat_mbox += DAC960_V2_StatusMailboxCount - 1;
+	stat_mbox += MYRS_MAX_STAT_MBOX - 1;
 	cs->last_stat_mbox = stat_mbox;
 	cs->next_stat_mbox = cs->first_stat_mbox;
 
@@ -611,9 +610,9 @@ static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 	mbox->SetMemoryMailbox.opcode = DAC960_V2_IOCTL;
 	mbox->SetMemoryMailbox.control.NoAutoRequestSense = true;
 	mbox->SetMemoryMailbox.FirstCommandMailboxSizeKB =
-		(DAC960_V2_CommandMailboxCount * sizeof(myrs_cmd_mbox)) >> 10;
+		(MYRS_MAX_CMD_MBOX * sizeof(myrs_cmd_mbox)) >> 10;
 	mbox->SetMemoryMailbox.FirstStatusMailboxSizeKB =
-		(DAC960_V2_StatusMailboxCount * sizeof(myrs_stat_mbox)) >> 10;
+		(MYRS_MAX_STAT_MBOX * sizeof(myrs_stat_mbox)) >> 10;
 	mbox->SetMemoryMailbox.SecondCommandMailboxSizeKB = 0;
 	mbox->SetMemoryMailbox.SecondStatusMailboxSizeKB = 0;
 	mbox->SetMemoryMailbox.sense_len = 0;
@@ -713,8 +712,8 @@ int myrs_get_config(myrs_hba *cs)
 	 * direct commands, and tag '2' for monitoring commands.
 	 */
 	shost->can_queue = info->max_tcq - 3;
-	if (shost->can_queue > DAC960_MaxDriverQueueDepth)
-		shost->can_queue = DAC960_MaxDriverQueueDepth;
+	if (shost->can_queue > MYRS_MAX_CMD_MBOX - 3)
+		shost->can_queue = MYRS_MAX_CMD_MBOX - 3;
 	shost->max_sectors = info->MaximumDataTransferSizeInBlocks;
 	shost->sg_tablesize = info->MaximumScatterGatherEntries;
 	if (shost->sg_tablesize > DAC960_V2_ScatterGatherLimit)
@@ -888,7 +887,7 @@ static struct {
 
 static void myrs_log_event(myrs_hba *cs, myrs_event *ev)
 {
-	unsigned char MessageBuffer[DAC960_LineBufferSize];
+	unsigned char msg_buf[MYRS_LINE_BUFFER_SIZE];
 	int ev_idx = 0, ev_code;
 	unsigned char ev_type, *ev_msg;
 	struct Scsi_Host *shost = cs->host;
@@ -991,9 +990,9 @@ static void myrs_log_event(myrs_hba *cs, myrs_event *ev)
 	case 'E':
 		if (cs->disable_enc_msg)
 			break;
-		sprintf(MessageBuffer, ev_msg, ev->lun);
+		sprintf(msg_buf, ev_msg, ev->lun);
 		shost_printk(KERN_INFO, shost, "event %d: Enclosure %d %s\n",
-			     ev->ev_seq, ev->target, MessageBuffer);
+			     ev->ev_seq, ev->target, msg_buf);
 		break;
 	case 'C':
 		shost_printk(KERN_INFO, shost, "event %d: Controller %s\n",
@@ -1094,7 +1093,7 @@ static ssize_t myrs_store_dev_state(struct device *dev,
 	myrs_reset_cmd(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
-	mbox->Common.id = DAC960_DirectCommandIdentifier;
+	mbox->Common.id = MYRS_DCMD_TAG;
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	mbox->SetDeviceState.ioctl_opcode = DAC960_V2_SetDeviceState;
@@ -1235,7 +1234,7 @@ static ssize_t myrs_store_dev_rebuild(struct device *dev,
 	myrs_reset_cmd(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
-	mbox->Common.id = DAC960_DirectCommandIdentifier;
+	mbox->Common.id = MYRS_DCMD_TAG;
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	if (rebuild) {
@@ -1344,7 +1343,7 @@ static ssize_t myrs_store_consistency_check(struct device *dev,
 	myrs_reset_cmd(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
-	mbox->Common.id = DAC960_DirectCommandIdentifier;
+	mbox->Common.id = MYRS_DCMD_TAG;
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	if (check) {
@@ -1558,7 +1557,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 			mbox->SCSI_10.control.ForceUnitAccess = true;
 		mbox->SCSI_10.dma_size = scsi_bufflen(scmd);
 		mbox->SCSI_10.sense_addr = cmd_blk->sense_addr;
-		mbox->SCSI_10.sense_len = DAC960_V2_SENSE_BUFFERSIZE;
+		mbox->SCSI_10.sense_len = MYRS_SENSE_SIZE;
 		mbox->SCSI_10.cdb_len = scmd->cmd_len;
 		if (timeout > 60) {
 			mbox->SCSI_10.tmo.TimeoutScale =
@@ -1608,7 +1607,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 			mbox->SCSI_255.control.ForceUnitAccess = true;
 		mbox->SCSI_255.dma_size = scsi_bufflen(scmd);
 		mbox->SCSI_255.sense_addr = cmd_blk->sense_addr;
-		mbox->SCSI_255.sense_len = DAC960_V2_SENSE_BUFFERSIZE;
+		mbox->SCSI_255.sense_len = MYRS_SENSE_SIZE;
 		mbox->SCSI_255.cdb_len = scmd->cmd_len;
 		mbox->SCSI_255.cdb_addr = cmd_blk->DCDB_dma;
 		if (timeout > 60) {
@@ -1936,7 +1935,7 @@ static ssize_t myrs_store_discovery_command(struct device *dev,
 	myrs_reset_cmd(cmd_blk);
 	mbox = &cmd_blk->mbox;
 	mbox->Common.opcode = DAC960_V2_IOCTL;
-	mbox->Common.id = DAC960_DirectCommandIdentifier;
+	mbox->Common.id = MYRS_DCMD_TAG;
 	mbox->Common.control.DataTransferControllerToHost = true;
 	mbox->Common.control.NoAutoRequestSense = true;
 	mbox->Common.ioctl_opcode = DAC960_V2_StartDiscovery;
@@ -2189,7 +2188,7 @@ static void myrs_monitor(struct work_struct *work)
 	struct Scsi_Host *shost = cs->host;
 	myrs_ctlr_info *info = cs->ctlr_info;
 	unsigned int epoch = cs->fwstat_buf->epoch;
-	unsigned long interval = DAC960_MonitoringTimerInterval;
+	unsigned long interval = MYRS_PRIMARY_MONITOR_INTERVAL;
 	unsigned char status;
 
 	dev_dbg(&shost->shost_gendev, "monitor tick\n");
@@ -2213,7 +2212,7 @@ static void myrs_monitor(struct work_struct *work)
 	}
 
 	if (time_after(jiffies, cs->secondary_monitor_time
-		       + DAC960_SecondaryMonitoringInterval))
+		       + MYRS_SECONDARY_MONITOR_INTERVAL))
 		cs->secondary_monitor_time = jiffies;
 
 	if (info->bg_init_active +
@@ -2241,8 +2240,8 @@ static void myrs_monitor(struct work_struct *work)
 	    cs->fwstat_buf->next_evseq == cs->next_evseq &&
 	    (cs->needs_update == false ||
 	     time_before(jiffies, cs->primary_monitor_time
-			 + DAC960_MonitoringTimerInterval))) {
-		interval = DAC960_SecondaryMonitoringInterval;
+			 + MYRS_PRIMARY_MONITOR_INTERVAL))) {
+		interval = MYRS_SECONDARY_MONITOR_INTERVAL;
 	}
 
 	if (interval > 1)
@@ -2264,10 +2263,9 @@ bool myrs_create_mempools(struct pci_dev *pdev, myrs_hba *cs)
 			     "Failed to allocate SG pool\n");
 		return false;
 	}
-	elem_size = DAC960_V2_SENSE_BUFFERSIZE;
-	elem_align = sizeof(int);
-	cs->sense_pool = pci_pool_create("myrs_sense", pdev,
-					 elem_size, elem_align, 0);
+
+	cs->sense_pool = pci_pool_create("myrs_sense", pdev, MYRS_SENSE_SIZE,
+					 sizeof(int), 0);
 	if (cs->sense_pool == NULL) {
 		pci_pool_destroy(cs->sg_pool);
 		cs->sg_pool = NULL;
@@ -2275,10 +2273,9 @@ bool myrs_create_mempools(struct pci_dev *pdev, myrs_hba *cs)
 			     "Failed to allocate sense data pool\n");
 		return false;
 	}
-	elem_size = DAC960_V2_DCDB_SIZE;
-	elem_align = sizeof(unsigned char);
-	cs->dcdb_pool = pci_pool_create("myrs_dcdb", pdev,
-					elem_size, elem_align, 0);
+
+	cs->dcdb_pool = pci_pool_create("myrs_dcdb", pdev, MYRS_DCDB_SIZE,
+					sizeof(unsigned char), 0);
 	if (!cs->dcdb_pool) {
 		pci_pool_destroy(cs->sg_pool);
 		cs->sg_pool = NULL;
@@ -2504,7 +2501,7 @@ static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
 	DAC960_GEM_AcknowledgeHardwareMailboxStatus(base);
 	udelay(1000);
 	while (DAC960_GEM_InitializationInProgressP(base) &&
-	       timeout < DAC960_MAILBOX_TIMEOUT) {
+	       timeout < MYRS_MAILBOX_TIMEOUT) {
 		if (DAC960_GEM_ReadErrorStatus(base, &status,
 					       &parm0, &parm1) &&
 		    myrs_err_status(cs, status, parm0, parm1))
@@ -2512,7 +2509,7 @@ static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
 		udelay(10);
 		timeout++;
 	}
-	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+	if (timeout == MYRS_MAILBOX_TIMEOUT) {
 		dev_err(&pdev->dev,
 			"Timeout waiting for Controller Initialisation\n");
 		return -ETIMEDOUT;
@@ -2553,9 +2550,9 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int irq,
 		struct scsi_cmnd *scmd = NULL;
 		myrs_cmdblk *cmd_blk = NULL;
 
-		if (id == DAC960_DirectCommandIdentifier)
+		if (id == MYRS_DCMD_TAG)
 			cmd_blk = &cs->dcmd_blk;
-		else if (id == DAC960_MonitoringIdentifier)
+		else if (id == MYRS_MCMD_TAG)
 			cmd_blk = &cs->mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(cs->host, id - 3);
@@ -2606,7 +2603,7 @@ static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
 	DAC960_BA_AcknowledgeHardwareMailboxStatus(base);
 	udelay(1000);
 	while (DAC960_BA_InitializationInProgressP(base) &&
-	       timeout < DAC960_MAILBOX_TIMEOUT) {
+	       timeout < MYRS_MAILBOX_TIMEOUT) {
 		if (DAC960_BA_ReadErrorStatus(base, &status,
 					      &parm0, &parm1) &&
 		    myrs_err_status(cs, status, parm0, parm1))
@@ -2614,7 +2611,7 @@ static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
 		udelay(10);
 		timeout++;
 	}
-	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+	if (timeout == MYRS_MAILBOX_TIMEOUT) {
 		dev_err(&pdev->dev,
 			"Timeout waiting for Controller Initialisation\n");
 		return -ETIMEDOUT;
@@ -2656,9 +2653,9 @@ static irqreturn_t DAC960_BA_InterruptHandler(int irq,
 		struct scsi_cmnd *scmd = NULL;
 		myrs_cmdblk *cmd_blk = NULL;
 
-		if (id == DAC960_DirectCommandIdentifier)
+		if (id == MYRS_DCMD_TAG)
 			cmd_blk = &cs->dcmd_blk;
-		else if (id == DAC960_MonitoringIdentifier)
+		else if (id == MYRS_MCMD_TAG)
 			cmd_blk = &cs->mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(cs->host, id - 3);
@@ -2709,7 +2706,7 @@ static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
 	DAC960_LP_AcknowledgeHardwareMailboxStatus(base);
 	udelay(1000);
 	while (DAC960_LP_InitializationInProgressP(base) &&
-	       timeout < DAC960_MAILBOX_TIMEOUT) {
+	       timeout < MYRS_MAILBOX_TIMEOUT) {
 		if (DAC960_LP_ReadErrorStatus(base, &status,
 					      &parm0, &parm1) &&
 		    myrs_err_status(cs, status,parm0, parm1))
@@ -2717,7 +2714,7 @@ static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
 		udelay(10);
 		timeout++;
 	}
-	if (timeout == DAC960_MAILBOX_TIMEOUT) {
+	if (timeout == MYRS_MAILBOX_TIMEOUT) {
 		dev_err(&pdev->dev,
 			"Timeout waiting for Controller Initialisation\n");
 		return -ETIMEDOUT;
@@ -2759,9 +2756,9 @@ static irqreturn_t DAC960_LP_InterruptHandler(int irq,
 		struct scsi_cmnd *scmd = NULL;
 		myrs_cmdblk *cmd_blk = NULL;
 
-		if (id == DAC960_DirectCommandIdentifier)
+		if (id == MYRS_DCMD_TAG)
 			cmd_blk = &cs->dcmd_blk;
-		else if (id == DAC960_MonitoringIdentifier)
+		else if (id == MYRS_MCMD_TAG)
 			cmd_blk = &cs->mcmd_blk;
 		else {
 			scmd = scsi_host_find_tag(cs->host, id - 3);

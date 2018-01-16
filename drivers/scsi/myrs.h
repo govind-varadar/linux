@@ -10,16 +10,25 @@
 /* Maximum number of Scatter/Gather Segments supported */
 #define DAC960_V2_ScatterGatherLimit		128
 
+#define MYRS_MAILBOX_TIMEOUT 1000000
+
 /*
  * Number of Command and Status Mailboxes used by the
  * DAC960 V2 Firmware Memory Mailbox Interface.
  */
-#define DAC960_V2_CommandMailboxCount		512
-#define DAC960_V2_StatusMailboxCount		512
+#define MYRS_MAX_CMD_MBOX		512
+#define MYRS_MAX_STAT_MBOX		512
 
-#define DAC960_V2_DCDB_SIZE			16
-#define DAC960_V2_SENSE_BUFFERSIZE		14
+#define MYRS_DCDB_SIZE			16
+#define MYRS_SENSE_SIZE			14
 
+#define MYRS_DCMD_TAG 1
+#define MYRS_MCMD_TAG 2
+
+#define MYRS_LINE_BUFFER_SIZE 128
+
+#define MYRS_PRIMARY_MONITOR_INTERVAL (10 * HZ)
+#define MYRS_SECONDARY_MONITOR_INTERVAL (60 * HZ)
 
 /*
   Define the DAC960 V2 Firmware Command Opcodes.
@@ -973,7 +982,6 @@ typedef struct myrs_hba_s
 	phys_addr_t io_addr;
 	phys_addr_t pci_addr;
 	unsigned int irq;
-	DAC960_HardwareType_T hwtype;
 
 	unsigned char model_name[28];
 	unsigned char fw_version[12];
@@ -1140,6 +1148,33 @@ typedef union DAC960_GEM_ErrorStatusRegister
 	} Bits;
 }
 DAC960_GEM_ErrorStatusRegister_T;
+
+/*
+ * dma_addr_writeql is provided to write dma_addr_t types
+ * to a 64-bit pci address space register.  The controller
+ * will accept having the register written as two 32-bit
+ * values.
+ *
+ * In HIGHMEM kernels, dma_addr_t is a 64-bit value.
+ * without HIGHMEM,  dma_addr_t is a 32-bit value.
+ *
+ * The compiler should always fix up the assignment
+ * to u.wq appropriately, depending upon the size of
+ * dma_addr_t.
+ */
+static inline
+void dma_addr_writeql(dma_addr_t addr, void __iomem *write_address)
+{
+	union {
+		u64 wq;
+		uint wl[2];
+	} u;
+
+	u.wq = addr;
+
+	writel(u.wl[0], write_address);
+	writel(u.wl[1], write_address + 4);
+}
 
 /*
   Define inline functions to provide an abstraction for reading and writing the
