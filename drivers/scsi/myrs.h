@@ -1,16 +1,18 @@
 #ifndef _MYRS_H
 #define _MYRS_H
 
-/* Maximum number of Controller channels supported */
-#define DAC960_V2_MaxChannels			4
-/* Maximum number of Targets per Channel supported */
-#define DAC960_V2_MaxTargets			128
-/* Maximum number of Physical Devices supported */
-#define DAC960_V2_MaxPhysicalDevices		272
-/* Maximum number of Scatter/Gather Segments supported */
-#define DAC960_V2_ScatterGatherLimit		128
-
 #define MYRS_MAILBOX_TIMEOUT 1000000
+
+#define MYRS_DCMD_TAG 1
+#define MYRS_MCMD_TAG 2
+
+#define MYRS_LINE_BUFFER_SIZE 128
+
+#define MYRS_PRIMARY_MONITOR_INTERVAL (10 * HZ)
+#define MYRS_SECONDARY_MONITOR_INTERVAL (60 * HZ)
+
+/* Maximum number of Scatter/Gather Segments supported */
+#define MYRS_SG_LIMIT		128
 
 /*
  * Number of Command and Status Mailboxes used by the
@@ -21,14 +23,6 @@
 
 #define MYRS_DCDB_SIZE			16
 #define MYRS_SENSE_SIZE			14
-
-#define MYRS_DCMD_TAG 1
-#define MYRS_MCMD_TAG 2
-
-#define MYRS_LINE_BUFFER_SIZE 128
-
-#define MYRS_PRIMARY_MONITOR_INTERVAL (10 * HZ)
-#define MYRS_SECONDARY_MONITOR_INTERVAL (60 * HZ)
 
 /*
   Define the DAC960 V2 Firmware Command Opcodes.

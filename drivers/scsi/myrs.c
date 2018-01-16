@@ -716,8 +716,8 @@ int myrs_get_config(myrs_hba *cs)
 		shost->can_queue = MYRS_MAX_CMD_MBOX - 3;
 	shost->max_sectors = info->MaximumDataTransferSizeInBlocks;
 	shost->sg_tablesize = info->MaximumScatterGatherEntries;
-	if (shost->sg_tablesize > DAC960_V2_ScatterGatherLimit)
-		shost->sg_tablesize = DAC960_V2_ScatterGatherLimit;
+	if (shost->sg_tablesize > MYRS_SG_LIMIT)
+		shost->sg_tablesize = MYRS_SG_LIMIT;
 
 	shost_printk(KERN_INFO, shost,
 		"Configuring %s PCI RAID Controller\n", ModelName);
@@ -733,8 +733,7 @@ int myrs_get_config(myrs_hba *cs)
 	shost_printk(KERN_INFO, shost,
 		     "  Driver Queue Depth: %d,"
 		     " Scatter/Gather Limit: %d of %d Segments\n",
-		     shost->can_queue, shost->sg_tablesize,
-		     DAC960_V2_ScatterGatherLimit);
+		     shost->can_queue, shost->sg_tablesize, MYRS_SG_LIMIT);
 	for (i = 0; i < info->physchan_max; i++) {
 		if (!info->MaximumTargetsPerChannel[i])
 			continue;
