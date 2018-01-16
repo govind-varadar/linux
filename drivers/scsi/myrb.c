@@ -274,39 +274,37 @@ static unsigned short myrb_exec_type3B(myrb_hba *cb,
 
 static unsigned short myrb_exec_type3D(myrb_hba *cb,
 				       myrb_cmd_opcode op,
-				       struct scsi_device *sdev)
+				       struct scsi_device *sdev,
+				       myrb_pdev_state *pdev_info)
 {
+	myr_hba *c = &cb->common;
 	myrb_cmdblk *cmd_blk = &cb->dcmd_blk;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-	myrb_pdev_state *pdev_info = sdev->hostdata;
 	unsigned short status;
+	dma_addr_t pdev_info_addr;
 
-	if (!pdev_info) {
-		pdev_info = kzalloc(sizeof(*pdev_info), GFP_KERNEL);
-		if (!pdev_info)
-			return DAC960_V1_OutOfMemory;
-	}
+	pdev_info_addr = dma_map_single(&c->pdev->dev, pdev_info,
+					sizeof(myrb_pdev_state),
+					DMA_FROM_DEVICE);
+	if (dma_mapping_error(&c->pdev->dev, pdev_info_addr))
+		return DAC960_V1_SubsystemFailed;
+
 	mutex_lock(&cb->dcmd_mutex);
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3D.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3D.opcode = op;
 	mbox->Type3D.Channel = sdev->channel;
 	mbox->Type3D.TargetID = sdev->id;
-	mbox->Type3D.BusAddress = cb->pdev_state_addr;
+	mbox->Type3D.BusAddress = pdev_info_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
-	if (status == DAC960_V1_NormalCompletion)
-		memcpy(pdev_info, cb->pdev_state_buf, sizeof(*pdev_info));
-	else {
-		kfree(pdev_info);
-		pdev_info = NULL;
-	}
 	mutex_unlock(&cb->dcmd_mutex);
+	dma_unmap_single(&c->pdev->dev, pdev_info_addr,
+			 sizeof(myrb_pdev_state), DMA_FROM_DEVICE);
+	if (status == DAC960_V1_NormalCompletion &&
+	    mbox->Type3D.opcode == DAC960_V1_GetDeviceState_Old)
+		DAC960_P_To_PD_TranslateDeviceState(pdev_info);
 
-	if (!sdev->hostdata && pdev_info)
-		sdev->hostdata = pdev_info;
-	if (sdev->hostdata && !pdev_info)
-		sdev->hostdata = NULL;
 	return status;
 }
 
@@ -344,17 +342,15 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myrb_hba *cb,
 	mbox->Type3E.OperationType = DAC960_V1_GetEventLogEntry;
 	mbox->Type3E.OperationQualifier = 1;
 	mbox->Type3E.SequenceNumber = event;
-	mbox->Type3E.BusAddress = cb->EventLogEntryDMA;
+	mbox->Type3E.BusAddress = cb->ev_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		DAC960_V1_EventLogEntry_T *EventLogEntry =
-			cb->EventLogEntry;
-		if (EventLogEntry->SequenceNumber == event) {
+		if (cb->ev_buf->SequenceNumber == event) {
 			struct scsi_sense_hdr sshdr;
 
 			memset(&sshdr, 0, sizeof(sshdr));
-			scsi_normalize_sense(EventLogEntry->SenseData, 32,
+			scsi_normalize_sense(cb->ev_buf->SenseData, 32,
 					     &sshdr);
 
 			if (sshdr.sense_key == VENDOR_SPECIFIC &&
@@ -362,15 +358,15 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myrb_hba *cb,
 			    sshdr.ascq < ARRAY_SIZE(DAC960_EventMessages)) {
 				shost_printk(KERN_CRIT, cb->common.host,
 					     "Physical drive %d:%d: %s\n",
-					     EventLogEntry->Channel,
-					     EventLogEntry->TargetID,
+					     cb->ev_buf->Channel,
+					     cb->ev_buf->TargetID,
 					     DAC960_EventMessages[sshdr.ascq]);
 			} else {
 				shost_printk(KERN_CRIT, cb->common.host,
 					     "Physical drive %d:%d: "
 					     "Sense: %X/%02X/%02X\n",
-					     EventLogEntry->Channel,
-					     EventLogEntry->TargetID,
+					     cb->ev_buf->Channel,
+					     cb->ev_buf->TargetID,
 					     sshdr.sense_key,
 					     sshdr.asc, sshdr.ascq);
 			}
@@ -395,45 +391,40 @@ static void DAC960_V1_MonitorGetErrorTable(myrb_hba *cb)
 	myrb_cmdblk *cmd_blk = &cb->mcmd_blk;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
 	unsigned short status;
+	myrb_error_table old_table;
+
+	memcpy(&old_table, cb->err_table, sizeof(myrb_error_table));
 
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetErrorTable;
-	mbox->Type3.BusAddress = cb->NewErrorTableDMA;
+	mbox->Type3.BusAddress = cb->err_table_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		DAC960_V1_ErrorTable_T *old_table = &cb->ErrorTable;
-		DAC960_V1_ErrorTable_T *new_table = cb->NewErrorTable;
-		DAC960_V1_ErrorTableEntry_T *new_entry, *old_entry;
+		myrb_error_table *table = cb->err_table;
+		myrb_error_entry *new_entry, *old_entry;
 		struct scsi_device *sdev;
 
 		shost_for_each_device(sdev, c->host) {
 			if (sdev->channel >= c->PhysicalChannelCount)
 				continue;
-			new_entry =
-				&new_table->ErrorTableEntries[sdev->channel][sdev->id];
-			old_entry =
-				&old_table->ErrorTableEntries[sdev->channel][sdev->id];
-			if ((new_entry->ParityErrorCount !=
-			     old_entry->ParityErrorCount) ||
-			    (new_entry->SoftErrorCount !=
-			     old_entry->SoftErrorCount) ||
-			    (new_entry->HardErrorCount !=
-			     old_entry->HardErrorCount) ||
-			    (new_entry->MiscErrorCount !=
-			     old_entry->MiscErrorCount))
+			new_entry = &table->entries[sdev->channel][sdev->id];
+			old_entry = &old_table.entries[sdev->channel][sdev->id];
+			if ((new_entry->parity_err != old_entry->parity_err) ||
+			    (new_entry->soft_err != old_entry->soft_err) ||
+			    (new_entry->hard_err != old_entry->hard_err) ||
+			    (new_entry->misc_err !=
+			     old_entry->misc_err))
 				sdev_printk(KERN_CRIT, sdev,
 					    "Errors: "
 					    "Parity = %d, Soft = %d, "
 					    "Hard = %d, Misc = %d\n",
-					    new_entry->ParityErrorCount,
-					    new_entry->SoftErrorCount,
-					    new_entry->HardErrorCount,
-					    new_entry->MiscErrorCount);
+					    new_entry->parity_err,
+					    new_entry->soft_err,
+					    new_entry->hard_err,
+					    new_entry->misc_err);
 		}
-		memcpy(&cb->ErrorTable, cb->NewErrorTable,
-		       sizeof(DAC960_V1_ErrorTable_T));
 	}
 }
 
@@ -681,8 +672,8 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 
 	status = myrb_exec_type3(cb, DAC960_V1_Enquiry, cb->NewEnquiryDMA);
 	if (status == DAC960_V1_NormalCompletion) {
-		DAC960_V1_Enquiry_T *old = &cb->Enquiry;
-		DAC960_V1_Enquiry_T *new = cb->NewEnquiry;
+		myrb_enquiry *old = &cb->Enquiry;
+		myrb_enquiry *new = cb->NewEnquiry;
 		if (new->NumberOfLogicalDrives > c->LogicalDriveCount) {
 			int ldev_num = c->LogicalDriveCount - 1;
 			while (++ldev_num < new->NumberOfLogicalDrives)
@@ -783,7 +774,7 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 		else if (new->RebuildFlag == DAC960_V1_BackgroundCheckInProgress)
 			cb->need_cc_status = true;
 
-		memcpy(old, new, sizeof(DAC960_V1_Enquiry_T));
+		memcpy(old, new, sizeof(myrb_enquiry));
 	}
 	return status;
 }
@@ -859,8 +850,8 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 		StatusMailboxesSize = DAC960_V1_StatusMailboxCount * sizeof(myrb_stat_mbox);
 	}
 	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
-		sizeof(myrb_dcdb) + sizeof(DAC960_V1_Enquiry_T) +
-		sizeof(DAC960_V1_ErrorTable_T) + sizeof(DAC960_V1_EventLogEntry_T) +
+		sizeof(myrb_dcdb) + sizeof(myrb_enquiry) +
+		sizeof(myrb_error_table) + sizeof(myrb_log_entry) +
 		sizeof(myrb_rbld_progress) +
 		sizeof(myrb_ldev_info_arr) +
 		sizeof(myrb_bgi_status) +
@@ -897,17 +888,14 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 	cb->NextStatusMailbox = cb->FirstStatusMailbox;
 
 skip_mailboxes:
-	cb->NewEnquiry = slice_dma_loaf(DmaPages,
-					  sizeof(DAC960_V1_Enquiry_T),
-					  &cb->NewEnquiryDMA);
+	cb->NewEnquiry = slice_dma_loaf(DmaPages, sizeof(myrb_enquiry),
+					&cb->NewEnquiryDMA);
 
-	cb->NewErrorTable = slice_dma_loaf(DmaPages,
-					     sizeof(DAC960_V1_ErrorTable_T),
-					     &cb->NewErrorTableDMA);
+	cb->err_table = slice_dma_loaf(DmaPages, sizeof(myrb_error_table),
+				       &cb->err_table_addr);
 
-	cb->EventLogEntry = slice_dma_loaf(DmaPages,
-					     sizeof(DAC960_V1_EventLogEntry_T),
-					     &cb->EventLogEntryDMA);
+	cb->ev_buf = slice_dma_loaf(DmaPages, sizeof(myrb_log_entry),
+				    &cb->ev_addr);
 
 	cb->rbld = slice_dma_loaf(DmaPages, sizeof(myrb_rbld_progress),
 				  &cb->rbld_addr);
@@ -917,9 +905,6 @@ skip_mailboxes:
 
 	cb->bgi_status_buf = slice_dma_loaf(DmaPages, sizeof(myrb_bgi_status),
 					    &cb->bgi_status_addr);
-
-	cb->pdev_state_buf = slice_dma_loaf(DmaPages, sizeof(myrb_pdev_state),
-					    &cb->pdev_state_addr);
 
 	if ((hw_type == DAC960_PD_Controller) || (hw_type == DAC960_P_Controller))
 		return true;
@@ -1760,12 +1745,23 @@ static int myrb_slave_alloc(struct scsi_device *sdev)
 				       &sdev->sdev_gendev, level);
 		}
 		return 0;
-	}
+	} else {
+		myrb_pdev_state *pdev_info;
 
-	status = myrb_exec_type3D(cb, DAC960_V1_GetDeviceState, sdev);
-	if (status != DAC960_V1_NormalCompletion) {
-		dev_dbg(&sdev->sdev_gendev,
-			"Failed to get device state, status %x\n", status);
+		pdev_info = kzalloc(sizeof(*pdev_info), GFP_KERNEL|GFP_DMA);
+		if (!pdev_info)
+			return -ENOMEM;
+
+		status = myrb_exec_type3D(cb, DAC960_V1_GetDeviceState,
+					  sdev, pdev_info);
+		if (status != DAC960_V1_NormalCompletion) {
+			dev_dbg(&sdev->sdev_gendev,
+				"Failed to get device state, status %x\n",
+				status);
+			kfree(pdev_info);
+			return -ENXIO;
+		}
+		sdev->hostdata = pdev_info;
 	}
 	return 0;
 }
@@ -1833,7 +1829,7 @@ static ssize_t myrb_show_dev_state(struct device *dev,
 		const char *name;
 
 		status = myrb_exec_type3D(cb, DAC960_V1_GetDeviceState,
-						 sdev);
+					  sdev, pdev_info);
 		if (status != DAC960_V1_NormalCompletion)
 			sdev_printk(KERN_INFO, sdev,
 				    "Failed to get device state, status %x\n",
@@ -2976,10 +2972,6 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 		case DAC960_V1_Enquiry_Old:
 			mbox->Common.opcode = DAC960_V1_Enquiry;
 			DAC960_P_To_PD_TranslateEnquiry(cb->NewEnquiry);
-			break;
-		case DAC960_V1_GetDeviceState_Old:
-			mbox->Common.opcode = DAC960_V1_GetDeviceState;
-			DAC960_P_To_PD_TranslateDeviceState(cb->pdev_state_buf);
 			break;
 		case DAC960_V1_Read_Old:
 			mbox->Common.opcode = DAC960_V1_Read;

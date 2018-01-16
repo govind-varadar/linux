@@ -210,7 +210,7 @@ typedef struct DAC960_V1_Enquiry
 	unsigned char Reserved[62];				/* Bytes 195-255 */
 }
 __attribute__ ((packed))
-DAC960_V1_Enquiry_T;
+myrb_enquiry;
 
 #define DAC960_V1_ControllerIsRebuilding(c) \
 	((c)->Enquiry.RebuildFlag == DAC960_V1_BackgroundRebuildInProgress)
@@ -440,7 +440,7 @@ typedef struct DAC960_V1_EventLogEntry
 	unsigned short SequenceNumber;			/* Bytes 4-5 */
 	unsigned char SenseData[26];			/* Bytes 6-31 */
 }
-DAC960_V1_EventLogEntry_T;
+myrb_log_entry;
 
 
 /*
@@ -515,26 +515,25 @@ typedef struct myrb_bgi_status_s
   Define the DAC960 V1 Firmware Error Table Entry structure.
 */
 
-typedef struct DAC960_V1_ErrorTableEntry
+typedef struct myrb_error_entry_s
 {
-	unsigned char ParityErrorCount;				/* Byte 0 */
-	unsigned char SoftErrorCount;				/* Byte 1 */
-	unsigned char HardErrorCount;				/* Byte 2 */
-	unsigned char MiscErrorCount;				/* Byte 3 */
+	unsigned char parity_err;				/* Byte 0 */
+	unsigned char soft_err;				/* Byte 1 */
+	unsigned char hard_err;				/* Byte 2 */
+	unsigned char misc_err;				/* Byte 3 */
 }
-DAC960_V1_ErrorTableEntry_T;
+myrb_error_entry;
 
 
 /*
   Define the DAC960 V1 Firmware Get Error Table Command reply structure.
 */
 
-typedef struct DAC960_V1_ErrorTable
+typedef struct myrb_error_table_s
 {
-	DAC960_V1_ErrorTableEntry_T
-	ErrorTableEntries[DAC960_V1_MaxChannels][DAC960_V1_MaxTargets];
+	myrb_error_entry entries[DAC960_V1_MaxChannels][DAC960_V1_MaxTargets];
 }
-DAC960_V1_ErrorTable_T;
+myrb_error_table;
 
 
 /*
@@ -842,16 +841,15 @@ typedef struct myrb_hba_s
 	myrb_cmdblk mcmd_blk;
 	struct mutex dcmd_mutex;
 
-	DAC960_V1_Enquiry_T Enquiry;
-	DAC960_V1_Enquiry_T *NewEnquiry;
+	myrb_enquiry Enquiry;
+	myrb_enquiry *NewEnquiry;
 	dma_addr_t NewEnquiryDMA;
 
-	DAC960_V1_ErrorTable_T ErrorTable;
-	DAC960_V1_ErrorTable_T *NewErrorTable;
-	dma_addr_t NewErrorTableDMA;
+	myrb_error_table *err_table;
+	dma_addr_t err_table_addr;
 
-	DAC960_V1_EventLogEntry_T *EventLogEntry;
-	dma_addr_t EventLogEntryDMA;
+	myrb_log_entry *ev_buf;
+	dma_addr_t ev_addr;
 
 	myrb_rbld_progress *rbld;
 	dma_addr_t rbld_addr;
@@ -864,8 +862,6 @@ typedef struct myrb_hba_s
 	dma_addr_t bgi_status_addr;
 	myrb_bgi_status bgi_status_old;
 
-	myrb_pdev_state *pdev_state_buf;
-	dma_addr_t pdev_state_addr;
 	struct mutex dma_mutex;
 } myrb_hba;
 
