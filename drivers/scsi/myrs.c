@@ -271,8 +271,7 @@ static myrs_hba *myrs_detect(struct pci_dev *pdev,
 	/*
 	  Acquire shared access to the IRQ Channel.
 	*/
-	if (request_irq(pdev->irq, irq_handler, IRQF_SHARED,
-			cs->model_name, cs) < 0) {
+	if (request_irq(pdev->irq, irq_handler, IRQF_SHARED, "myrs", cs) < 0) {
 		dev_err(&pdev->dev,
 			"Unable to acquire IRQ Channel %d\n", pdev->irq);
 		goto Failure;
@@ -302,7 +301,7 @@ static inline void myrs_reset_cmd(myrs_cmdblk *cmd_blk)
 
 
 /*
- * DAC960_V2_qcmd queues Command for DAC960 V2 Series Controllers.
+ * myrs_qcmd queues Command for DAC960 V2 Series Controllers.
  */
 static void myrs_qcmd(myrs_hba *cs, myrs_cmdblk *cmd_blk)
 {
@@ -362,16 +361,14 @@ static void DAC960_V2_ReportProgress(myrs_hba *cs,
 		     ldev_num, msg, (100 * (blocks >> 7)) / (size >> 7));
 }
 
-/*
-  DAC960_V2_ControllerInfo executes a DAC960 V2 Firmware Controller
-  Information Reading IOCTL Command and waits for completion.  It returns
-  true on success and false on failure.
 
-  Data is returned in the controller's V2.ctlr_info dma-able
-  memory buffer.
+/*
+  myrs_get_ctlr_info executes a DAC960 V2 Firmware Controller
+  Information Reading IOCTL Command and waits for completion.
 */
 
-static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
+static unsigned char
+myrs_get_ctlr_info(myrs_hba *cs)
 {
 	myrs_cmdblk *cmd_blk = &cs->dcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
@@ -428,9 +425,8 @@ static unsigned char DAC960_V2_NewControllerInfo(myrs_hba *cs)
 
 
 /*
-  DAC960_V2_LogicalDeviceInfo executes a DAC960 V2 Firmware Controller Logical
-  Device Information Reading IOCTL Command and waits for completion.  It
-  returns true on success and false on failure.
+  myrs_get_ldev_info executes a DAC960 V2 Firmware Controller Logical
+  Device Information Reading IOCTL Command and waits for completion.
 */
 
 static unsigned char
@@ -529,27 +525,14 @@ myrs_get_ldev_info(myrs_hba *cs, unsigned short ldev_num,
 
 
 /*
-  DAC960_V2_PhysicalDeviceInfo executes a DAC960 V2 Firmware Controller "Read
-  Physical Device Information" IOCTL Command and waits for completion.  It
-  returns true on success and false on failure.
-
-  The Channel, TargetID, LogicalUnit arguments should be 0 the first time
-  this function is called for a given controller.  This will return data
-  for the "first" device on that controller.  The returned data includes a
-  Channel, TargetID, LogicalUnit that can be passed in to this routine to
-  get data for the NEXT device on that controller.
-
-  Data is stored in the controller's V2.NewPhysicalDeviceInfo dma-able
-  memory buffer.
-
+  myrs_get_pdev_info executes a DAC960 V2 Firmware Controller "Read
+  Physical Device Information" IOCTL Command and waits for completion.
 */
 
 static unsigned char
-DAC960_V2_NewPhysicalDeviceInfo(myrs_hba *cs,
-				unsigned char Channel,
-				unsigned char TargetID,
-				unsigned char LogicalUnit,
-				myrs_pdev_info *pdev_info)
+myrs_get_pdev_info(myrs_hba *cs, unsigned char channel,
+		   unsigned char target, unsigned char lun,
+		   myrs_pdev_info *pdev_info)
 {
 	myrs_cmdblk *cmd_blk = &cs->dcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
@@ -570,9 +553,9 @@ DAC960_V2_NewPhysicalDeviceInfo(myrs_hba *cs,
 	mbox->PhysicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->PhysicalDeviceInfo.control.NoAutoRequestSense = true;
 	mbox->PhysicalDeviceInfo.dma_size = sizeof(myrs_pdev_info);
-	mbox->PhysicalDeviceInfo.pdev.LogicalUnit = LogicalUnit;
-	mbox->PhysicalDeviceInfo.pdev.TargetID = TargetID;
-	mbox->PhysicalDeviceInfo.pdev.Channel = Channel;
+	mbox->PhysicalDeviceInfo.pdev.LogicalUnit = lun;
+	mbox->PhysicalDeviceInfo.pdev.TargetID = target;
+	mbox->PhysicalDeviceInfo.pdev.Channel = channel;
 	mbox->PhysicalDeviceInfo.ioctl_opcode =
 		DAC960_V2_GetPhysicalDeviceInfoValid;
 	sgl = &mbox->PhysicalDeviceInfo.dma_addr;
@@ -580,7 +563,7 @@ DAC960_V2_NewPhysicalDeviceInfo(myrs_hba *cs,
 	sgl->sge[0].sge_count = mbox->PhysicalDeviceInfo.dma_size;
 	dev_dbg(&cs->host->shost_gendev,
 		"Sending GetPhysicalDeviceInfoValid for pdev %d:%d:%d\n",
-		Channel, TargetID, LogicalUnit);
+		channel, target, lun);
 	myrs_exec_cmd(cs, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cs->dcmd_mutex);
@@ -590,15 +573,12 @@ DAC960_V2_NewPhysicalDeviceInfo(myrs_hba *cs,
 }
 
 /*
-  DAC960_V2_DeviceOperation executes a DAC960 V2 Firmware Controller Device
-  Operation IOCTL Command and waits for completion.  It returns true on
-  success and false on failure.
+  myrs_dev_op executes a DAC960 V2 Firmware Controller Device
+  Operation IOCTL Command and waits for completion.
 */
 
 static unsigned char
-DAC960_V2_DeviceOperation(myrs_hba *cs,
-			  myrs_ioctl_opcode opcode,
-			  myrs_opdev opdev)
+myrs_dev_op(myrs_hba *cs, myrs_ioctl_opcode opcode, myrs_opdev opdev)
 {
 	myrs_cmdblk *cmd_blk = &cs->dcmd_blk;
 	myrs_cmd_mbox *mbox = &cmd_blk->mbox;
@@ -620,16 +600,14 @@ DAC960_V2_DeviceOperation(myrs_hba *cs,
 
 
 /*
-  DAC960_V2_TranslatePhysicalDevice translates a Physical Device Channel and
+  myrs_translate_pdev translates a Physical Device Channel and
   TargetID into a Logical Device.
 */
 
 static unsigned char
-DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
-				  unsigned char Channel,
-				  unsigned char TargetID,
-				  unsigned char LogicalUnit,
-				  myrs_devmap *devmap)
+myrs_translate_pdev(myrs_hba *cs, unsigned char channel,
+		    unsigned char target, unsigned char lun,
+		    myrs_devmap *devmap)
 {
 	struct pci_dev *pdev = cs->pdev;
 	dma_addr_t devmap_addr;
@@ -651,9 +629,9 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 	mbox->PhysicalDeviceInfo.control.DataTransferControllerToHost = true;
 	mbox->PhysicalDeviceInfo.control.NoAutoRequestSense = true;
 	mbox->PhysicalDeviceInfo.dma_size = sizeof(myrs_devmap);
-	mbox->PhysicalDeviceInfo.pdev.TargetID = TargetID;
-	mbox->PhysicalDeviceInfo.pdev.Channel = Channel;
-	mbox->PhysicalDeviceInfo.pdev.LogicalUnit = LogicalUnit;
+	mbox->PhysicalDeviceInfo.pdev.TargetID = target;
+	mbox->PhysicalDeviceInfo.pdev.Channel = channel;
+	mbox->PhysicalDeviceInfo.pdev.LogicalUnit = lun;
 	mbox->PhysicalDeviceInfo.ioctl_opcode =
 		DAC960_V2_TranslatePhysicalToLogicalDevice;
 	sgl = &mbox->PhysicalDeviceInfo.dma_addr;
@@ -669,9 +647,14 @@ DAC960_V2_TranslatePhysicalDevice(myrs_hba *cs,
 }
 
 
-static unsigned char myrs_get_event(myrs_hba *cs,
-					       unsigned short event_num,
-					       myrs_event *event_buf)
+/*
+  myrs_get_event queues a Get Event Command
+  to DAC960 V2 Firmware Controllers.
+*/
+
+static unsigned char
+myrs_get_event(myrs_hba *cs, unsigned short event_num,
+	       myrs_event *event_buf)
 {
 	struct pci_dev *pdev = cs->pdev;
 	dma_addr_t event_addr;
@@ -902,7 +885,7 @@ int myrs_get_config(myrs_hba *cs)
 
 	/* Get data into dma-able area, then copy into permanent location */
 	mutex_lock(&cs->cinfo_mutex);
-	status = DAC960_V2_NewControllerInfo(cs);
+	status = myrs_get_ctlr_info(cs);
 	mutex_unlock(&cs->cinfo_mutex);
 	if (status != DAC960_V2_NormalCompletion) {
 		shost_printk(KERN_ERR, shost,
@@ -1322,9 +1305,8 @@ static ssize_t myrs_store_dev_state(struct device *dev,
 				    myrs_devstate_name(new_state));
 			return count;
 		}
-		status = DAC960_V2_TranslatePhysicalDevice(cs, sdev->channel,
-							   sdev->id, sdev->lun,
-							   pdev_devmap);
+		status = myrs_translate_pdev(cs, sdev->channel, sdev->id,
+					     sdev->lun, pdev_devmap);
 		if (status != DAC960_V2_NormalCompletion)
 			return -ENXIO;
 		ldev_num = pdev_devmap->ldev_num;
@@ -1666,7 +1648,7 @@ static ssize_t myrs_store_flush_cache(struct device *dev,
 	myrs_hba *cs = (myrs_hba *)shost->hostdata;
 	unsigned char status;
 
-	status = DAC960_V2_DeviceOperation(cs, DAC960_V2_FlushDeviceData,
+	status = myrs_dev_op(cs, DAC960_V2_FlushDeviceData,
 					   DAC960_V2_RAID_Controller);
 	if (status == DAC960_V2_NormalCompletion) {
 		shost_printk(KERN_INFO, shost, "Cache Flush Completed\n");
@@ -2032,9 +2014,9 @@ static int myrs_slave_alloc(struct scsi_device *sdev)
 		if (!pdev_info)
 			return -ENOMEM;
 
-		status = DAC960_V2_NewPhysicalDeviceInfo(cs, sdev->channel,
-							 sdev->id, sdev->lun,
-							 pdev_info);
+		status = myrs_get_pdev_info(cs, sdev->channel,
+					    sdev->id, sdev->lun,
+					    pdev_info);
 		if (status != DAC960_V2_NormalCompletion) {
 			sdev->hostdata = NULL;
 			kfree(pdev_info);
@@ -2371,8 +2353,7 @@ static myrs_hba *myrs_alloc_host(struct pci_dev *pdev,
 
 void myrs_flush_cache(myrs_hba *cs)
 {
-	DAC960_V2_DeviceOperation(cs, DAC960_V2_FlushDeviceData,
-				  DAC960_V2_RAID_Controller);
+	myrs_dev_op(cs, DAC960_V2_FlushDeviceData, DAC960_V2_RAID_Controller);
 }
 
 static void myrs_handle_scsi(myrs_hba *cs, myrs_cmdblk *cmd_blk,
@@ -2450,7 +2431,7 @@ static void myrs_monitor(struct work_struct *work)
 	if (cs->needs_update) {
 		cs->needs_update = false;
 		mutex_lock(&cs->cinfo_mutex);
-		status = DAC960_V2_NewControllerInfo(cs);
+		status = myrs_get_ctlr_info(cs);
 		mutex_unlock(&cs->cinfo_mutex);
 	}
 	if (cs->fwstat_buf->next_evseq - cs->next_evseq > 0) {
