@@ -108,7 +108,7 @@ typedef struct DAC960_V2_MemoryType
 		DAC960_V2_MemoryType_SDRAM =		0x04,
 		DAC960_V2_MemoryType_Last =		0x1F
 	} __attribute__ ((packed)) MemoryType:5;	/* Byte 0 Bits 0-4 */
-bool :1;						/* Byte 0 Bit 5 */
+	bool rsvd:1;					/* Byte 0 Bit 5 */
 	bool MemoryParity:1;				/* Byte 0 Bit 6 */
 	bool MemoryECC:1;				/* Byte 0 Bit 7 */
 }
@@ -231,29 +231,29 @@ typedef struct myrs_ctlr_info_s
 	unsigned char :8;				/* Byte 149 */
 	unsigned short :16;				/* Bytes 150-151 */
 	/* Physical Device Scan Information */
-	bool pscan_active:1;			/* Byte 152 Bit 0 */
+	bool pscan_active:1;				/* Byte 152 Bit 0 */
 	unsigned char :7;				/* Byte 152 Bits 1-7 */
-	unsigned char pscan_chan;	/* Byte 153 */
-	unsigned char pscan_target;		/* Byte 154 */
-	unsigned char pscan_lun;	/* Byte 155 */
+	unsigned char pscan_chan;			/* Byte 153 */
+	unsigned char pscan_target;			/* Byte 154 */
+	unsigned char pscan_lun;			/* Byte 155 */
 	/* Maximum Command Data Transfer Sizes */
-	unsigned short MaximumDataTransferSizeInBlocks;	/* Bytes 156-157 */
-	unsigned short MaximumScatterGatherEntries;	/* Bytes 158-159 */
+	unsigned short max_transfer_size;		/* Bytes 156-157 */
+	unsigned short max_sge;				/* Bytes 158-159 */
 	/* Logical/Physical Device Counts */
-	unsigned short ldev_present;		/* Bytes 160-161 */
-	unsigned short ldev_critical;		/* Bytes 162-163 */
-	unsigned short ldev_offline;		/* Bytes 164-165 */
-	unsigned short pdev_present;		/* Bytes 166-167 */
-	unsigned short pdisk_present;		/* Bytes 168-169 */
-	unsigned short pdisk_critical;		/* Bytes 170-171 */
-	unsigned short pdisk_offline;		/* Bytes 172-173 */
-	unsigned short max_tcq;		/* Bytes 174-175 */
+	unsigned short ldev_present;			/* Bytes 160-161 */
+	unsigned short ldev_critical;			/* Bytes 162-163 */
+	unsigned short ldev_offline;			/* Bytes 164-165 */
+	unsigned short pdev_present;			/* Bytes 166-167 */
+	unsigned short pdisk_present;			/* Bytes 168-169 */
+	unsigned short pdisk_critical;			/* Bytes 170-171 */
+	unsigned short pdisk_offline;			/* Bytes 172-173 */
+	unsigned short max_tcq;				/* Bytes 174-175 */
 	/* Channel and Target ID Information */
-	unsigned char physchan_present;	/* Byte 176 */
-	unsigned char virtchan_present;	/* Byte 177 */
-	unsigned char physchan_max;	/* Byte 178 */
-	unsigned char virtchan_max;	/* Byte 179 */
-	unsigned char MaximumTargetsPerChannel[16];	/* Bytes 180-195 */
+	unsigned char physchan_present;			/* Byte 176 */
+	unsigned char virtchan_present;			/* Byte 177 */
+	unsigned char physchan_max;			/* Byte 178 */
+	unsigned char virtchan_max;			/* Byte 179 */
+	unsigned char max_targets[16];			/* Bytes 180-195 */
 	unsigned char Reserved4[12];			/* Bytes 196-207 */
 	/* Memory/Cache Information */
 	unsigned short MemorySizeMB;			/* Bytes 208-209 */
@@ -289,64 +289,64 @@ typedef struct myrs_ctlr_info_s
 	unsigned short ProgramsAwaitingProfilingData;		/* Bytes 338-339 */
 	unsigned short CurrentCommandTimeTraceDataPageNumber;	/* Bytes 340-341 */
 	unsigned short ProgramsAwaitingCommandTimeTraceData;	/* Bytes 342-343 */
-	unsigned char Reserved8[8];				/* Bytes 344-351 */
+	unsigned char Reserved8[8];			/* Bytes 344-351 */
 	/* Error Counters on Physical Devices */
-	unsigned short PhysicalDeviceBusResets;		/* Bytes 352-353 */
-	unsigned short PhysicalDeviceParityErrors;		/* Bytes 355-355 */
-	unsigned short PhysicalDeviceSoftErrors;		/* Bytes 356-357 */
-	unsigned short PhysicalDeviceCommandsFailed;		/* Bytes 358-359 */
-	unsigned short PhysicalDeviceMiscellaneousErrors;	/* Bytes 360-361 */
-	unsigned short PhysicalDeviceCommandTimeouts;		/* Bytes 362-363 */
-	unsigned short PhysicalDeviceSelectionTimeouts;	/* Bytes 364-365 */
-	unsigned short PhysicalDeviceRetriesDone;		/* Bytes 366-367 */
-	unsigned short PhysicalDeviceAbortsDone;		/* Bytes 368-369 */
-	unsigned short PhysicalDeviceHostCommandAbortsDone;	/* Bytes 370-371 */
-	unsigned short PhysicalDevicePredictedFailuresDetected; /* Bytes 372-373 */
-	unsigned short PhysicalDeviceHostCommandsFailed;	/* Bytes 374-375 */
-	unsigned short PhysicalDeviceHardErrors;		/* Bytes 376-377 */
-	unsigned char Reserved9[6];				/* Bytes 378-383 */
+	unsigned short pdev_bus_resets;			/* Bytes 352-353 */
+	unsigned short pdev_parity_errors;		/* Bytes 355-355 */
+	unsigned short pdev_soft_errors;		/* Bytes 356-357 */
+	unsigned short pdev_cmds_failed;		/* Bytes 358-359 */
+	unsigned short pdev_misc_errors;		/* Bytes 360-361 */
+	unsigned short pdev_cmd_timeouts;		/* Bytes 362-363 */
+	unsigned short pdev_sel_timeouts;		/* Bytes 364-365 */
+	unsigned short pdev_retries_done;		/* Bytes 366-367 */
+	unsigned short pdev_aborts_done;		/* Bytes 368-369 */
+	unsigned short pdev_host_aborts_done;		/* Bytes 370-371 */
+	unsigned short pdev_predicted_failures;		/* Bytes 372-373 */
+	unsigned short pdev_host_cmds_failed;		/* Bytes 374-375 */
+	unsigned short pdev_hard_errors;		/* Bytes 376-377 */
+	unsigned char Reserved9[6];			/* Bytes 378-383 */
 	/* Error Counters on Logical Devices */
-	unsigned short LogicalDeviceSoftErrors;		/* Bytes 384-385 */
-	unsigned short LogicalDeviceCommandsFailed;		/* Bytes 386-387 */
-	unsigned short LogicalDeviceHostCommandAbortsDone;	/* Bytes 388-389 */
-	unsigned short :16;					/* Bytes 390-391 */
+	unsigned short ldev_soft_errors;		/* Bytes 384-385 */
+	unsigned short ldev_cmds_failed;		/* Bytes 386-387 */
+	unsigned short ldev_host_aborts_done;		/* Bytes 388-389 */
+	unsigned short :16;				/* Bytes 390-391 */
 	/* Error Counters on Controller */
-	unsigned short ControllerMemoryErrors;		/* Bytes 392-393 */
-	unsigned short ControllerHostCommandAbortsDone;	/* Bytes 394-395 */
-	unsigned int :32;					/* Bytes 396-399 */
+	unsigned short ctlr_mem_errors;			/* Bytes 392-393 */
+	unsigned short ctlr_host_aborts_done;		/* Bytes 394-395 */
+	unsigned int :32;				/* Bytes 396-399 */
 	/* Long Duration Activity Information */
-	unsigned short bg_init_active;	/* Bytes 400-401 */
-	unsigned short ldev_init_active;	/* Bytes 402-403 */
-	unsigned short pdev_init_active;	/* Bytes 404-405 */
-	unsigned short cc_active;		/* Bytes 406-407 */
+	unsigned short bg_init_active;			/* Bytes 400-401 */
+	unsigned short ldev_init_active;		/* Bytes 402-403 */
+	unsigned short pdev_init_active;		/* Bytes 404-405 */
+	unsigned short cc_active;			/* Bytes 406-407 */
 	unsigned short rbld_active;			/* Bytes 408-409 */
-	unsigned short exp_active;		/* Bytes 410-411 */
-	unsigned short patrol_active;		/* Bytes 412-413 */
-	unsigned short :16;					/* Bytes 414-415 */
+	unsigned short exp_active;			/* Bytes 410-411 */
+	unsigned short patrol_active;			/* Bytes 412-413 */
+	unsigned short :16;				/* Bytes 414-415 */
 	/* Flash ROM Information */
-	unsigned char FlashType;				/* Byte 416 */
-	unsigned char :8;					/* Byte 417 */
-	unsigned short FlashSizeMB;				/* Bytes 418-419 */
-	unsigned int FlashLimit;				/* Bytes 420-423 */
-	unsigned int FlashCount;				/* Bytes 424-427 */
-	unsigned int :32;					/* Bytes 428-431 */
-	unsigned char FlashTypeName[16];			/* Bytes 432-447 */
+	unsigned char flash_type;			/* Byte 416 */
+	unsigned char :8;				/* Byte 417 */
+	unsigned short flash_size_MB;			/* Bytes 418-419 */
+	unsigned int flash_limit;			/* Bytes 420-423 */
+	unsigned int flash_count;			/* Bytes 424-427 */
+	unsigned int :32;				/* Bytes 428-431 */
+	unsigned char flash_type_name[16];		/* Bytes 432-447 */
 	/* Firmware Run Time Information */
-	unsigned char rbld_rate;				/* Byte 448 */
-	unsigned char bg_init_rate;		/* Byte 449 */
-	unsigned char fg_init_rate;		/* Byte 450 */
-	unsigned char cc_rate;			/* Byte 451 */
-	unsigned int :32;					/* Bytes 452-455 */
+	unsigned char rbld_rate;			/* Byte 448 */
+	unsigned char bg_init_rate;			/* Byte 449 */
+	unsigned char fg_init_rate;			/* Byte 450 */
+	unsigned char cc_rate;				/* Byte 451 */
+	unsigned int :32;				/* Bytes 452-455 */
 	unsigned int MaximumDP;				/* Bytes 456-459 */
-	unsigned int FreeDP;					/* Bytes 460-463 */
-	unsigned int MaximumIOP;				/* Bytes 464-467 */
-	unsigned int FreeIOP;					/* Bytes 468-471 */
-	unsigned short MaximumCombLengthInBlocks;		/* Bytes 472-473 */
-	unsigned short NumberOfConfigurationGroups;		/* Bytes 474-475 */
+	unsigned int FreeDP;				/* Bytes 460-463 */
+	unsigned int MaximumIOP;			/* Bytes 464-467 */
+	unsigned int FreeIOP;				/* Bytes 468-471 */
+	unsigned short MaximumCombLengthInBlocks;	/* Bytes 472-473 */
+	unsigned short NumberOfConfigurationGroups;	/* Bytes 474-475 */
 	bool InstallationAbortStatus:1;			/* Byte 476 Bit 0 */
-	bool MaintenanceModeStatus:1;				/* Byte 476 Bit 1 */
-	unsigned int :24;					/* Bytes 476-479 */
-	unsigned char Reserved10[32];				/* Bytes 480-511 */
+	bool MaintenanceModeStatus:1;			/* Byte 476 Bit 1 */
+	unsigned int :24;				/* Bytes 476-479 */
+	unsigned char Reserved10[32];			/* Bytes 480-511 */
 	unsigned char Reserved11[512];			/* Bytes 512-1023 */
 } myrs_ctlr_info;
 
@@ -433,7 +433,7 @@ typedef struct myrs_ldev_info_s
 	unsigned char Channel;				/* Byte 1 */
 	unsigned char TargetID;				/* Byte 2 */
 	unsigned char LogicalUnit;			/* Byte 3 */
-	myrs_devstate State;			/* Byte 4 */
+	myrs_devstate State;				/* Byte 4 */
 	unsigned char RAIDLevel;			/* Byte 5 */
 	unsigned char StripeSize;			/* Byte 6 */
 	unsigned char CacheLineSize;			/* Byte 7 */
@@ -453,19 +453,19 @@ typedef struct myrs_ldev_info_s
 			DAC960_V2_WriteCache_Last =		0x7
 		} __attribute__ ((packed)) WriteCache:3; /* Byte 8 Bits 3-5 */
 		bool rsvd1:1;				/* Byte 8 Bit 6 */
-		bool ldev_init_done:1;	/* Byte 8 Bit 7 */
-	} ldev_control;				/* Byte 8 */
+		bool ldev_init_done:1;			/* Byte 8 Bit 7 */
+	} ldev_control;					/* Byte 8 */
 	/* Logical Device Operations Status */
-	bool cc_active:1;		/* Byte 9 Bit 0 */
-	bool rbld_active:1;			/* Byte 9 Bit 1 */
-	bool bg_init_active:1;	/* Byte 9 Bit 2 */
-	bool fg_init_active:1;	/* Byte 9 Bit 3 */
+	bool cc_active:1;				/* Byte 9 Bit 0 */
+	bool rbld_active:1;				/* Byte 9 Bit 1 */
+	bool bg_init_active:1;				/* Byte 9 Bit 2 */
+	bool fg_init_active:1;				/* Byte 9 Bit 3 */
 	bool migration_active:1;			/* Byte 9 Bit 4 */
-	bool patrol_active:1;		/* Byte 9 Bit 5 */
+	bool patrol_active:1;				/* Byte 9 Bit 5 */
 	unsigned char rsvd2:2;				/* Byte 9 Bits 6-7 */
 	unsigned char RAID5WriteUpdate;			/* Byte 10 */
 	unsigned char RAID5Algorithm;			/* Byte 11 */
-	unsigned short ldev_num;		/* Bytes 12-13 */
+	unsigned short ldev_num;			/* Bytes 12-13 */
 	/* BIOS Info */
 	bool BIOSDisabled:1;				/* Byte 14 Bit 0 */
 	bool CDROMBootEnabled:1;			/* Byte 14 Bit 1 */
@@ -490,20 +490,20 @@ typedef struct myrs_ldev_info_s
 	/* Device Size Information */
 	unsigned short rsvd6:16;			/* Bytes 32-33 */
 	unsigned short DeviceBlockSizeInBytes;		/* Bytes 34-35 */
-	unsigned int orig_devsize;		/* Bytes 36-39 */
-	unsigned int cfg_devsize;		/* Bytes 40-43 */
+	unsigned int orig_devsize;			/* Bytes 36-39 */
+	unsigned int cfg_devsize;			/* Bytes 40-43 */
 	unsigned int rsvd7:32;				/* Bytes 44-47 */
 	unsigned char ldev_name[32];			/* Bytes 48-79 */
 	unsigned char SCSI_InquiryData[36];		/* Bytes 80-115 */
 	unsigned char Reserved1[12];			/* Bytes 116-127 */
-	u64 last_read_lba;			/* Bytes 128-135 */
-	u64 last_write_lba;			/* Bytes 136-143 */
-	u64 cc_lba;		/* Bytes 144-151 */
-	u64 rbld_lba;				/* Bytes 152-159 */
-	u64 bg_init_lba;	/* Bytes 160-167 */
-	u64 fg_init_lba;	/* Bytes 168-175 */
-	u64 migration_lba;			/* Bytes 176-183 */
-	u64 patrol_lba;			/* Bytes 184-191 */
+	u64 last_read_lba;				/* Bytes 128-135 */
+	u64 last_write_lba;				/* Bytes 136-143 */
+	u64 cc_lba;					/* Bytes 144-151 */
+	u64 rbld_lba;					/* Bytes 152-159 */
+	u64 bg_init_lba;				/* Bytes 160-167 */
+	u64 fg_init_lba;				/* Bytes 168-175 */
+	u64 migration_lba;				/* Bytes 176-183 */
+	u64 patrol_lba;					/* Bytes 184-191 */
 	unsigned char rsvd8[64];			/* Bytes 192-255 */
 } myrs_ldev_info;
 
@@ -527,7 +527,7 @@ typedef struct myrs_pdev_info_s
 	bool RemoteHostSystemDead:1;			/* Byte 5 Bit 0 */
 	bool RemoteControllerDead:1;			/* Byte 5 Bit 1 */
 	unsigned char rsvd3:6;				/* Byte 5 Bits 2-7 */
-	myrs_devstate State;			/* Byte 6 */
+	myrs_devstate State;				/* Byte 6 */
 	unsigned char NegotiatedDataWidthBits;		/* Byte 7 */
 	unsigned short NegotiatedSynchronousMegaTransfers; /* Bytes 8-9 */
 	/* Multiported Physical Device Information */
@@ -556,8 +556,8 @@ typedef struct myrs_pdev_info_s
 	unsigned int rsvd6:32;				/* Bytes 44-47 */
 	unsigned short rsvd7:16;			/* Bytes 48-49 */
 	unsigned short DeviceBlockSizeInBytes;		/* Bytes 50-51 */
-	unsigned int orig_devsize;		/* Bytes 52-55 */
-	unsigned int cfg_devsize;		/* Bytes 56-59 */
+	unsigned int orig_devsize;			/* Bytes 52-55 */
+	unsigned int cfg_devsize;			/* Bytes 56-59 */
 	unsigned int rsvd8:32;				/* Bytes 60-63 */
 	unsigned char PhysicalDeviceName[16];		/* Bytes 64-79 */
 	unsigned char rsvd9[16];			/* Bytes 80-95 */
@@ -658,10 +658,10 @@ typedef struct myrs_cmd_tmo_s
 
 typedef struct myrs_pdev_s
 {
-	unsigned char LogicalUnit;				/* Byte 0 */
+	unsigned char LogicalUnit;			/* Byte 0 */
 	unsigned char TargetID;				/* Byte 1 */
-	unsigned char Channel:3;				/* Byte 2 Bits 0-2 */
-	unsigned char Controller:5;				/* Byte 2 Bits 3-7 */
+	unsigned char Channel:3;			/* Byte 2 Bits 0-2 */
+	unsigned char Controller:5;			/* Byte 2 Bits 3-7 */
 }
 __attribute__ ((packed))
 myrs_pdev;
@@ -674,8 +674,8 @@ myrs_pdev;
 typedef struct myrs_ldev_s
 {
 	unsigned short ldev_num;			/* Bytes 0-1 */
-	unsigned char :3;					/* Byte 2 Bits 0-2 */
-	unsigned char Controller:5;				/* Byte 2 Bits 3-7 */
+	unsigned char rsvd:3;				/* Byte 2 Bits 0-2 */
+	unsigned char Controller:5;			/* Byte 2 Bits 3-7 */
 }
 __attribute__ ((packed))
 myrs_ldev;
@@ -755,8 +755,8 @@ typedef union myrs_cmd_mbox_s
 	unsigned int Words[16];				/* Words 0-15 */
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size:24;			/* Bytes 4-6 */
 		unsigned char dma_num;			/* Byte 7 */
 		u64 sense_addr;				/* Bytes 8-15 */
@@ -769,11 +769,11 @@ typedef union myrs_cmd_mbox_s
 	} Common;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size;				/* Bytes 4-7 */
 		u64 sense_addr;				/* Bytes 8-15 */
-		myrs_pdev pdev;			/* Bytes 16-18 */
+		myrs_pdev pdev;				/* Bytes 16-18 */
 		myrs_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;		/* Byte 20 */
 		unsigned char cdb_len;			/* Byte 21 */
@@ -782,11 +782,11 @@ typedef union myrs_cmd_mbox_s
 	} SCSI_10;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size;				/* Bytes 4-7 */
 		u64 sense_addr;				/* Bytes 8-15 */
-		myrs_pdev pdev;			/* Bytes 16-18 */
+		myrs_pdev pdev;				/* Bytes 16-18 */
 		myrs_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;		/* Byte 20 */
 		unsigned char cdb_len;			/* Byte 21 */
@@ -796,8 +796,8 @@ typedef union myrs_cmd_mbox_s
 	} SCSI_255;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size:24;			/* Bytes 4-6 */
 		unsigned char dma_num;			/* Byte 7 */
 		u64 sense_addr;				/* Bytes 8-15 */
@@ -811,12 +811,12 @@ typedef union myrs_cmd_mbox_s
 	} ControllerInfo;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size:24;			/* Bytes 4-6 */
 		unsigned char dma_num;			/* Byte 7 */
 		u64 sense_addr;				/* Bytes 8-15 */
-		myrs_ldev ldev;			/* Bytes 16-18 */
+		myrs_ldev ldev;				/* Bytes 16-18 */
 		myrs_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;		/* Byte 20 */
 		unsigned char ioctl_opcode;		/* Byte 21 */
@@ -825,12 +825,12 @@ typedef union myrs_cmd_mbox_s
 	} LogicalDeviceInfo;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size:24;			/* Bytes 4-6 */
 		unsigned char dma_num;			/* Byte 7 */
 		u64 sense_addr;				/* Bytes 8-15 */
-		myrs_pdev pdev;			/* Bytes 16-18 */
+		myrs_pdev pdev;				/* Bytes 16-18 */
 		myrs_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;		/* Byte 20 */
 		unsigned char ioctl_opcode;		/* Byte 21 */
@@ -839,8 +839,8 @@ typedef union myrs_cmd_mbox_s
 	} PhysicalDeviceInfo;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size:24;			/* Bytes 4-6 */
 		unsigned char dma_num;			/* Byte 7 */
 		u64 sense_addr;				/* Bytes 8-15 */
@@ -855,14 +855,14 @@ typedef union myrs_cmd_mbox_s
 	} GetEvent;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size:24;			/* Bytes 4-6 */
 		unsigned char dma_num;			/* Byte 7 */
 		u64 sense_addr;				/* Bytes 8-15 */
 		union {
-			myrs_ldev ldev;		/* Bytes 16-18 */
-			myrs_pdev pdev;		/* Bytes 16-18 */
+			myrs_ldev ldev;			/* Bytes 16-18 */
+			myrs_pdev pdev;			/* Bytes 16-18 */
 		};
 		myrs_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;		/* Byte 20 */
@@ -873,12 +873,12 @@ typedef union myrs_cmd_mbox_s
 	} SetDeviceState;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size:24;			/* Bytes 4-6 */
 		unsigned char dma_num;			/* Byte 7 */
 		u64 sense_addr;				/* Bytes 8-15 */
-		myrs_ldev ldev;			/* Bytes 16-18 */
+		myrs_ldev ldev;				/* Bytes 16-18 */
 		myrs_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;		/* Byte 20 */
 		unsigned char ioctl_opcode;		/* Byte 21 */
@@ -890,8 +890,8 @@ typedef union myrs_cmd_mbox_s
 	} ConsistencyCheck;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		unsigned char FirstCommandMailboxSizeKB;	/* Byte 4 */
 		unsigned char FirstStatusMailboxSizeKB;		/* Byte 5 */
 		unsigned char SecondCommandMailboxSizeKB;	/* Byte 6 */
@@ -911,12 +911,12 @@ typedef union myrs_cmd_mbox_s
 	} SetMemoryMailbox;
 	struct {
 		unsigned short id;			/* Bytes 0-1 */
-		myrs_cmd_opcode opcode;		/* Byte 2 */
-		myrs_cmd_ctrl control;		/* Byte 3 */
+		myrs_cmd_opcode opcode;			/* Byte 2 */
+		myrs_cmd_ctrl control;			/* Byte 3 */
 		u32 dma_size:24;			/* Bytes 4-6 */
 		unsigned char dma_num;			/* Byte 7 */
 		u64 sense_addr;				/* Bytes 8-15 */
-		myrs_pdev pdev;			/* Bytes 16-18 */
+		myrs_pdev pdev;				/* Bytes 16-18 */
 		myrs_cmd_tmo tmo;			/* Byte 19 */
 		unsigned char sense_len;		/* Byte 20 */
 		unsigned char ioctl_opcode;		/* Byte 21 */
@@ -1001,7 +1001,6 @@ typedef struct myrs_hba_s
 	struct pci_pool *sense_pool;
 	struct pci_pool *dcdb_pool;
 
-	unsigned char (*enable_mbox)(void __iomem *, dma_addr_t);
 	void (*write_cmd_mbox)(myrs_cmd_mbox *, myrs_cmd_mbox *);
 	void (*get_cmd_mbox)(void __iomem *);
 	void (*disable_intr)(void __iomem *);
@@ -1034,6 +1033,7 @@ typedef struct myrs_hba_s
 	myrs_event *event_buf;
 } myrs_hba;
 
+typedef unsigned char (*enable_mbox_t)(void __iomem *base, dma_addr_t addr);
 typedef int (*myrs_hwinit_t)(struct pci_dev *pdev,
 			     struct myrs_hba_s *c, void __iomem *base);
 

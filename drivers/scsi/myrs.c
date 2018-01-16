@@ -530,7 +530,7 @@ static unsigned char myrs_get_fwstatus(myrs_hba *cs)
   the structures that are contained in that region.
 */
 
-static bool myrs_enable_mmio_mbox(myrs_hba *cs)
+static bool myrs_enable_mmio_mbox(myrs_hba *cs, enable_mbox_t enable_mbox_fn)
 {
 	void __iomem *base = cs->io_base;
 	struct pci_dev *pdev = cs->pdev;
@@ -624,7 +624,7 @@ static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 		cs->cmd_mbox_addr;
 	mbox->SetMemoryMailbox.FirstStatusMailboxBusAddress =
 		cs->stat_mbox_addr;
-	status = cs->enable_mbox(base, mbox_addr);
+	status = enable_mbox_fn(base, mbox_addr);
 
 out_free:
 	dma_free_coherent(&pdev->dev, sizeof(myrs_cmd_mbox),
@@ -695,12 +695,12 @@ int myrs_get_config(myrs_hba *cs)
 	  Initialize the Controller Channels and Targets.
 	*/
 	shost->max_channel = info->physchan_present + info->virtchan_present;
-	shost->max_id = info->MaximumTargetsPerChannel[0];
+	shost->max_id = info->max_targets[0];
 	for (i = 1; i < 16; i++) {
-		if (!info->MaximumTargetsPerChannel[i])
+		if (!info->max_targets[i])
 			continue;
-		if (shost->max_id < info->MaximumTargetsPerChannel[i])
-			shost->max_id = info->MaximumTargetsPerChannel[i];
+		if (shost->max_id < info->max_targets[i])
+			shost->max_id = info->max_targets[i];
 	}
 
 	/*
@@ -714,8 +714,8 @@ int myrs_get_config(myrs_hba *cs)
 	shost->can_queue = info->max_tcq - 3;
 	if (shost->can_queue > MYRS_MAX_CMD_MBOX - 3)
 		shost->can_queue = MYRS_MAX_CMD_MBOX - 3;
-	shost->max_sectors = info->MaximumDataTransferSizeInBlocks;
-	shost->sg_tablesize = info->MaximumScatterGatherEntries;
+	shost->max_sectors = info->max_transfer_size;
+	shost->sg_tablesize = info->max_sge;
 	if (shost->sg_tablesize > MYRS_SG_LIMIT)
 		shost->sg_tablesize = MYRS_SG_LIMIT;
 
@@ -735,11 +735,11 @@ int myrs_get_config(myrs_hba *cs)
 		     " Scatter/Gather Limit: %d of %d Segments\n",
 		     shost->can_queue, shost->sg_tablesize, MYRS_SG_LIMIT);
 	for (i = 0; i < info->physchan_max; i++) {
-		if (!info->MaximumTargetsPerChannel[i])
+		if (!info->max_targets[i])
 			continue;
 		shost_printk(KERN_INFO, shost,
 			     "  Device Channel %d: max %d devices\n",
-			     i, info->MaximumTargetsPerChannel[i]);
+			     i, info->max_targets[i]);
 	}
 	shost_printk(KERN_INFO, shost,
 		     "  Physical: %d/%d channels, %d disks, %d devices\n",
@@ -1384,29 +1384,6 @@ static ssize_t myrs_show_ctlr_num(struct device *dev,
 }
 static DEVICE_ATTR(ctlr_num, S_IRUGO, myrs_show_ctlr_num, NULL);
 
-static ssize_t myrs_show_model_name(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-
-	return snprintf(buf, 28, "%s\n", cs->model_name);
-}
-static DEVICE_ATTR(model, S_IRUGO, myrs_show_model_name, NULL);
-
-static ssize_t myrs_show_firmware_version(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-
-	return snprintf(buf, 16, "%d.%02d-%02d\n",
-			cs->ctlr_info->FirmwareMajorVersion,
-			cs->ctlr_info->FirmwareMinorVersion,
-			cs->ctlr_info->FirmwareTurnNumber);
-}
-static DEVICE_ATTR(firmware, S_IRUGO, myrs_show_firmware_version, NULL);
-
 static ssize_t myrs_store_flush_cache(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -1854,6 +1831,49 @@ static ssize_t myrs_show_ctlr_serial(struct device *dev,
 }
 static DEVICE_ATTR(serial, S_IRUGO, myrs_show_ctlr_serial, NULL);
 
+static ssize_t myrs_show_model_name(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 28, "%s\n", cs->model_name);
+}
+static DEVICE_ATTR(model, S_IRUGO, myrs_show_model_name, NULL);
+
+static ssize_t myrs_show_cache_size(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 8, "%d\n", cs->ctlr_info->CacheSizeMB);
+}
+static DEVICE_ATTR(cache_size, S_IRUGO, myrs_show_cache_size, NULL);
+
+static ssize_t myrs_show_ctlr_type(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 4, "%d\n", cs->ctlr_info->ControllerType);
+}
+static DEVICE_ATTR(ctlr_type, S_IRUGO, myrs_show_ctlr_type, NULL);
+
+static ssize_t myrs_show_firmware_version(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 16, "%d.%02d-%02d\n",
+			cs->ctlr_info->FirmwareMajorVersion,
+			cs->ctlr_info->FirmwareMinorVersion,
+			cs->ctlr_info->FirmwareTurnNumber);
+}
+static DEVICE_ATTR(firmware, S_IRUGO, myrs_show_firmware_version, NULL);
+
 static struct DAC960_V2_ProcessorTypeTbl {
 	DAC960_V2_ProcessorType_T type;
 	char *name;
@@ -1994,6 +2014,8 @@ static struct device_attribute *myrs_shost_attrs[] = {
 	&dev_attr_ctlr_num,
 	&dev_attr_processor,
 	&dev_attr_model,
+	&dev_attr_ctlr_type,
+	&dev_attr_cache_size,
 	&dev_attr_firmware,
 	&dev_attr_discovery,
 	&dev_attr_flush_cache,
@@ -2513,14 +2535,13 @@ static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
 			"Timeout waiting for Controller Initialisation\n");
 		return -ETIMEDOUT;
 	}
-	if (!myrs_enable_mmio_mbox(cs)) {
+	if (!myrs_enable_mmio_mbox(cs, DAC960_GEM_MailboxInit)) {
 		dev_err(&pdev->dev,
 			"Unable to Enable Memory Mailbox Interface\n");
 		DAC960_GEM_ControllerReset(base);
 		return -EAGAIN;
 	}
 	DAC960_GEM_EnableInterrupts(base);
-	cs->enable_mbox = DAC960_GEM_MailboxInit;
 	cs->write_cmd_mbox = DAC960_GEM_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_GEM_MemoryMailboxNewCommand;
 	cs->disable_intr = DAC960_GEM_DisableInterrupts;
@@ -2615,14 +2636,13 @@ static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
 			"Timeout waiting for Controller Initialisation\n");
 		return -ETIMEDOUT;
 	}
-	if (!myrs_enable_mmio_mbox(cs)) {
+	if (!myrs_enable_mmio_mbox(cs, DAC960_BA_MailboxInit)) {
 		dev_err(&pdev->dev,
 			"Unable to Enable Memory Mailbox Interface\n");
 		DAC960_BA_ControllerReset(base);
 		return -EAGAIN;
 	}
 	DAC960_BA_EnableInterrupts(base);
-	cs->enable_mbox = DAC960_BA_MailboxInit;
 	cs->write_cmd_mbox = DAC960_BA_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_BA_MemoryMailboxNewCommand;
 	cs->disable_intr = DAC960_BA_DisableInterrupts;
@@ -2718,14 +2738,13 @@ static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
 			"Timeout waiting for Controller Initialisation\n");
 		return -ETIMEDOUT;
 	}
-	if (!myrs_enable_mmio_mbox(cs)) {
+	if (!myrs_enable_mmio_mbox(cs, DAC960_LP_MailboxInit)) {
 		dev_err(&pdev->dev,
 			"Unable to Enable Memory Mailbox Interface\n");
 		DAC960_LP_ControllerReset(base);
 		return -ENODEV;
 	}
 	DAC960_LP_EnableInterrupts(base);
-	cs->enable_mbox = DAC960_LP_MailboxInit;
 	cs->write_cmd_mbox = DAC960_LP_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_LP_MemoryMailboxNewCommand;
 	cs->disable_intr = DAC960_LP_DisableInterrupts;
