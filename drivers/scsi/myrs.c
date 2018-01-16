@@ -1,9 +1,11 @@
 /*
  * Linux Driver for Mylex DAC960/AcceleRAID/eXtremeRAID PCI RAID Controllers
  *
+ * This driver supports the newer, SCSI-based firmware interface only.
+ *
  * Copyright 2017 Hannes Reinecke, SUSE Linux GmbH <hare@suse.com>
  *
- * Based on the original DAC960 driver,
+ * Based on the original DAC960 driver, which has
  * Copyright 1998-2001 by Leonard N. Zubkoff <lnz@dandelion.com>
  * Portions Copyright 2002 by Mylex (An IBM Business Unit)
  *
@@ -1874,10 +1876,10 @@ static ssize_t myrs_show_firmware_version(struct device *dev,
 }
 static DEVICE_ATTR(firmware, S_IRUGO, myrs_show_firmware_version, NULL);
 
-static struct DAC960_V2_ProcessorTypeTbl {
-	DAC960_V2_ProcessorType_T type;
+static struct myrs_cpu_type_tbl {
+	myrs_cpu_type type;
 	char *name;
-} DAC960_V2_ProcessorTypeNames[] = {
+} myrs_cpu_type_names[] = {
 	{ DAC960_V2_ProcessorType_i960CA, "i960CA" },
 	{ DAC960_V2_ProcessorType_i960RD, "i960RD" },
 	{ DAC960_V2_ProcessorType_i960RN, "i960RN" },
@@ -1893,7 +1895,7 @@ static ssize_t myrs_show_processor(struct device *dev,
 {
 	struct Scsi_Host *shost = class_to_shost(dev);
 	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-	struct DAC960_V2_ProcessorTypeTbl *tbl = DAC960_V2_ProcessorTypeNames;
+	struct myrs_cpu_type_tbl *tbl = myrs_cpu_type_names;
 	const char *first_processor = NULL;
 	const char *second_processor = NULL;
 	myrs_ctlr_info *info = cs->ctlr_info;
@@ -1909,7 +1911,7 @@ static ssize_t myrs_show_processor(struct device *dev,
 		}
 	}
 	if (info->SecondProcessorCount) {
-		tbl = DAC960_V2_ProcessorTypeNames;
+		tbl = myrs_cpu_type_names;
 		while (tbl && tbl->name) {
 			if (tbl->type == info->SecondProcessorType) {
 				second_processor = tbl->name;

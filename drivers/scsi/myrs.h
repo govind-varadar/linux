@@ -1,3 +1,24 @@
+/*
+ * Linux Driver for Mylex DAC960/AcceleRAID/eXtremeRAID PCI RAID Controllers
+ *
+ * This driver supports the newer, SCSI-based firmware interface only.
+ *
+ * Copyright 2018 Hannes Reinecke, SUSE Linux GmbH <hare@suse.com>
+ *
+ * Based on the original DAC960 driver, which has
+ * Copyright 1998-2001 by Leonard N. Zubkoff <lnz@dandelion.com>
+ * Portions Copyright 2002 by Mylex (An IBM Business Unit)
+ *
+ * This program is free software; you may redistribute and/or modify it under
+ * the terms of the GNU General Public License Version 2 as published by the
+ *  Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY, without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * for complete details.
+ */
+
 #ifndef _MYRS_H
 #define _MYRS_H
 
@@ -98,7 +119,7 @@ myrs_ioctl_opcode;
   Define the DAC960 V2 Firmware Memory Type structure.
 */
 
-typedef struct DAC960_V2_MemoryType
+typedef struct myrs_mem_type_s
 {
 	enum {
 		DAC960_V2_MemoryType_Reserved =		0x00,
@@ -111,8 +132,7 @@ typedef struct DAC960_V2_MemoryType
 	bool rsvd:1;					/* Byte 0 Bit 5 */
 	bool MemoryParity:1;				/* Byte 0 Bit 6 */
 	bool MemoryECC:1;				/* Byte 0 Bit 7 */
-}
-DAC960_V2_MemoryType_T;
+} myrs_mem_type;
 
 
 /*
@@ -130,7 +150,7 @@ typedef enum
 	DAC960_V2_ProcessorType_i960RM =		0x07
 }
 __attribute__ ((packed))
-DAC960_V2_ProcessorType_T;
+myrs_cpu_type;
 
 
 /*
@@ -262,7 +282,7 @@ typedef struct myrs_ctlr_info_s
 	unsigned int DirtyCacheSizeInBytes;		/* Bytes 216-219 */
 	unsigned short MemorySpeedMHz;			/* Bytes 220-221 */
 	unsigned char MemoryDataWidthBits;		/* Byte 222 */
-	DAC960_V2_MemoryType_T MemoryType;		/* Byte 223 */
+	myrs_mem_type MemoryType;			/* Byte 223 */
 	unsigned char CacheMemoryTypeName[16];		/* Bytes 224-239 */
 	/* Execution Memory Information */
 	unsigned short ExecutionMemorySizeMB;		/* Bytes 240-241 */
@@ -270,17 +290,17 @@ typedef struct myrs_ctlr_info_s
 	unsigned char Reserved5[8];			/* Bytes 244-251 */
 	unsigned short ExecutionMemorySpeedMHz;		/* Bytes 252-253 */
 	unsigned char ExecutionMemoryDataWidthBits;	/* Byte 254 */
-	DAC960_V2_MemoryType_T ExecutionMemoryType;	/* Byte 255 */
+	myrs_mem_type ExecutionMemoryType;		/* Byte 255 */
 	unsigned char ExecutionMemoryTypeName[16];	/* Bytes 256-271 */
 	/* First CPU Type Information */
 	unsigned short FirstProcessorSpeedMHz;		/* Bytes 272-273 */
-	DAC960_V2_ProcessorType_T FirstProcessorType;	/* Byte 274 */
+	myrs_cpu_type FirstProcessorType;		/* Byte 274 */
 	unsigned char FirstProcessorCount;		/* Byte 275 */
 	unsigned char Reserved6[12];			/* Bytes 276-287 */
 	unsigned char FirstProcessorName[16];		/* Bytes 288-303 */
 	/* Second CPU Type Information */
 	unsigned short SecondProcessorSpeedMHz;		/* Bytes 304-305 */
-	DAC960_V2_ProcessorType_T SecondProcessorType;	/* Byte 306 */
+	myrs_cpu_type SecondProcessorType;		/* Byte 306 */
 	unsigned char SecondProcessorCount;		/* Byte 307 */
 	unsigned char Reserved7[12];			/* Bytes 308-319 */
 	unsigned char SecondProcessorName[16];		/* Bytes 320-335 */
@@ -408,7 +428,7 @@ typedef enum {
 	DAC960_V2_StripeSize_512k =	0xb,
 	DAC960_V2_StripeSize_1m =	0xc,
 } __attribute__ ((packed))
-DAC960_V2_StripeSize_T;
+myrs_stripe_size;
 
 typedef enum {
 	DAC960_V2_Cacheline_ZERO =	0x0,	/* caching cannot be enabled */
@@ -421,7 +441,7 @@ typedef enum {
 	DAC960_V2_Cacheline_32k =	0x7,
 	DAC960_V2_Cacheline_64k =	0x8,
 } __attribute__ ((packed))
-DAC960_V2_CachelineSize_T;
+myrs_cacheline_size;
 
 /*
   Define the DAC960 V2 Firmware Get Logical Device Info reply structure.
@@ -435,8 +455,8 @@ typedef struct myrs_ldev_info_s
 	unsigned char LogicalUnit;			/* Byte 3 */
 	myrs_devstate State;				/* Byte 4 */
 	unsigned char RAIDLevel;			/* Byte 5 */
-	unsigned char StripeSize;			/* Byte 6 */
-	unsigned char CacheLineSize;			/* Byte 7 */
+	myrs_stripe_size StripeSize;			/* Byte 6 */
+	myrs_cacheline_size CacheLineSize;		/* Byte 7 */
 	struct {
 		enum {
 			DAC960_V2_ReadCacheDisabled =		0x0,
@@ -925,17 +945,6 @@ typedef union myrs_cmd_mbox_s
 		myrs_sgl dma_addr;			/* Bytes 32-63 */
 	} DeviceOperation;
 } myrs_cmd_mbox;
-
-/*
-  Define the User Mode DAC960_IOCTL_V2_GET_HEALTH_STATUS request structure.
-*/
-
-typedef struct DAC960_V2_GetHealthStatus
-{
-	unsigned char ControllerNumber;
-	myrs_fwstat __user *HealthStatusBuffer;
-}
-DAC960_V2_GetHealthStatus_T;
 
 
 /*
