@@ -248,29 +248,29 @@ typedef struct DAC960_V1_Enquiry2
 			DAC960_V1_PCI_Controller =		0x03,
 			DAC960_V1_SCSItoSCSI_Controller =	0x08
 		} __attribute__ ((packed)) ProductFamily;	/* Byte 3 */
-	} HardwareID;						/* Bytes 0-3 */
+	} hw;						/* Bytes 0-3 */
 	/* MajorVersion.MinorVersion-FirmwareType-TurnID */
 	struct {
 		unsigned char MajorVersion;			/* Byte 4 */
 		unsigned char MinorVersion;			/* Byte 5 */
 		unsigned char TurnID;				/* Byte 6 */
 		char FirmwareType;				/* Byte 7 */
-	} FirmwareID;						/* Bytes 4-7 */
+	} fw;						/* Bytes 4-7 */
 	unsigned char :8;					/* Byte 8 */
 	unsigned int :24;					/* Bytes 9-11 */
-	unsigned char ConfiguredChannels;			/* Byte 12 */
-	unsigned char ActualChannels;				/* Byte 13 */
-	unsigned char MaxTargets;				/* Byte 14 */
-	unsigned char MaxTags;					/* Byte 15 */
-	unsigned char MaxLogicalDrives;				/* Byte 16 */
-	unsigned char MaxArms;					/* Byte 17 */
-	unsigned char MaxSpans;					/* Byte 18 */
+	unsigned char cfg_chan;			/* Byte 12 */
+	unsigned char cur_chan;				/* Byte 13 */
+	unsigned char max_targets;				/* Byte 14 */
+	unsigned char max_tcq;					/* Byte 15 */
+	unsigned char max_ldev;				/* Byte 16 */
+	unsigned char max_arms;					/* Byte 17 */
+	unsigned char max_spans;					/* Byte 18 */
 	unsigned char :8;					/* Byte 19 */
 	unsigned int :32;					/* Bytes 20-23 */
-	unsigned int MemorySize;				/* Bytes 24-27 */
-	unsigned int CacheSize;					/* Bytes 28-31 */
-	unsigned int FlashMemorySize;				/* Bytes 32-35 */
-	unsigned int NonVolatileMemorySize;			/* Bytes 36-39 */
+	unsigned int mem_size;				/* Bytes 24-27 */
+	unsigned int cache_size;					/* Bytes 28-31 */
+	unsigned int flash_mem_size;				/* Bytes 32-35 */
+	unsigned int nv_mem_size;			/* Bytes 36-39 */
 	struct {
 		enum {
 			DAC960_V1_RamType_DRAM =		0x0,
@@ -287,7 +287,7 @@ typedef struct DAC960_V1_Enquiry2
 		bool FastPageMode:1;				/* Byte 40 Bit 6 */
 		bool LowPowerMemory:1;				/* Byte 40 Bit 7 */
 		unsigned char :8;				/* Bytes 41 */
-	} MemoryType;
+	} mem_type;
 	unsigned short ClockSpeed;				/* Bytes 42-43 */
 	unsigned short MemorySpeed;				/* Bytes 44-45 */
 	unsigned short HardwareSpeed;				/* Bytes 46-47 */
@@ -296,12 +296,12 @@ typedef struct DAC960_V1_Enquiry2
 	unsigned char :8;					/* Byte 56 */
 	unsigned char :8;					/* Byte 57 */
 	unsigned short :16;					/* Bytes 58-59 */
-	unsigned short MaxCommands;				/* Bytes 60-61 */
-	unsigned short MaxScatterGatherEntries;			/* Bytes 62-63 */
-	unsigned short MaxDriveCommands;			/* Bytes 64-65 */
-	unsigned short MaxIODescriptors;			/* Bytes 66-67 */
-	unsigned short MaxCombinedSectors;			/* Bytes 68-69 */
-	unsigned char Latency;					/* Byte 70 */
+	unsigned short max_cmds;				/* Bytes 60-61 */
+	unsigned short max_sge;			/* Bytes 62-63 */
+	unsigned short max_drv_cmds;			/* Bytes 64-65 */
+	unsigned short max_io_desc;			/* Bytes 66-67 */
+	unsigned short max_sectors;			/* Bytes 68-69 */
+	unsigned char latency;					/* Byte 70 */
 	unsigned char :8;					/* Byte 71 */
 	unsigned char SCSITimeout;				/* Byte 72 */
 	unsigned char :8;					/* Byte 73 */
@@ -314,11 +314,11 @@ typedef struct DAC960_V1_Enquiry2
 	unsigned char :8;					/* Byte 87 */
 	unsigned int :32;					/* Bytes 88-91 */
 	unsigned int :32;					/* Bytes 92-95 */
-	unsigned short PhysicalDriveBlockSize;			/* Bytes 96-97 */
-	unsigned short LogicalDriveBlockSize;			/* Bytes 98-99 */
-	unsigned short MaxBlocksPerCommand;			/* Bytes 100-101 */
-	unsigned short BlockFactor;				/* Bytes 102-103 */
-	unsigned short CacheLineSize;				/* Bytes 104-105 */
+	unsigned short pdrv_block_size;			/* Bytes 96-97 */
+	unsigned short ldev_block_size;			/* Bytes 98-99 */
+	unsigned short max_blocks_per_cmd;			/* Bytes 100-101 */
+	unsigned short block_factor;				/* Bytes 102-103 */
+	unsigned short cacheline_size;				/* Bytes 104-105 */
 	struct {
 		enum {
 			DAC960_V1_Narrow_8bit =			0x0,
@@ -335,7 +335,7 @@ typedef struct DAC960_V1_Enquiry2
 	} SCSICapability;
 	unsigned char :8;					/* Byte 107 */
 	unsigned int :32;					/* Bytes 108-111 */
-	unsigned short FirmwareBuildNumber;			/* Bytes 112-113 */
+	unsigned short fw_build;			/* Bytes 112-113 */
 	enum {
 		DAC960_V1_AEMI =				0x01,
 		DAC960_V1_OEM1 =				0x02,
@@ -351,11 +351,11 @@ typedef struct DAC960_V1_Enquiry2
 		bool ReadAhead:1;				/* Byte 116 Bit 2 */
 		bool BackgroundInitialization:1;		/* Byte 116 Bit 3 */
 		unsigned int :28;				/* Bytes 116-119 */
-	} FirmwareFeatures;
+	} fw_features;
 	unsigned int :32;					/* Bytes 120-123 */
 	unsigned int :32;					/* Bytes 124-127 */
 }
-DAC960_V1_Enquiry2_T;
+myrs_enquiry2;
 
 
 /*

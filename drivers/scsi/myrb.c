@@ -1014,8 +1014,8 @@ skip_mailboxes:
 static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
-	DAC960_V1_Enquiry2_T *Enquiry2;
-	dma_addr_t Enquiry2DMA;
+	myrs_enquiry2 *enquiry2;
+	dma_addr_t enquiry2_addr;
 	DAC960_V1_Config2_T *Config2;
 	dma_addr_t Config2DMA;
 	struct Scsi_Host *shost = c->host;
@@ -1023,11 +1023,11 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	unsigned short status;
 	int ret = -ENODEV, memsize;
 
-	Enquiry2 = pci_zalloc_consistent(pdev, sizeof(DAC960_V1_Enquiry2_T),
-					 &Enquiry2DMA);
-	if (!Enquiry2) {
+	enquiry2 = dma_alloc_coherent(&pdev->dev, sizeof(myrs_enquiry2),
+				      &enquiry2_addr, GFP_KERNEL);
+	if (dma_mapping_error(&pdev->dev, enquiry2_addr)) {
 		shost_printk(KERN_ERR, c->host,
-			     "Failed to allocated V1 Enquiry2 memory\n");
+			     "Failed to allocate V1 enquiry2 memory\n");
 		return -ENOMEM;
 	}
 	Config2 = pci_zalloc_consistent(pdev, sizeof(DAC960_V1_Config2_T),
@@ -1035,8 +1035,8 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	if (!Config2) {
 		shost_printk(KERN_ERR, c->host,
 			     "Failed to allocate V1 Config2 memory\n");
-		pci_free_consistent(pdev, sizeof(DAC960_V1_Enquiry2_T),
-				    Enquiry2, Enquiry2DMA);
+		dma_free_coherent(&pdev->dev, sizeof(myrs_enquiry2),
+				  enquiry2, enquiry2_addr);
 		return -ENOMEM;
 	}
 	mutex_lock(&cb->dma_mutex);
@@ -1048,7 +1048,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 		goto out;
 	}
 
-	status = myrb_exec_type3(cb, DAC960_V1_Enquiry2, Enquiry2DMA);
+	status = myrb_exec_type3(cb, DAC960_V1_Enquiry2, enquiry2_addr);
 	if (status != DAC960_V1_NormalCompletion) {
 		shost_printk(KERN_WARNING, c->host,
 			     "Failed to issue V1 Enquiry2\n");
@@ -1072,9 +1072,9 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	/*
 	  Initialize the Controller Model Name and Full Model Name fields.
 	*/
-	switch (Enquiry2->HardwareID.SubModel) {
+	switch (enquiry2->hw.SubModel) {
 	case DAC960_V1_P_PD_PU:
-		if (Enquiry2->SCSICapability.BusSpeed == DAC960_V1_Ultra)
+		if (enquiry2->SCSICapability.BusSpeed == DAC960_V1_Ultra)
 			strcpy(c->ModelName, "DAC960PU");
 		else
 			strcpy(c->ModelName, "DAC960PD");
@@ -1109,7 +1109,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	default:
 		shost_printk(KERN_WARNING, c->host,
 			     "Unknown Model %X\n",
-			     Enquiry2->HardwareID.SubModel);
+			     enquiry2->hw.SubModel);
 		goto out;
 	}
 	strcpy(c->FullModelName, "DAC960 ");
@@ -1143,19 +1143,17 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 # define FIRMWARE_27X	"2.73"
 #endif
 
-	if (Enquiry2->FirmwareID.MajorVersion == 0) {
-		Enquiry2->FirmwareID.MajorVersion =
-			cb->enquiry->fw_major_version;
-		Enquiry2->FirmwareID.MinorVersion =
-			cb->enquiry->fw_minor_version;
-		Enquiry2->FirmwareID.FirmwareType = '0';
-		Enquiry2->FirmwareID.TurnID = 0;
+	if (enquiry2->fw.MajorVersion == 0) {
+		enquiry2->fw.MajorVersion = cb->enquiry->fw_major_version;
+		enquiry2->fw.MinorVersion = cb->enquiry->fw_minor_version;
+		enquiry2->fw.FirmwareType = '0';
+		enquiry2->fw.TurnID = 0;
 	}
 	sprintf(c->FirmwareVersion, "%d.%02d-%c-%02d",
-		Enquiry2->FirmwareID.MajorVersion,
-		Enquiry2->FirmwareID.MinorVersion,
-		Enquiry2->FirmwareID.FirmwareType,
-		Enquiry2->FirmwareID.TurnID);
+		enquiry2->fw.MajorVersion,
+		enquiry2->fw.MinorVersion,
+		enquiry2->fw.FirmwareType,
+		enquiry2->fw.TurnID);
 	if (!((c->FirmwareVersion[0] == '5' &&
 	       strcmp(c->FirmwareVersion, "5.06") >= 0) ||
 	      (c->FirmwareVersion[0] == '4' &&
@@ -1173,7 +1171,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	  Initialize the c Channels, Targets, Memory Size, and SAF-TE
 	  Enclosure Management Enabled fields.
 	*/
-	switch (Enquiry2->HardwareID.Model) {
+	switch (enquiry2->hw.Model) {
 	case DAC960_V1_FiveChannelBoard:
 		c->PhysicalChannelMax = 5;
 		break;
@@ -1185,29 +1183,29 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 		c->PhysicalChannelMax = 2;
 		break;
 	default:
-		c->PhysicalChannelMax = Enquiry2->ActualChannels;
+		c->PhysicalChannelMax = enquiry2->cfg_chan;
 		break;
 	}
-	c->PhysicalChannelCount = Enquiry2->ActualChannels;
+	c->PhysicalChannelCount = enquiry2->cur_chan;
 	c->LogicalChannelCount = 1;
 	c->LogicalChannelMax = 1;
-	if (Enquiry2->SCSICapability.BusWidth == DAC960_V1_Wide_32bit)
+	if (enquiry2->SCSICapability.BusWidth == DAC960_V1_Wide_32bit)
 		cb->BusWidth = 32;
-	else if (Enquiry2->SCSICapability.BusWidth == DAC960_V1_Wide_16bit)
+	else if (enquiry2->SCSICapability.BusWidth == DAC960_V1_Wide_16bit)
 		cb->BusWidth = 16;
 	else
 		cb->BusWidth = 8;
-	cb->LogicalBlockSize = Enquiry2->LogicalDriveBlockSize;
+	cb->LogicalBlockSize = enquiry2->ldev_block_size;
 	shost->max_channel = c->PhysicalChannelCount + c->LogicalChannelCount;
-	shost->max_id = Enquiry2->MaxTargets;
-	if (Enquiry2->MaxLogicalDrives > shost->max_id) {
+	shost->max_id = enquiry2->max_targets;
+	if (enquiry2->max_ldev > shost->max_id) {
 		int channels;
 
-		channels = Enquiry2->MaxLogicalDrives / shost->max_id;
+		channels = enquiry2->max_ldev / shost->max_id;
 		c->LogicalChannelCount = c->LogicalChannelMax = channels;
 	}
-	memsize = Enquiry2->MemorySize >> 20;
-	cb->safte_enabled = (Enquiry2->FaultManagementType == DAC960_V1_SAFTE);
+	memsize = enquiry2->mem_size >> 20;
+	cb->safte_enabled = (enquiry2->FaultManagementType == DAC960_V1_SAFTE);
 	/*
 	  Initialize the Controller Queue Depth, Driver Queue Depth, Logical Drive
 	  Count, Maximum Blocks per Command, Controller Scatter/Gather Limit, and
@@ -1217,15 +1215,15 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	*/
 	shost->can_queue = cb->enquiry->max_tcq;
 	if (shost->can_queue < 3)
-		shost->can_queue = Enquiry2->MaxCommands;
+		shost->can_queue = enquiry2->max_cmds;
 	if (shost->can_queue < 3)
 		/* Play safe and disable TCQ */
 		shost->can_queue = 1;
 
 	if (shost->can_queue > DAC960_MaxDriverQueueDepth)
 		shost->can_queue = DAC960_MaxDriverQueueDepth;
-	shost->max_sectors = Enquiry2->MaxBlocksPerCommand;
-	shost->sg_tablesize = Enquiry2->MaxScatterGatherEntries;
+	shost->max_sectors = enquiry2->max_sectors;
+	shost->sg_tablesize = enquiry2->max_sge;
 	if (shost->sg_tablesize > DAC960_V1_ScatterGatherLimit)
 		shost->sg_tablesize = DAC960_V1_ScatterGatherLimit;
 	/*
@@ -1267,8 +1265,8 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	ret = 0;
 
 out:
-	pci_free_consistent(pdev, sizeof(DAC960_V1_Enquiry2_T),
-			    Enquiry2, Enquiry2DMA);
+	dma_free_coherent(&pdev->dev, sizeof(myrs_enquiry2),
+			    enquiry2, enquiry2_addr);
 	pci_free_consistent(pdev, sizeof(DAC960_V1_Config2_T),
 			    Config2, Config2DMA);
 
