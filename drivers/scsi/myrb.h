@@ -163,20 +163,20 @@ myrb_cmd_opcode;
   Define the DAC960 V1 Firmware Enquiry Command reply structure.
 */
 
-typedef struct DAC960_V1_Enquiry
+typedef struct myrb_enquiry_s
 {
-	unsigned char NumberOfLogicalDrives;			/* Byte 0 */
-	unsigned int :24;					/* Bytes 1-3 */
-	unsigned int LogicalDriveSizes[32];			/* Bytes 4-131 */
-	unsigned short FlashAge;				/* Bytes 132-133 */
+	unsigned char ldev_count;			/* Byte 0 */
+	unsigned int rsvd1:24;				/* Bytes 1-3 */
+	unsigned int ldev_sizes[32];			/* Bytes 4-131 */
+	unsigned short flash_age;			/* Bytes 132-133 */
 	struct {
-		bool DeferredWriteError:1;				/* Byte 134 Bit 0 */
-		bool BatteryLow:1;					/* Byte 134 Bit 1 */
-		unsigned char :6;					/* Byte 134 Bits 2-7 */
-	} StatusFlags;
-	unsigned char :8;					/* Byte 135 */
-	unsigned char MinorFirmwareVersion;			/* Byte 136 */
-	unsigned char MajorFirmwareVersion;			/* Byte 137 */
+		bool deferred:1;			/* Byte 134 Bit 0 */
+		bool low_bat:1;				/* Byte 134 Bit 1 */
+		unsigned char rsvd2:6;			/* Byte 134 Bits 2-7 */
+	} status;
+	unsigned char rsvd3:8;				/* Byte 135 */
+	unsigned char fw_minor_version;			/* Byte 136 */
+	unsigned char fw_major_version;			/* Byte 137 */
 	enum {
 		DAC960_V1_NoStandbyRebuildOrCheckInProgress =		    0x00,
 		DAC960_V1_StandbyRebuildInProgress =			    0x01,
@@ -187,35 +187,34 @@ typedef struct DAC960_V1_Enquiry
 		DAC960_V1_BackgroundRebuildOrCheckFailed_LogicalDriveFailed =   0xF1,
 		DAC960_V1_BackgroundRebuildOrCheckFailed_OtherCauses =	    0xF2,
 		DAC960_V1_BackgroundRebuildOrCheckSuccessfullyTerminated =	    0xF3
-	} __attribute__ ((packed)) RebuildFlag;		/* Byte 138 */
-	unsigned char MaxCommands;				/* Byte 139 */
-	unsigned char OfflineLogicalDriveCount;		/* Byte 140 */
-	unsigned char :8;					/* Byte 141 */
-	unsigned short EventLogSequenceNumber;		/* Bytes 142-143 */
-	unsigned char CriticalLogicalDriveCount;		/* Byte 144 */
-	unsigned int :24;					/* Bytes 145-147 */
-	unsigned char DeadDriveCount;				/* Byte 148 */
-	unsigned char :8;					/* Byte 149 */
-	unsigned char RebuildCount;				/* Byte 150 */
+	} __attribute__ ((packed)) rbld;		/* Byte 138 */
+	unsigned char max_tcq;				/* Byte 139 */
+	unsigned char ldev_offline;			/* Byte 140 */
+	unsigned char rsvd4:8;				/* Byte 141 */
+	unsigned short ev_seq;				/* Bytes 142-143 */
+	unsigned char ldev_critical;			/* Byte 144 */
+	unsigned int rsvd5:24;				/* Bytes 145-147 */
+	unsigned char pdev_dead;			/* Byte 148 */
+	unsigned char rsvd6:8;				/* Byte 149 */
+	unsigned char rbld_count;			/* Byte 150 */
 	struct {
-		unsigned char :3;					/* Byte 151 Bits 0-2 */
-		bool BatteryBackupUnitPresent:1;			/* Byte 151 Bit 3 */
-		unsigned char :3;					/* Byte 151 Bits 4-6 */
-		unsigned char :1;					/* Byte 151 Bit 7 */
-	} MiscFlags;
+		unsigned char rsvd7:3;			/* Byte 151 Bits 0-2 */
+		bool bbu_present:1;			/* Byte 151 Bit 3 */
+		unsigned char rsvd8:4;			/* Byte 151 Bits 4-7 */
+	} misc;
 	struct {
-		unsigned char TargetID;
-		unsigned char Channel;
-	} DeadDrives[21];					/* Bytes 152-194 */
-	unsigned char Reserved[62];				/* Bytes 195-255 */
+		unsigned char target;
+		unsigned char channel;
+	} dead_drives[21];				/* Bytes 152-194 */
+	unsigned char rsvd9[62];			/* Bytes 195-255 */
 }
 __attribute__ ((packed))
 myrb_enquiry;
 
 #define DAC960_V1_ControllerIsRebuilding(c) \
-	((c)->Enquiry.RebuildFlag == DAC960_V1_BackgroundRebuildInProgress)
+	((c)->enquiry->rbld == DAC960_V1_BackgroundRebuildInProgress)
 #define DAC960_V1_ControllerConsistencyCheck(c) \
-	((c)->Enquiry.RebuildFlag == DAC960_V1_BackgroundCheckInProgress)
+	((c)->enquiry->rbld == DAC960_V1_BackgroundCheckInProgress)
 
 /*
   Define the DAC960 V1 Firmware Enquiry2 Command reply structure.
@@ -841,9 +840,7 @@ typedef struct myrb_hba_s
 	myrb_cmdblk mcmd_blk;
 	struct mutex dcmd_mutex;
 
-	myrb_enquiry Enquiry;
-	myrb_enquiry *NewEnquiry;
-	dma_addr_t NewEnquiryDMA;
+	myrb_enquiry *enquiry;
 
 	myrb_error_table *err_table;
 	dma_addr_t err_table_addr;

@@ -437,7 +437,7 @@ static void DAC960_V1_MonitorGetErrorTable(myrb_hba *cb)
 static unsigned short DAC960_V1_GetLogicalDriveInfo(myrb_hba *cb)
 {
 	unsigned short status;
-	int ldev_num, ldev_cnt = cb->common.LogicalDriveCount;
+	int ldev_num, ldev_cnt = cb->enquiry->ldev_count;
 	int pdev_cnt = cb->common.PhysicalChannelCount;
 	struct Scsi_Host *shost = cb->common.host;
 
@@ -661,83 +661,81 @@ static void myrb_bgi_control(myrb_hba *cb)
 }
 
 /*
-  DAC960_V1_ConsistencyCheckProgress executes a DAC960 V1 Firmware Controller
+  myrb_hba_enquiry executes a DAC960 V1 Firmware Controller
   Type 3 Command and waits for completion.
 */
 
-static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
+static unsigned short myrb_hba_enquiry(myrb_hba *cb)
 {
 	myr_hba *c = &cb->common;
+	myrb_enquiry old;
+	dma_addr_t enquiry_addr;
 	unsigned short status;
 
-	status = myrb_exec_type3(cb, DAC960_V1_Enquiry, cb->NewEnquiryDMA);
+	memcpy(&old, cb->enquiry, sizeof(myrb_enquiry));
+
+	enquiry_addr = dma_map_single(&c->pdev->dev, cb->enquiry,
+				      sizeof(myrb_enquiry), DMA_FROM_DEVICE);
+	if (dma_mapping_error(&c->pdev->dev, enquiry_addr))
+		return DAC960_V1_SubsystemFailed;
+
+	status = myrb_exec_type3(cb, DAC960_V1_Enquiry, enquiry_addr);
 	if (status == DAC960_V1_NormalCompletion) {
-		myrb_enquiry *old = &cb->Enquiry;
-		myrb_enquiry *new = cb->NewEnquiry;
-		if (new->NumberOfLogicalDrives > c->LogicalDriveCount) {
-			int ldev_num = c->LogicalDriveCount - 1;
-			while (++ldev_num < new->NumberOfLogicalDrives)
+		myrb_enquiry *new = cb->enquiry;
+		if (new->ldev_count > old.ldev_count) {
+			int ldev_num = old.ldev_count - 1;
+			while (++ldev_num < new->ldev_count)
 				shost_printk(KERN_CRIT, c->host,
 					"Logical Drive %d Now Exists\n",
 					 ldev_num);
-			c->LogicalDriveCount = new->NumberOfLogicalDrives;
 		}
-		if (new->NumberOfLogicalDrives < c->LogicalDriveCount) {
-			int ldev_num = new->NumberOfLogicalDrives - 1;
-			while (++ldev_num < c->LogicalDriveCount)
+		if (new->ldev_count < old.ldev_count) {
+			int ldev_num = new->ldev_count - 1;
+			while (++ldev_num < old.ldev_count)
 				shost_printk(KERN_CRIT, c->host,
 					 "Logical Drive %d No Longer Exists\n",
 					 ldev_num);
-			c->LogicalDriveCount = new->NumberOfLogicalDrives;
 		}
-		if (new->StatusFlags.DeferredWriteError !=
-		    old->StatusFlags.DeferredWriteError)
+		if (new->status.deferred != old.status.deferred)
 			shost_printk(KERN_CRIT, c->host,
 				 "Deferred Write Error Flag is now %s\n",
-				 (new->StatusFlags.DeferredWriteError
-				  ? "TRUE" : "FALSE"));
-		if (new->EventLogSequenceNumber !=
-		    old->EventLogSequenceNumber) {
-			cb->new_ev_seq = new->EventLogSequenceNumber;
+				 (new->status.deferred ? "TRUE" : "FALSE"));
+		if (new->ev_seq != old.ev_seq) {
+			cb->new_ev_seq = new->ev_seq;
 			cb->need_err_info = true;
 			shost_printk(KERN_INFO, c->host,
 				     "Event log %d/%d (%d/%d) available\n",
 				     cb->old_ev_seq, cb->new_ev_seq,
-				     old->EventLogSequenceNumber,
-				     new->EventLogSequenceNumber);
+				     old.ev_seq, new->ev_seq);
 		}
-		if ((new->CriticalLogicalDriveCount > 0 ||
-		     new->CriticalLogicalDriveCount !=
-		     old->CriticalLogicalDriveCount) ||
-		    (new->OfflineLogicalDriveCount > 0 ||
-		     new->OfflineLogicalDriveCount !=
-		     old->OfflineLogicalDriveCount) ||
-		    (new->NumberOfLogicalDrives !=
-		     old->NumberOfLogicalDrives)) {
+		if ((new->ldev_critical > 0 ||
+		     new->ldev_critical != old.ldev_critical) ||
+		    (new->ldev_offline > 0 ||
+		     new->ldev_offline != old.ldev_offline) ||
+		    (new->ldev_count != old.ldev_count)) {
 			shost_printk(KERN_INFO, c->host,
 				     "Logical drive count changed (%d/%d/%d)\n",
-				     new->CriticalLogicalDriveCount,
-				     new->OfflineLogicalDriveCount,
-				     new->NumberOfLogicalDrives);
+				     new->ldev_critical,
+				     new->ldev_offline,
+				     new->ldev_count);
 			cb->need_ldev_info = true;
 		}
-		if ((new->DeadDriveCount > 0 ||
-		     new->DeadDriveCount != old->DeadDriveCount) ||
+		if ((new->pdev_dead > 0 ||
+		     new->pdev_dead != old.pdev_dead) ||
 		    time_after_eq(jiffies, cb->secondary_monitor_time
 				  + DAC960_SecondaryMonitoringInterval)) {
 			cb->need_bgi_status = cb->bgi_status_supported;
 			cb->secondary_monitor_time = jiffies;
 		}
-		if (new->RebuildFlag == DAC960_V1_StandbyRebuildInProgress ||
-		    new->RebuildFlag == DAC960_V1_BackgroundRebuildInProgress ||
-		    old->RebuildFlag == DAC960_V1_StandbyRebuildInProgress ||
-		    old->RebuildFlag == DAC960_V1_BackgroundRebuildInProgress) {
+		if (new->rbld == DAC960_V1_StandbyRebuildInProgress ||
+		    new->rbld == DAC960_V1_BackgroundRebuildInProgress ||
+		    old.rbld == DAC960_V1_StandbyRebuildInProgress ||
+		    old.rbld == DAC960_V1_BackgroundRebuildInProgress) {
 			cb->need_rbld = true;
-			cb->rbld_first = (new->CriticalLogicalDriveCount <
-					  old->CriticalLogicalDriveCount);
+			cb->rbld_first = (new->ldev_critical < old.ldev_critical);
 		}
-		if (old->RebuildFlag == DAC960_V1_BackgroundCheckInProgress)
-			switch (new->RebuildFlag) {
+		if (old.rbld == DAC960_V1_BackgroundCheckInProgress)
+			switch (new->rbld) {
 			case DAC960_V1_NoStandbyRebuildOrCheckInProgress:
 				shost_printk(KERN_INFO, c->host,
 					 "Consistency Check Completed Successfully\n");
@@ -771,10 +769,9 @@ static unsigned short DAC960_V1_NewEnquiry(myrb_hba *cb)
 					 "Consistency Check Successfully Terminated\n");
 				break;
 			}
-		else if (new->RebuildFlag == DAC960_V1_BackgroundCheckInProgress)
+		else if (new->rbld == DAC960_V1_BackgroundCheckInProgress)
 			cb->need_cc_status = true;
 
-		memcpy(old, new, sizeof(myrb_enquiry));
 	}
 	return status;
 }
@@ -850,7 +847,7 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 		StatusMailboxesSize = DAC960_V1_StatusMailboxCount * sizeof(myrb_stat_mbox);
 	}
 	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
-		sizeof(myrb_dcdb) + sizeof(myrb_enquiry) +
+		sizeof(myrb_dcdb) +
 		sizeof(myrb_error_table) + sizeof(myrb_log_entry) +
 		sizeof(myrb_rbld_progress) +
 		sizeof(myrb_ldev_info_arr) +
@@ -888,8 +885,11 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 	cb->NextStatusMailbox = cb->FirstStatusMailbox;
 
 skip_mailboxes:
-	cb->NewEnquiry = slice_dma_loaf(DmaPages, sizeof(myrb_enquiry),
-					&cb->NewEnquiryDMA);
+	cb->enquiry = kzalloc(sizeof(myrb_enquiry), GFP_KERNEL | GFP_DMA);
+	if (!cb->enquiry) {
+		/* XXX error handling ! */
+		return false;
+	}
 
 	cb->err_table = slice_dma_loaf(DmaPages, sizeof(myrb_error_table),
 				       &cb->err_table_addr);
@@ -1040,7 +1040,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 		return -ENOMEM;
 	}
 	mutex_lock(&cb->dma_mutex);
-	status = DAC960_V1_NewEnquiry(cb);
+	status = myrb_hba_enquiry(cb);
 	mutex_unlock(&cb->dma_mutex);
 	if (status != DAC960_V1_NormalCompletion) {
 		shost_printk(KERN_WARNING, c->host,
@@ -1145,9 +1145,9 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 
 	if (Enquiry2->FirmwareID.MajorVersion == 0) {
 		Enquiry2->FirmwareID.MajorVersion =
-			cb->Enquiry.MajorFirmwareVersion;
+			cb->enquiry->fw_major_version;
 		Enquiry2->FirmwareID.MinorVersion =
-			cb->Enquiry.MinorFirmwareVersion;
+			cb->enquiry->fw_minor_version;
 		Enquiry2->FirmwareID.FirmwareType = '0';
 		Enquiry2->FirmwareID.TurnID = 0;
 	}
@@ -1215,7 +1215,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	  less than the Controller Queue Depth to allow for an automatic drive
 	  rebuild operation.
 	*/
-	shost->can_queue = cb->Enquiry.MaxCommands;
+	shost->can_queue = cb->enquiry->max_tcq;
 	if (shost->can_queue < 3)
 		shost->can_queue = Enquiry2->MaxCommands;
 	if (shost->can_queue < 3)
@@ -1224,7 +1224,6 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 
 	if (shost->can_queue > DAC960_MaxDriverQueueDepth)
 		shost->can_queue = DAC960_MaxDriverQueueDepth;
-	c->LogicalDriveCount = cb->Enquiry.NumberOfLogicalDrives;
 	shost->max_sectors = Enquiry2->MaxBlocksPerCommand;
 	shost->sg_tablesize = Enquiry2->MaxScatterGatherEntries;
 	if (shost->sg_tablesize > DAC960_V1_ScatterGatherLimit)
@@ -1312,7 +1311,7 @@ out:
 	shost_printk(KERN_INFO, c->host,
 		     "  Logical: %d/%d channels, %d disks\n",
 		     c->LogicalChannelCount, c->LogicalChannelMax,
-		     c->LogicalDriveCount);
+		     cb->enquiry->ldev_count);
 
 	return ret;
 }
@@ -1974,12 +1973,11 @@ static ssize_t myrb_show_dev_rebuild(struct device *dev,
 		return snprintf(buf, 32, "not %s\n",
 				rebuild ? "rebuilding" : "checking");
 
-	if (cb->Enquiry.RebuildFlag == DAC960_V1_BackgroundCheckInProgress &&
+	if (cb->enquiry->rbld == DAC960_V1_BackgroundCheckInProgress &&
 	    rebuild)
 		return snprintf(buf, 32, "not rebuilding\n");
 	else if (!rebuild &&
-		 cb->Enquiry.RebuildFlag ==
-		 DAC960_V1_BackgroundRebuildInProgress)
+		 cb->enquiry->rbld == DAC960_V1_BackgroundRebuildInProgress)
 		return snprintf(buf, 32, "not checking\n");
 
 	return snprintf(buf, 32, "%s block %zu of %zu\n",
@@ -2424,7 +2422,7 @@ static void myrb_monitor(struct work_struct *work)
 	} else {
 		dev_dbg(&shost->shost_gendev, "new enquiry\n");
 		mutex_lock(&cb->dma_mutex);
-		DAC960_V1_NewEnquiry(cb);
+		myrb_hba_enquiry(cb);
 		mutex_unlock(&cb->dma_mutex);
 		if ((cb->new_ev_seq - cb->old_ev_seq > 0) ||
 		    cb->need_err_info || cb->need_rbld ||
@@ -2971,7 +2969,7 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 		switch (op) {
 		case DAC960_V1_Enquiry_Old:
 			mbox->Common.opcode = DAC960_V1_Enquiry;
-			DAC960_P_To_PD_TranslateEnquiry(cb->NewEnquiry);
+			DAC960_P_To_PD_TranslateEnquiry(cb->enquiry);
 			break;
 		case DAC960_V1_Read_Old:
 			mbox->Common.opcode = DAC960_V1_Read;

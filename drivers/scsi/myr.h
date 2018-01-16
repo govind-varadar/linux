@@ -200,7 +200,6 @@ typedef struct myr_hba_s
 	unsigned char FullModelName[28];
 	unsigned char FirmwareVersion[12];
 	unsigned char IRQ_Channel;
-	unsigned char LogicalDriveCount;
 	unsigned char PhysicalChannelCount;
 	unsigned char PhysicalChannelMax;
 	unsigned char LogicalChannelCount;
