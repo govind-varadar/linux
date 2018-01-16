@@ -625,45 +625,8 @@ static bool myrs_enable_mmio_mbox(myrs_hba *cs)
 		cs->cmd_mbox_addr;
 	mbox->SetMemoryMailbox.FirstStatusMailboxBusAddress =
 		cs->stat_mbox_addr;
-	switch (cs->hwtype) {
-	case DAC960_GEM_Controller:
-		while (DAC960_GEM_HardwareMailboxFullP(base))
-			udelay(1);
-		DAC960_GEM_WriteHardwareMailbox(base, mbox_addr);
-		DAC960_GEM_HardwareMailboxNewCommand(base);
-		while (!DAC960_GEM_HardwareMailboxStatusAvailableP(base))
-			udelay(1);
-		status = DAC960_GEM_ReadCommandStatus(base);
-		DAC960_GEM_AcknowledgeHardwareMailboxInterrupt(base);
-		DAC960_GEM_AcknowledgeHardwareMailboxStatus(base);
-		break;
-	case DAC960_BA_Controller:
-		while (DAC960_BA_HardwareMailboxFullP(base))
-			udelay(1);
-		DAC960_BA_WriteHardwareMailbox(base, mbox_addr);
-		DAC960_BA_HardwareMailboxNewCommand(base);
-		while (!DAC960_BA_HardwareMailboxStatusAvailableP(base))
-			udelay(1);
-		status = DAC960_BA_ReadCommandStatus(base);
-		DAC960_BA_AcknowledgeHardwareMailboxInterrupt(base);
-		DAC960_BA_AcknowledgeHardwareMailboxStatus(base);
-		break;
-	case DAC960_LP_Controller:
-		while (DAC960_LP_HardwareMailboxFullP(base))
-			udelay(1);
-		DAC960_LP_WriteHardwareMailbox(base, mbox_addr);
-		DAC960_LP_HardwareMailboxNewCommand(base);
-		while (!DAC960_LP_HardwareMailboxStatusAvailableP(base))
-			udelay(1);
-		status = DAC960_LP_ReadCommandStatus(base);
-		DAC960_LP_AcknowledgeHardwareMailboxInterrupt(base);
-		DAC960_LP_AcknowledgeHardwareMailboxStatus(base);
-		break;
-	default:
-		dev_err(&pdev->dev, "Unknown Controller Type %X\n",
-			cs->hwtype);
-		return false;
-	}
+	status = cs->enable_mbox(base, mbox_addr);
+
 out_free:
 	dma_free_coherent(&pdev->dev, sizeof(myrs_cmd_mbox),
 			  mbox, mbox_addr);
@@ -2430,7 +2393,6 @@ static myrs_hba *myrs_detect(struct pci_dev *pdev,
 		dev_err(&pdev->dev, "Unable to allocate Controller\n");
 		return NULL;
 	}
-	cs->hwtype = privdata->hw_type;
 	cs->pdev = pdev;
 
 	if (pci_enable_device(pdev))
@@ -2562,6 +2524,7 @@ static int DAC960_GEM_HardwareInit(struct pci_dev *pdev,
 		return -EAGAIN;
 	}
 	DAC960_GEM_EnableInterrupts(base);
+	cs->enable_mbox = DAC960_GEM_MailboxInit;
 	cs->write_cmd_mbox = DAC960_GEM_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_GEM_MemoryMailboxNewCommand;
 	cs->disable_intr = DAC960_GEM_DisableInterrupts;
@@ -2622,7 +2585,6 @@ static irqreturn_t DAC960_GEM_InterruptHandler(int irq,
 }
 
 struct myrs_privdata DAC960_GEM_privdata = {
-	.hw_type =		DAC960_GEM_Controller,
 	.hw_init =		DAC960_GEM_HardwareInit,
 	.irq_handler =		DAC960_GEM_InterruptHandler,
 	.io_mem_size =		DAC960_GEM_RegisterWindowSize,
@@ -2664,6 +2626,7 @@ static int DAC960_BA_HardwareInit(struct pci_dev *pdev,
 		return -EAGAIN;
 	}
 	DAC960_BA_EnableInterrupts(base);
+	cs->enable_mbox = DAC960_BA_MailboxInit;
 	cs->write_cmd_mbox = DAC960_BA_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_BA_MemoryMailboxNewCommand;
 	cs->disable_intr = DAC960_BA_DisableInterrupts;
@@ -2725,7 +2688,6 @@ static irqreturn_t DAC960_BA_InterruptHandler(int irq,
 }
 
 struct myrs_privdata DAC960_BA_privdata = {
-	.hw_type =		DAC960_BA_Controller,
 	.hw_init =		DAC960_BA_HardwareInit,
 	.irq_handler =		DAC960_BA_InterruptHandler,
 	.io_mem_size =		DAC960_BA_RegisterWindowSize,
@@ -2767,6 +2729,7 @@ static int DAC960_LP_HardwareInit(struct pci_dev *pdev,
 		return -ENODEV;
 	}
 	DAC960_LP_EnableInterrupts(base);
+	cs->enable_mbox = DAC960_LP_MailboxInit;
 	cs->write_cmd_mbox = DAC960_LP_WriteCommandMailbox;
 	cs->get_cmd_mbox = DAC960_LP_MemoryMailboxNewCommand;
 	cs->disable_intr = DAC960_LP_DisableInterrupts;
@@ -2828,7 +2791,6 @@ static irqreturn_t DAC960_LP_InterruptHandler(int irq,
 }
 
 struct myrs_privdata DAC960_LP_privdata = {
-	.hw_type =		DAC960_LP_Controller,
 	.hw_init =		DAC960_LP_HardwareInit,
 	.irq_handler =		DAC960_LP_InterruptHandler,
 	.io_mem_size =		DAC960_LP_RegisterWindowSize,

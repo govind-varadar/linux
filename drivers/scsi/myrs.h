@@ -999,6 +999,7 @@ typedef struct myrs_hba_s
 	struct pci_pool *sense_pool;
 	struct pci_pool *dcdb_pool;
 
+	unsigned char (*enable_mbox)(void __iomem *, dma_addr_t);
 	void (*write_cmd_mbox)(myrs_cmd_mbox *, myrs_cmd_mbox *);
 	void (*get_cmd_mbox)(void __iomem *);
 	void (*disable_intr)(void __iomem *);
@@ -1035,7 +1036,6 @@ typedef int (*myrs_hwinit_t)(struct pci_dev *pdev,
 			     struct myrs_hba_s *c, void __iomem *base);
 
 struct myrs_privdata {
-	DAC960_HardwareType_T	hw_type;
 	myrs_hwinit_t		hw_init;
 	irq_handler_t		irq_handler;
 	unsigned int		io_mem_size;
@@ -1348,6 +1348,24 @@ DAC960_GEM_ReadErrorStatus(void __iomem *base,
 	return true;
 }
 
+static inline unsigned char
+DAC960_GEM_MailboxInit(void __iomem *base, dma_addr_t mbox_addr)
+{
+	unsigned char status;
+
+	while (DAC960_GEM_HardwareMailboxFullP(base))
+		udelay(1);
+	DAC960_GEM_WriteHardwareMailbox(base, mbox_addr);
+	DAC960_GEM_HardwareMailboxNewCommand(base);
+	while (!DAC960_GEM_HardwareMailboxStatusAvailableP(base))
+		udelay(1);
+	status = DAC960_GEM_ReadCommandStatus(base);
+	DAC960_GEM_AcknowledgeHardwareMailboxInterrupt(base);
+	DAC960_GEM_AcknowledgeHardwareMailboxStatus(base);
+
+	return status;
+}
+
 /*
   Define the DAC960 BA Series Controller Interface Register Offsets.
 */
@@ -1648,6 +1666,23 @@ DAC960_BA_ReadErrorStatus(void __iomem *base,
 	return true;
 }
 
+static inline unsigned char
+DAC960_BA_MailboxInit(void __iomem *base, dma_addr_t mbox_addr)
+{
+	unsigned char status;
+
+	while (DAC960_BA_HardwareMailboxFullP(base))
+		udelay(1);
+	DAC960_BA_WriteHardwareMailbox(base, mbox_addr);
+	DAC960_BA_HardwareMailboxNewCommand(base);
+	while (!DAC960_BA_HardwareMailboxStatusAvailableP(base))
+		udelay(1);
+	status = DAC960_BA_ReadCommandStatus(base);
+	DAC960_BA_AcknowledgeHardwareMailboxInterrupt(base);
+	DAC960_BA_AcknowledgeHardwareMailboxStatus(base);
+
+	return status;
+}
 
 /*
   Define the DAC960 LP Series Controller Interface Register Offsets.
@@ -1946,6 +1981,24 @@ DAC960_LP_ReadErrorStatus(void __iomem *base,
 		readb(base + DAC960_LP_CommandMailboxBusAddressOffset + 1);
 	writeb(0xFF, base + DAC960_LP_ErrorStatusRegisterOffset);
 	return true;
+}
+
+static inline unsigned char
+DAC960_LP_MailboxInit(void __iomem *base, dma_addr_t mbox_addr)
+{
+	unsigned char status;
+
+	while (DAC960_LP_HardwareMailboxFullP(base))
+		udelay(1);
+	DAC960_LP_WriteHardwareMailbox(base, mbox_addr);
+	DAC960_LP_HardwareMailboxNewCommand(base);
+	while (!DAC960_LP_HardwareMailboxStatusAvailableP(base))
+		udelay(1);
+	status = DAC960_LP_ReadCommandStatus(base);
+	DAC960_LP_AcknowledgeHardwareMailboxInterrupt(base);
+	DAC960_LP_AcknowledgeHardwareMailboxStatus(base);
+
+	return status;
 }
 
 #endif /* _MYRS_H */
