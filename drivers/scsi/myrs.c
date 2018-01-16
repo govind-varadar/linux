@@ -1007,6 +1007,9 @@ static void myrs_log_event(myrs_hba *cs, myrs_event *ev)
 	}
 }
 
+/*
+ * SCSI sysfs interface functions
+ */
 static ssize_t myrs_show_dev_state(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -1376,6 +1379,27 @@ static DEVICE_ATTR(consistency_check, S_IRUGO | S_IWUSR,
 		   myrs_show_consistency_check,
 		   myrs_store_consistency_check);
 
+static struct device_attribute *myrs_sdev_attrs[] = {
+	&dev_attr_consistency_check,
+	&dev_attr_rebuild,
+	&dev_attr_raid_state,
+	&dev_attr_raid_level,
+	NULL,
+};
+
+static ssize_t myrs_show_ctlr_serial(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+	char serial[17];
+
+	memcpy(serial, cs->ctlr_info->ControllerSerialNumber, 16);
+	serial[16] = '\0';
+	return snprintf(buf, 16, "%s\n", serial);
+}
+static DEVICE_ATTR(serial, S_IRUGO, myrs_show_ctlr_serial, NULL);
+
 static ssize_t myrs_show_ctlr_num(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -1385,6 +1409,153 @@ static ssize_t myrs_show_ctlr_num(struct device *dev,
 	return snprintf(buf, 20, "%d\n", cs->host->host_no);
 }
 static DEVICE_ATTR(ctlr_num, S_IRUGO, myrs_show_ctlr_num, NULL);
+
+static struct myrs_cpu_type_tbl {
+	myrs_cpu_type type;
+	char *name;
+} myrs_cpu_type_names[] = {
+	{ DAC960_V2_ProcessorType_i960CA, "i960CA" },
+	{ DAC960_V2_ProcessorType_i960RD, "i960RD" },
+	{ DAC960_V2_ProcessorType_i960RN, "i960RN" },
+	{ DAC960_V2_ProcessorType_i960RP, "i960RP" },
+	{ DAC960_V2_ProcessorType_NorthBay, "NorthBay" },
+	{ DAC960_V2_ProcessorType_StrongArm, "StrongARM" },
+	{ DAC960_V2_ProcessorType_i960RM, "i960RM" },
+	{ 0xff, NULL },
+};
+
+static ssize_t myrs_show_processor(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+	struct myrs_cpu_type_tbl *tbl = myrs_cpu_type_names;
+	const char *first_processor = NULL;
+	const char *second_processor = NULL;
+	myrs_ctlr_info *info = cs->ctlr_info;
+	ssize_t ret;
+
+	if (info->FirstProcessorCount) {
+		while (tbl && tbl->name) {
+			if (tbl->type == info->FirstProcessorType) {
+				first_processor = tbl->name;
+				break;
+			}
+			tbl++;
+		}
+	}
+	if (info->SecondProcessorCount) {
+		tbl = myrs_cpu_type_names;
+		while (tbl && tbl->name) {
+			if (tbl->type == info->SecondProcessorType) {
+				second_processor = tbl->name;
+				break;
+			}
+			tbl++;
+		}
+	}
+	if (first_processor && second_processor)
+		ret = snprintf(buf, 64, "1: %s (%s, %d cpus)\n"
+			       "2: %s (%s, %d cpus)\n",
+			       info->FirstProcessorName,
+			       first_processor, info->FirstProcessorCount,
+			       info->SecondProcessorName,
+			       second_processor, info->SecondProcessorCount);
+	else if (!second_processor)
+		ret = snprintf(buf, 64, "1: %s (%s, %d cpus)\n2: absent\n",
+			       info->FirstProcessorName,
+			       first_processor, info->FirstProcessorCount );
+	else if (!first_processor)
+		ret = snprintf(buf, 64, "1: absent\n2: %s (%s, %d cpus)\n",
+			       info->SecondProcessorName,
+			       second_processor, info->SecondProcessorCount);
+	else
+		ret = snprintf(buf, 64, "1: absent\n2: absent\n");
+
+	return ret;
+}
+static DEVICE_ATTR(processor, S_IRUGO, myrs_show_processor, NULL);
+
+static ssize_t myrs_show_model_name(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 28, "%s\n", cs->model_name);
+}
+static DEVICE_ATTR(model, S_IRUGO, myrs_show_model_name, NULL);
+
+static ssize_t myrs_show_ctlr_type(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 4, "%d\n", cs->ctlr_info->ControllerType);
+}
+static DEVICE_ATTR(ctlr_type, S_IRUGO, myrs_show_ctlr_type, NULL);
+
+static ssize_t myrs_show_cache_size(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 8, "%d MB\n", cs->ctlr_info->CacheSizeMB);
+}
+static DEVICE_ATTR(cache_size, S_IRUGO, myrs_show_cache_size, NULL);
+
+static ssize_t myrs_show_firmware_version(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 16, "%d.%02d-%02d\n",
+			cs->ctlr_info->FirmwareMajorVersion,
+			cs->ctlr_info->FirmwareMinorVersion,
+			cs->ctlr_info->FirmwareTurnNumber);
+}
+static DEVICE_ATTR(firmware, S_IRUGO, myrs_show_firmware_version, NULL);
+
+static ssize_t myrs_store_discovery_command(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+	myrs_cmdblk *cmd_blk;
+	myrs_cmd_mbox *mbox;
+	unsigned char status;
+
+	mutex_lock(&cs->dcmd_mutex);
+	cmd_blk = &cs->dcmd_blk;
+	myrs_reset_cmd(cmd_blk);
+	mbox = &cmd_blk->mbox;
+	mbox->Common.opcode = DAC960_V2_IOCTL;
+	mbox->Common.id = MYRS_DCMD_TAG;
+	mbox->Common.control.DataTransferControllerToHost = true;
+	mbox->Common.control.NoAutoRequestSense = true;
+	mbox->Common.ioctl_opcode = DAC960_V2_StartDiscovery;
+	myrs_exec_cmd(cs, cmd_blk);
+	status = cmd_blk->status;
+	mutex_unlock(&cs->dcmd_mutex);
+	if (status != DAC960_V2_NormalCompletion) {
+		shost_printk(KERN_INFO, shost,
+			     "Discovery Not Initiated, status %02X\n",
+			     status);
+		return -EINVAL;
+	}
+	shost_printk(KERN_INFO, shost, "Discovery Initiated\n");
+	cs->next_evseq = 0;
+	cs->needs_update = true;
+	queue_delayed_work(cs->work_q, &cs->monitor_work, 1);
+	flush_delayed_work(&cs->monitor_work);
+	shost_printk(KERN_INFO, shost, "Discovery Completed\n");
+
+	return count;
+}
+static DEVICE_ATTR(discovery, S_IWUSR, NULL, myrs_store_discovery_command);
 
 static ssize_t myrs_store_flush_cache(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
@@ -1405,6 +1576,54 @@ static ssize_t myrs_store_flush_cache(struct device *dev,
 }
 static DEVICE_ATTR(flush_cache, S_IWUSR, NULL, myrs_store_flush_cache);
 
+static ssize_t myrs_show_suppress_enclosure_messages(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	myrs_hba *cs = (myrs_hba *)shost->hostdata;
+
+	return snprintf(buf, 3, "%d\n", cs->disable_enc_msg);
+}
+
+static ssize_t myrs_store_suppress_enclosure_messages(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct scsi_device *sdev = to_scsi_device(dev);
+	myrs_hba *cs = (myrs_hba *)sdev->host->hostdata;
+	char tmpbuf[8];
+	ssize_t len;
+	int value;
+
+	len = count > sizeof(tmpbuf) - 1 ? sizeof(tmpbuf) - 1 : count;
+	strncpy(tmpbuf, buf, len);
+	tmpbuf[len] = '\0';
+	if (sscanf(tmpbuf, "%d", &value) != 1 || value > 2)
+		return -EINVAL;
+
+	cs->disable_enc_msg = value;
+	return count;
+}
+static DEVICE_ATTR(disable_enclosure_messages, S_IRUGO | S_IWUSR,
+		   myrs_show_suppress_enclosure_messages,
+		   myrs_store_suppress_enclosure_messages);
+
+static struct device_attribute *myrs_shost_attrs[] = {
+	&dev_attr_serial,
+	&dev_attr_ctlr_num,
+	&dev_attr_processor,
+	&dev_attr_model,
+	&dev_attr_ctlr_type,
+	&dev_attr_cache_size,
+	&dev_attr_firmware,
+	&dev_attr_discovery,
+	&dev_attr_flush_cache,
+	&dev_attr_disable_enclosure_messages,
+	NULL,
+};
+
+/*
+ * SCSI midlayer interface
+ */
 int myrs_host_reset(struct scsi_cmnd *scmd)
 {
 	struct Scsi_Host *shost = scmd->device->host;
@@ -1812,219 +2031,6 @@ static void myrs_slave_destroy(struct scsi_device *sdev)
 	}
 }
 
-static struct device_attribute *myrs_sdev_attrs[] = {
-	&dev_attr_consistency_check,
-	&dev_attr_rebuild,
-	&dev_attr_raid_state,
-	&dev_attr_raid_level,
-	NULL,
-};
-
-static ssize_t myrs_show_ctlr_serial(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-	char serial[17];
-
-	memcpy(serial, cs->ctlr_info->ControllerSerialNumber, 16);
-	serial[16] = '\0';
-	return snprintf(buf, 16, "%s\n", serial);
-}
-static DEVICE_ATTR(serial, S_IRUGO, myrs_show_ctlr_serial, NULL);
-
-static ssize_t myrs_show_model_name(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-
-	return snprintf(buf, 28, "%s\n", cs->model_name);
-}
-static DEVICE_ATTR(model, S_IRUGO, myrs_show_model_name, NULL);
-
-static ssize_t myrs_show_cache_size(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-
-	return snprintf(buf, 8, "%d\n", cs->ctlr_info->CacheSizeMB);
-}
-static DEVICE_ATTR(cache_size, S_IRUGO, myrs_show_cache_size, NULL);
-
-static ssize_t myrs_show_ctlr_type(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-
-	return snprintf(buf, 4, "%d\n", cs->ctlr_info->ControllerType);
-}
-static DEVICE_ATTR(ctlr_type, S_IRUGO, myrs_show_ctlr_type, NULL);
-
-static ssize_t myrs_show_firmware_version(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-
-	return snprintf(buf, 16, "%d.%02d-%02d\n",
-			cs->ctlr_info->FirmwareMajorVersion,
-			cs->ctlr_info->FirmwareMinorVersion,
-			cs->ctlr_info->FirmwareTurnNumber);
-}
-static DEVICE_ATTR(firmware, S_IRUGO, myrs_show_firmware_version, NULL);
-
-static struct myrs_cpu_type_tbl {
-	myrs_cpu_type type;
-	char *name;
-} myrs_cpu_type_names[] = {
-	{ DAC960_V2_ProcessorType_i960CA, "i960CA" },
-	{ DAC960_V2_ProcessorType_i960RD, "i960RD" },
-	{ DAC960_V2_ProcessorType_i960RN, "i960RN" },
-	{ DAC960_V2_ProcessorType_i960RP, "i960RP" },
-	{ DAC960_V2_ProcessorType_NorthBay, "NorthBay" },
-	{ DAC960_V2_ProcessorType_StrongArm, "StrongARM" },
-	{ DAC960_V2_ProcessorType_i960RM, "i960RM" },
-	{ 0xff, NULL },
-};
-
-static ssize_t myrs_show_processor(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-	struct myrs_cpu_type_tbl *tbl = myrs_cpu_type_names;
-	const char *first_processor = NULL;
-	const char *second_processor = NULL;
-	myrs_ctlr_info *info = cs->ctlr_info;
-	ssize_t ret;
-
-	if (info->FirstProcessorCount) {
-		while (tbl && tbl->name) {
-			if (tbl->type == info->FirstProcessorType) {
-				first_processor = tbl->name;
-				break;
-			}
-			tbl++;
-		}
-	}
-	if (info->SecondProcessorCount) {
-		tbl = myrs_cpu_type_names;
-		while (tbl && tbl->name) {
-			if (tbl->type == info->SecondProcessorType) {
-				second_processor = tbl->name;
-				break;
-			}
-			tbl++;
-		}
-	}
-	if (first_processor && second_processor)
-		ret = snprintf(buf, 64, "1: %s (%s, %d cpus)\n"
-			       "2: %s (%s, %d cpus)\n",
-			       info->FirstProcessorName,
-			       first_processor, info->FirstProcessorCount,
-			       info->SecondProcessorName,
-			       second_processor, info->SecondProcessorCount);
-	else if (!second_processor)
-		ret = snprintf(buf, 64, "1: %s (%s, %d cpus)\n2: absent\n",
-			       info->FirstProcessorName,
-			       first_processor, info->FirstProcessorCount );
-	else if (!first_processor)
-		ret = snprintf(buf, 64, "1: absent\n2: %s (%s, %d cpus)\n",
-			       info->SecondProcessorName,
-			       second_processor, info->SecondProcessorCount);
-	else
-		ret = snprintf(buf, 64, "1: absent\n2: absent\n");
-
-	return ret;
-}
-static DEVICE_ATTR(processor, S_IRUGO, myrs_show_processor, NULL);
-
-static ssize_t myrs_store_discovery_command(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-	myrs_cmdblk *cmd_blk;
-	myrs_cmd_mbox *mbox;
-	unsigned char status;
-
-	mutex_lock(&cs->dcmd_mutex);
-	cmd_blk = &cs->dcmd_blk;
-	myrs_reset_cmd(cmd_blk);
-	mbox = &cmd_blk->mbox;
-	mbox->Common.opcode = DAC960_V2_IOCTL;
-	mbox->Common.id = MYRS_DCMD_TAG;
-	mbox->Common.control.DataTransferControllerToHost = true;
-	mbox->Common.control.NoAutoRequestSense = true;
-	mbox->Common.ioctl_opcode = DAC960_V2_StartDiscovery;
-	myrs_exec_cmd(cs, cmd_blk);
-	status = cmd_blk->status;
-	mutex_unlock(&cs->dcmd_mutex);
-	if (status != DAC960_V2_NormalCompletion) {
-		shost_printk(KERN_INFO, shost,
-			     "Discovery Not Initiated, status %02X\n",
-			     status);
-		return -EINVAL;
-	}
-	shost_printk(KERN_INFO, shost, "Discovery Initiated\n");
-	cs->next_evseq = 0;
-	cs->needs_update = true;
-	queue_delayed_work(cs->work_q, &cs->monitor_work, 1);
-	flush_delayed_work(&cs->monitor_work);
-	shost_printk(KERN_INFO, shost, "Discovery Completed\n");
-
-	return count;
-}
-static DEVICE_ATTR(discovery, S_IWUSR, NULL, myrs_store_discovery_command);
-
-static ssize_t myrs_show_suppress_enclosure_messages(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	struct Scsi_Host *shost = class_to_shost(dev);
-	myrs_hba *cs = (myrs_hba *)shost->hostdata;
-
-	return snprintf(buf, 3, "%d\n", cs->disable_enc_msg);
-}
-
-static ssize_t myrs_store_suppress_enclosure_messages(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct scsi_device *sdev = to_scsi_device(dev);
-	myrs_hba *cs = (myrs_hba *)sdev->host->hostdata;
-	char tmpbuf[8];
-	ssize_t len;
-	int value;
-
-	len = count > sizeof(tmpbuf) - 1 ? sizeof(tmpbuf) - 1 : count;
-	strncpy(tmpbuf, buf, len);
-	tmpbuf[len] = '\0';
-	if (sscanf(tmpbuf, "%d", &value) != 1 || value > 2)
-		return -EINVAL;
-
-	cs->disable_enc_msg = value;
-	return count;
-}
-static DEVICE_ATTR(disable_enclosure_messages, S_IRUGO | S_IWUSR,
-		   myrs_show_suppress_enclosure_messages,
-		   myrs_store_suppress_enclosure_messages);
-
-static struct device_attribute *myrs_shost_attrs[] = {
-	&dev_attr_serial,
-	&dev_attr_ctlr_num,
-	&dev_attr_processor,
-	&dev_attr_model,
-	&dev_attr_ctlr_type,
-	&dev_attr_cache_size,
-	&dev_attr_firmware,
-	&dev_attr_discovery,
-	&dev_attr_flush_cache,
-	&dev_attr_disable_enclosure_messages,
-	NULL,
-};
-
 struct scsi_host_template myrs_template = {
 	.module = THIS_MODULE,
 	.name = "DAC960",
@@ -2059,6 +2065,10 @@ static myrs_hba *myrs_alloc_host(struct pci_dev *pdev,
 
 	return cs;
 }
+
+/*
+ * RAID template functions
+ */
 
 /**
  * myrs_is_raid - return boolean indicating device is raid volume
@@ -2140,6 +2150,10 @@ struct raid_function_template myrs_raid_functions = {
 	.get_resync	= myrs_get_resync,
 	.get_state	= myrs_get_state,
 };
+
+/*
+ * PCI interface functions
+ */
 
 void myrs_flush_cache(myrs_hba *cs)
 {
@@ -2455,6 +2469,10 @@ Failure:
 	myrs_cleanup(cs);
 	return NULL;
 }
+
+/*
+ * Hardware-specific functions
+ */
 
 /*
   myrs_err_status reports Controller BIOS Messages passed through
@@ -2812,6 +2830,10 @@ struct myrs_privdata DAC960_LP_privdata = {
 	.irq_handler =		DAC960_LP_InterruptHandler,
 	.io_mem_size =		DAC960_LP_RegisterWindowSize,
 };
+
+/*
+ * Module functions
+ */
 
 static int
 myrs_probe(struct pci_dev *dev, const struct pci_device_id *entry)
