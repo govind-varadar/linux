@@ -33,6 +33,8 @@
 #include "myr.h"
 #include "myrb.h"
 
+struct raid_template *myrb_raid_template;
+
 static void myrb_monitor(struct work_struct *work);
 
 #define myrb_logical_channel(shost) ((shost)->max_channel - 1)
@@ -1017,11 +1019,11 @@ skip_mailboxes:
 
 
 /*
-  DAC960_V1_ReadControllerConfiguration reads the Configuration Information
+  myrb_get_hba_config reads the Configuration Information
   from DAC960 V1 Firmware Controllers and initializes the Controller structure.
 */
 
-static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
+static int myrb_get_hba_config(myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 	myrb_enquiry2 *enquiry2;
@@ -2574,6 +2576,62 @@ myr_hba *myrb_alloc_host(struct pci_dev *pdev,
  */
 
 /*
+  myrb_err_status reports Controller BIOS Messages passed through
+  the Error Status Register when the driver performs the BIOS handshaking.
+  It returns true for fatal errors and false otherwise.
+*/
+
+bool myrb_err_status(myr_hba *c, unsigned char ErrorStatus,
+		     unsigned char Parameter0, unsigned char Parameter1)
+{
+	struct pci_dev *pdev = c->pdev;
+
+	switch (ErrorStatus) {
+	case 0x00:
+		dev_info(&pdev->dev,
+			 "Physical Device %d:%d Not Responding\n",
+			 Parameter1, Parameter0);
+		break;
+	case 0x08:
+		if (c->DriveSpinUpMessageDisplayed)
+			break;
+		dev_notice(&pdev->dev, "Spinning Up Drives\n");
+		c->DriveSpinUpMessageDisplayed = true;
+		break;
+	case 0x30:
+		dev_notice(&pdev->dev, "Configuration Checksum Error\n");
+		break;
+	case 0x60:
+		dev_notice(&pdev->dev, "Mirror Race Recovery Failed\n");
+		break;
+	case 0x70:
+		dev_notice(&pdev->dev, "Mirror Race Recovery In Progress\n");
+		break;
+	case 0x90:
+		dev_notice(&pdev->dev, "Physical Device %d:%d COD Mismatch\n",
+			   Parameter1, Parameter0);
+		break;
+	case 0xA0:
+		dev_notice(&pdev->dev, "Logical Drive Installation Aborted\n");
+		break;
+	case 0xB0:
+		dev_notice(&pdev->dev, "Mirror Race On A Critical Logical Drive\n");
+		break;
+	case 0xD0:
+		dev_notice(&pdev->dev, "New Controller Configuration Found\n");
+		break;
+	case 0xF0:
+		dev_err(&pdev->dev, "Fatal Memory Parity Error\n");
+		return true;
+	default:
+		dev_err(&pdev->dev, "Unknown Initialization Error %02X\n",
+			ErrorStatus);
+		return true;
+	}
+	return false;
+}
+
+/*
   DAC960_LA_HardwareInit initializes the hardware for DAC960 LA Series
   Controllers.
 */
@@ -2608,7 +2666,7 @@ static int DAC960_LA_HardwareInit(struct pci_dev *pdev,
 	       timeout < DAC960_MAILBOX_TIMEOUT) {
 		if (DAC960_LA_ReadErrorStatus(base, &ErrorStatus,
 					      &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus, Parameter0, Parameter1))
+		    myrb_err_status(c, ErrorStatus, Parameter0, Parameter1))
 			return -ENODEV;
 		udelay(10);
 		timeout++;
@@ -2631,7 +2689,6 @@ static int DAC960_LA_HardwareInit(struct pci_dev *pdev,
 		cb->MailboxNewCommand = DAC960_LA_MemoryMailboxNewCommand;
 	else
 		cb->MailboxNewCommand = DAC960_LA_HardwareMailboxNewCommand;
-	c->ReadControllerConfiguration = DAC960_V1_ReadControllerConfiguration;
 	c->DisableInterrupts = DAC960_LA_DisableInterrupts;
 	c->Reset = DAC960_LA_ControllerReset;
 
@@ -2692,7 +2749,6 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 
 struct DAC960_privdata DAC960_LA_privdata = {
 	.HardwareType =		DAC960_LA_Controller,
-	.FirmwareType =		DAC960_V1_Controller,
 	.HardwareInit =		DAC960_LA_HardwareInit,
 	.InterruptHandler =	DAC960_LA_InterruptHandler,
 	.MemoryWindowSize =	DAC960_LA_RegisterWindowSize,
@@ -2718,7 +2774,7 @@ static int DAC960_PG_HardwareInit(struct pci_dev *pdev,
 	       timeout < DAC960_MAILBOX_TIMEOUT) {
 		if (DAC960_PG_ReadErrorStatus(base, &ErrorStatus,
 					      &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus, Parameter0, Parameter1))
+		    myrb_err_status(c, ErrorStatus, Parameter0, Parameter1))
 			return -EIO;
 		udelay(10);
 		timeout++;
@@ -2741,7 +2797,6 @@ static int DAC960_PG_HardwareInit(struct pci_dev *pdev,
 		cb->MailboxNewCommand = DAC960_PG_MemoryMailboxNewCommand;
 	else
 		cb->MailboxNewCommand = DAC960_PG_HardwareMailboxNewCommand;
-	c->ReadControllerConfiguration = DAC960_V1_ReadControllerConfiguration;
 	c->DisableInterrupts = DAC960_PG_DisableInterrupts;
 	c->Reset = DAC960_PG_ControllerReset;
 
@@ -2801,7 +2856,6 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 
 struct DAC960_privdata DAC960_PG_privdata = {
 	.HardwareType =		DAC960_PG_Controller,
-	.FirmwareType =		DAC960_V1_Controller,
 	.HardwareInit =		DAC960_PG_HardwareInit,
 	.InterruptHandler =	DAC960_PG_InterruptHandler,
 	.MemoryWindowSize =	DAC960_PG_RegisterWindowSize,
@@ -2848,7 +2902,7 @@ static int DAC960_PD_HardwareInit(struct pci_dev *pdev,
 	       timeout < DAC960_MAILBOX_TIMEOUT) {
 		if (DAC960_PD_ReadErrorStatus(base, &ErrorStatus,
 					      &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus, Parameter0, Parameter1))
+		    myrb_err_status(c, ErrorStatus, Parameter0, Parameter1))
 			return -EIO;
 		udelay(10);
 		timeout++;
@@ -2866,7 +2920,6 @@ static int DAC960_PD_HardwareInit(struct pci_dev *pdev,
 	}
 	DAC960_PD_EnableInterrupts(base);
 	cb->QueueCommand = DAC960_PD_QueueCommand;
-	c->ReadControllerConfiguration = DAC960_V1_ReadControllerConfiguration;
 	c->DisableInterrupts = DAC960_PD_DisableInterrupts;
 	c->Reset = DAC960_PD_ControllerReset;
 
@@ -2922,7 +2975,6 @@ static irqreturn_t DAC960_PD_InterruptHandler(int IRQ_Channel,
 
 struct DAC960_privdata DAC960_PD_privdata = {
 	.HardwareType =		DAC960_PD_Controller,
-	.FirmwareType =		DAC960_V1_Controller,
 	.HardwareInit =		DAC960_PD_HardwareInit,
 	.InterruptHandler =	DAC960_PD_InterruptHandler,
 	.MemoryWindowSize =	DAC960_PD_RegisterWindowSize,
@@ -2995,7 +3047,7 @@ static int DAC960_P_HardwareInit(struct pci_dev *pdev,
 	       timeout < DAC960_MAILBOX_TIMEOUT) {
 		if (DAC960_PD_ReadErrorStatus(base, &ErrorStatus,
 					      &Parameter0, &Parameter1) &&
-		    myr_err_status(c, ErrorStatus, Parameter0, Parameter1))
+		    myrb_err_status(c, ErrorStatus, Parameter0, Parameter1))
 			return -EAGAIN;
 		udelay(10);
 		timeout++;
@@ -3013,7 +3065,6 @@ static int DAC960_P_HardwareInit(struct pci_dev *pdev,
 	}
 	DAC960_PD_EnableInterrupts(base);
 	cb->QueueCommand = DAC960_P_QueueCommand;
-	c->ReadControllerConfiguration = DAC960_V1_ReadControllerConfiguration;
 	c->DisableInterrupts = DAC960_PD_DisableInterrupts;
 	c->Reset = DAC960_PD_ControllerReset;
 
@@ -3105,8 +3156,194 @@ static irqreturn_t DAC960_P_InterruptHandler(int IRQ_Channel,
 
 struct DAC960_privdata DAC960_P_privdata = {
 	.HardwareType =		DAC960_P_Controller,
-	.FirmwareType =		DAC960_V1_Controller,
 	.HardwareInit =		DAC960_P_HardwareInit,
 	.InterruptHandler =	DAC960_P_InterruptHandler,
 	.MemoryWindowSize =	DAC960_PD_RegisterWindowSize,
 };
+
+static myr_hba *
+myrb_detect(struct pci_dev *pdev, const struct pci_device_id *entry)
+{
+	struct DAC960_privdata *privdata =
+		(struct DAC960_privdata *)entry->driver_data;
+	irq_handler_t InterruptHandler = privdata->InterruptHandler;
+	unsigned int mmio_size = privdata->MemoryWindowSize;
+	myr_hba *c = NULL;
+
+	c = myrb_alloc_host(pdev, entry);
+	if (!c) {
+		dev_err(&pdev->dev, "Unable to allocate Controller\n");
+		return NULL;
+	}
+	c->FirmwareType = privdata->FirmwareType;
+	c->HardwareType = privdata->HardwareType;
+	c->pdev = pdev;
+
+	if (pci_enable_device(pdev))
+		goto Failure;
+
+	switch (c->HardwareType) {
+	case DAC960_PD_Controller:
+	case DAC960_P_Controller:
+		c->IO_Address = pci_resource_start(pdev, 0);
+		c->PCI_Address = pci_resource_start(pdev, 1);
+		break;
+	default:
+		c->PCI_Address = pci_resource_start(pdev, 0);
+		break;
+	}
+
+	pci_set_drvdata(pdev, c);
+	spin_lock_init(&c->queue_lock);
+	/*
+	  Map the Controller Register Window.
+	*/
+	if (mmio_size < PAGE_SIZE)
+		mmio_size = PAGE_SIZE;
+	c->mmio_base = ioremap_nocache(c->PCI_Address & PAGE_MASK, mmio_size);
+	if (c->mmio_base == NULL) {
+		dev_err(&pdev->dev,
+			"Unable to map Controller Register Window\n");
+		goto Failure;
+	}
+
+	c->io_addr = c->mmio_base + (c->PCI_Address & ~PAGE_MASK);
+	if (privdata->HardwareInit(pdev, c, c->io_addr))
+		goto Failure;
+
+	/*
+	  Acquire shared access to the IRQ Channel.
+	*/
+	if (request_irq(pdev->irq, InterruptHandler, IRQF_SHARED,
+			"myrb", c) < 0) {
+		dev_err(&pdev->dev,
+			"Unable to acquire IRQ Channel %d\n", pdev->irq);
+		goto Failure;
+	}
+	c->IRQ_Channel = pdev->irq;
+	return c;
+
+Failure:
+	dev_err(&pdev->dev,
+		"Failed to initialize Controller\n");
+	myrb_cleanup(c);
+	return NULL;
+}
+
+static int
+myrb_probe(struct pci_dev *dev, const struct pci_device_id *entry)
+{
+	myr_hba *c;
+	int ret;
+
+	c = myrb_detect(dev, entry);
+	if (!c)
+		return -ENODEV;
+
+	ret = myrb_get_hba_config(c);
+	if (ret < 0) {
+		myrb_cleanup(c);
+		return ret;
+	}
+
+	if (!myrb_create_mempools(dev, c)) {
+		ret = -ENOMEM;
+		goto failed;
+	}
+
+	ret = scsi_add_host(c->host, &dev->dev);
+	if (ret) {
+		dev_err(&dev->dev, "scsi_add_host failed with %d\n", ret);
+		myrb_destroy_mempools(c);
+		goto failed;
+	}
+	scsi_scan_host(c->host);
+	return 0;
+failed:
+	myrb_cleanup(c);
+	return ret;
+}
+
+
+static void myrb_remove(struct pci_dev *pdev)
+{
+	myr_hba *c = pci_get_drvdata(pdev);
+
+	if (c == NULL)
+		return;
+
+	shost_printk(KERN_NOTICE, c->host, "Flushing Cache...");
+	myrb_flush_cache(c);
+	myrb_cleanup(c);
+	myrb_destroy_mempools(c);
+}
+
+
+static const struct pci_device_id myrb_id_table[] = {
+	{
+		.vendor		= PCI_VENDOR_ID_DEC,
+		.device		= PCI_DEVICE_ID_DEC_21285,
+		.subvendor	= PCI_VENDOR_ID_MYLEX,
+		.subdevice	= PCI_DEVICE_ID_MYLEX_DAC960_LA,
+		.driver_data	= (unsigned long) &DAC960_LA_privdata,
+	},
+	{
+		.vendor		= PCI_VENDOR_ID_MYLEX,
+		.device		= PCI_DEVICE_ID_MYLEX_DAC960_PG,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (unsigned long) &DAC960_PG_privdata,
+	},
+	{
+		.vendor		= PCI_VENDOR_ID_MYLEX,
+		.device		= PCI_DEVICE_ID_MYLEX_DAC960_PD,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (unsigned long) &DAC960_PD_privdata,
+	},
+	{
+		.vendor		= PCI_VENDOR_ID_MYLEX,
+		.device		= PCI_DEVICE_ID_MYLEX_DAC960_P,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data	= (unsigned long) &DAC960_P_privdata,
+	},
+	{0, },
+};
+
+MODULE_DEVICE_TABLE(pci, myrb_id_table);
+
+static struct pci_driver myrb_pci_driver = {
+	.name		= "myrb",
+	.id_table	= myrb_id_table,
+	.probe		= myrb_probe,
+	.remove		= myrb_remove,
+};
+
+static int __init myrb_init_module(void)
+{
+	int ret;
+
+	myrb_raid_template = raid_class_attach(&myrb_raid_functions);
+	if (!myrb_raid_template)
+		return -ENODEV;
+
+	ret = pci_register_driver(&myrb_pci_driver);
+	if (ret)
+		raid_class_release(myrb_raid_template);
+
+	return ret;
+}
+
+static void __exit myrb_cleanup_module(void)
+{
+	pci_unregister_driver(&myrb_pci_driver);
+	raid_class_release(myrb_raid_template);
+}
+
+module_init(myrb_init_module);
+module_exit(myrb_cleanup_module);
+
+MODULE_DESCRIPTION("Mylex DAC960/AcceleRAID/eXtremeRAID driver (Block interface)");
+MODULE_AUTHOR("Hannes Reinecke <hare@suse.com>");
+MODULE_LICENSE("GPL");

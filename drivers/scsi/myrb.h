@@ -1776,4 +1776,12 @@ void DAC960_P_To_PD_TranslateReadWriteCommand(myrb_cmdblk *cmd_blk)
 	mbox->Bytes[3] |= ldev_num << 3;
 }
 
+struct myrb_privdata {
+	DAC960_HardwareType_T	HardwareType;
+	DAC960_HardwareInit_T	HardwareInit;
+	irq_handler_t		InterruptHandler;
+	unsigned int		MemoryWindowSize;
+};
+
+
 #endif /* MYRB_H */
