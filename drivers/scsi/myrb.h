@@ -145,6 +145,7 @@ myrb_cmd_opcode;
 #define DAC960_V1_RebuildFailed_NewDriveFailed	0x0004	/* Consistency */
 #define DAC960_V1_RebuildSuccessful		0x0100	/* Consistency */
 #define DAC960_V1_RebuildSuccessfullyTerminated	0x0107	/* Consistency */
+#define DAC960_V1_RebuildNotChecked		0x0108	/* Consistency */
 #define DAC960_V1_BackgroundInitSuccessful	0x0100	/* Consistency */
 #define DAC960_V1_BackgroundInitAborted		0x0005	/* Consistency */
 #define DAC960_V1_NoBackgroundInitInProgress	0x0105	/* Consistency */
@@ -157,7 +158,6 @@ myrb_cmd_opcode;
 #define DAC960_V1_SubsystemNotInstalled		0x0001	/* Subsystem */
 #define DAC960_V1_SubsystemFailed		0x0002	/* Subsystem */
 #define DAC960_V1_SubsystemBusy			0x0106	/* Subsystem */
-
 
 /*
   Define the DAC960 V1 Firmware Enquiry Command reply structure.
@@ -831,8 +831,6 @@ typedef struct myrb_hba_s
 	myrb_log_entry *ev_buf;
 	dma_addr_t ev_addr;
 
-	myrb_rbld_progress *rbld;
-	dma_addr_t rbld_addr;
 	unsigned short last_rbld_status;
 
 	myrb_ldev_info_arr *ldev_info_buf;

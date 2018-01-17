@@ -459,44 +459,71 @@ static unsigned short myrb_get_ldev_info(myrb_hba *cb)
 
 
 /*
+  myrb_get_rbld_progress executes a DAC960 V1 Firmware Controller Type 3
+  Command and waits for completion.  It returns true on success and false
+  on failure.
+*/
+
+static unsigned short myrb_get_rbld_progress(myrb_hba *cb,
+					     myrb_rbld_progress *rbld)
+{
+	myr_hba *c = &cb->common;
+	myrb_cmdblk *cmd_blk = &cb->mcmd_blk;
+	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
+	myrb_rbld_progress *rbld_buf;
+	dma_addr_t rbld_addr;
+	unsigned short status;
+
+	rbld_buf = dma_alloc_coherent(&c->pdev->dev, sizeof(myrb_rbld_progress),
+				      &rbld_addr, GFP_KERNEL);
+	if (!rbld_buf)
+		return DAC960_V1_RebuildNotChecked;
+
+	myrb_reset_cmd(cmd_blk);
+	mbox->Type3.id = DAC960_MonitoringIdentifier;
+	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
+	mbox->Type3.addr = rbld_addr;
+	myrb_exec_cmd(cb, cmd_blk);
+	status = cmd_blk->status;
+	if (rbld)
+		memcpy(rbld, rbld_buf, sizeof(myrb_rbld_progress));
+	dma_free_coherent(&c->pdev->dev, sizeof(myrb_rbld_progress),
+			  rbld_buf, rbld_addr);
+	return status;
+}
+
+/*
   DAC960_V1_RebuildProgress executes a DAC960 V1 Firmware Controller Type 3
   Command and waits for completion.  It returns true on success and false
   on failure.
 */
 
-static void DAC960_V1_MonitorRebuildProgress(myrb_hba *cb)
+static void myrb_update_rbld_progress(myrb_hba *cb)
 {
 	myr_hba *c = &cb->common;
-	myrb_cmdblk *cmd_blk = &cb->mcmd_blk;
-	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
+	myrb_rbld_progress rbld_buf;
 	unsigned short status;
 
-	myrb_reset_cmd(cmd_blk);
-	mbox->Type3.id = DAC960_MonitoringIdentifier;
-	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
-	mbox->Type3.addr = cb->rbld_addr;
-	myrb_exec_cmd(cb, cmd_blk);
-	status = cmd_blk->status;
-	if (status == DAC960_V1_NormalCompletion) {
-		unsigned int ldev_num = cb->rbld->ldev_num;
-		unsigned int ldev_size = cb->rbld->ldev_size;
+	status = myrb_get_rbld_progress(cb, &rbld_buf);
+	if (status == DAC960_V1_NoRebuildOrCheckInProgress &&
+	    cb->last_rbld_status == DAC960_V1_NormalCompletion)
+		status = DAC960_V1_RebuildSuccessful;
+	if (status != DAC960_V1_NoRebuildOrCheckInProgress) {
 		unsigned int blocks_done =
-			ldev_size - cb->rbld->blocks_left;
+			rbld_buf.ldev_size - rbld_buf.blocks_left;
 		struct scsi_device *sdev;
 
 		sdev = scsi_device_lookup(c->host,
 					  myrb_logical_channel(c->host),
-					  ldev_num, 0);
-		if (status == DAC960_V1_NoRebuildOrCheckInProgress &&
-		    cb->last_rbld_status == DAC960_V1_NormalCompletion)
-			status = DAC960_V1_RebuildSuccessful;
+					  rbld_buf.ldev_num, 0);
+
 		switch (status) {
 		case DAC960_V1_NormalCompletion:
 			sdev_printk(KERN_INFO, sdev,
-				     "Rebuild in Progress, "
-				     "%d%% completed\n",
-				     (100 * (blocks_done >> 7))
-				     / (ldev_size >> 7));
+				    "Rebuild in Progress, "
+				    "%d%% completed\n",
+				    (100 * (blocks_done >> 7))
+				    / (rbld_buf.ldev_size >> 7));
 			break;
 		case DAC960_V1_RebuildFailed_LogicalDriveFailure:
 			sdev_printk(KERN_INFO, sdev,
@@ -513,8 +540,6 @@ static void DAC960_V1_MonitorRebuildProgress(myrb_hba *cb)
 				    "Rebuild Failed due to "
 				    "Failure of Drive Being Rebuilt\n");
 			break;
-		case DAC960_V1_NoRebuildOrCheckInProgress:
-			break;
 		case DAC960_V1_RebuildSuccessful:
 			sdev_printk(KERN_INFO, sdev,
 				    "Rebuild Completed Successfully\n");
@@ -523,35 +548,45 @@ static void DAC960_V1_MonitorRebuildProgress(myrb_hba *cb)
 			sdev_printk(KERN_INFO, sdev,
 				     "Rebuild Successfully Terminated\n");
 			break;
+		default:
+			break;
 		}
-		cb->last_rbld_status = status;
 	}
+	cb->last_rbld_status = status;
 }
 
 
 /*
-  DAC960_V1_ConsistencyCheckProgress executes a DAC960 V1 Firmware Controller
+  myrb_get_cc_progress executes a DAC960 V1 Firmware Controller
   Type 3 Command and waits for completion.
 */
 
-static void DAC960_V1_ConsistencyCheckProgress(myrb_hba *cb)
+static void myrb_get_cc_progress(myrb_hba *cb)
 {
 	myr_hba *c = &cb->common;
 	myrb_cmdblk *cmd_blk = &cb->mcmd_blk;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
+	myrb_rbld_progress *rbld_buf;
+	dma_addr_t rbld_addr;
 	unsigned short status;
 
+	rbld_buf = dma_alloc_coherent(&c->pdev->dev, sizeof(myrb_rbld_progress),
+				      &rbld_addr, GFP_KERNEL);
+	if (!rbld_buf) {
+		cb->need_cc_status = true;
+		return;
+	}
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_RebuildStat;
-	mbox->Type3.addr = cb->rbld_addr;
+	mbox->Type3.addr = rbld_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		unsigned int ldev_num = cb->rbld->ldev_num;
-		unsigned int ldev_size = cb->rbld->ldev_size;
+		unsigned int ldev_num = rbld_buf->ldev_num;
+		unsigned int ldev_size = rbld_buf->ldev_size;
 		unsigned int blocks_done =
-			ldev_size - cb->rbld->blocks_left;
+			ldev_size - rbld_buf->blocks_left;
 		struct scsi_device *sdev;
 
 		sdev = scsi_device_lookup(c->host,
@@ -562,6 +597,8 @@ static void DAC960_V1_ConsistencyCheckProgress(myrb_hba *cb)
 			    (100 * (blocks_done >> 7))
 			    / (ldev_size >> 7));
 	}
+	dma_free_coherent(&c->pdev->dev, sizeof(myrb_rbld_progress),
+			  rbld_buf, rbld_addr);
 }
 
 
@@ -838,7 +875,6 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
 		sizeof(myrb_dcdb) +
 		sizeof(myrb_error_table) + sizeof(myrb_log_entry) +
-		sizeof(myrb_rbld_progress) +
 		sizeof(myrb_ldev_info_arr) +
 		sizeof(myrb_pdev_state);
 
@@ -884,9 +920,6 @@ skip_mailboxes:
 
 	cb->ev_buf = slice_dma_loaf(DmaPages, sizeof(myrb_log_entry),
 				    &cb->ev_addr);
-
-	cb->rbld = slice_dma_loaf(DmaPages, sizeof(myrb_rbld_progress),
-				  &cb->rbld_addr);
 
 	cb->ldev_info_buf = slice_dma_loaf(DmaPages, sizeof(myrb_ldev_info_arr),
 					   &cb->ldev_info_addr);
@@ -1910,45 +1943,21 @@ static ssize_t myrb_show_dev_rebuild(struct device *dev,
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
-	myrb_cmdblk *cmd_blk = &cb->mcmd_blk;
-	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-	unsigned short ldev_num = 0xffff;
+	myrb_rbld_progress rbld_buf;
 	unsigned char status;
-	bool rebuild = true;
-	ssize_t ldev_size, remaining;
 
 	if (sdev->channel < myrb_logical_channel(sdev->host))
 		return snprintf(buf, 32, "physical device - not rebuilding\n");
 
-	mutex_lock(&cb->dcmd_mutex);
-	myrb_reset_cmd(cmd_blk);
-	mbox->Type3.id = DAC960_MonitoringIdentifier;
-	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
-	mbox->Type3.addr = cb->rbld_addr;
-	myrb_exec_cmd(cb, cmd_blk);
-	status = cmd_blk->status;
-	if (status == DAC960_V1_NormalCompletion) {
-		ldev_num = cb->rbld->ldev_num;
-		ldev_size = cb->rbld->ldev_size;
-		remaining = cb->rbld->blocks_left;
-	}
-	mutex_unlock(&cb->dcmd_mutex);
+	status = myrb_get_rbld_progress(cb, &rbld_buf);
 
-	if (ldev_num != myrb_translate_ldev(&cb->common, sdev) ||
+	if (rbld_buf.ldev_num != sdev->id ||
 	    status != DAC960_V1_NormalCompletion)
-		return snprintf(buf, 32, "not %s\n",
-				rebuild ? "rebuilding" : "checking");
-
-	if (cb->enquiry->rbld == DAC960_V1_BackgroundCheckInProgress &&
-	    rebuild)
 		return snprintf(buf, 32, "not rebuilding\n");
-	else if (!rebuild &&
-		 cb->enquiry->rbld == DAC960_V1_BackgroundRebuildInProgress)
-		return snprintf(buf, 32, "not checking\n");
 
-	return snprintf(buf, 32, "%s block %zu of %zu\n",
-			rebuild ? "rebuilding" : "checking",
-			ldev_size - remaining, ldev_size);
+	return snprintf(buf, 32, "rebuilding block %u of %u\n",
+			rbld_buf.ldev_size - rbld_buf.blocks_left,
+			rbld_buf.ldev_size);
 }
 
 static ssize_t myrb_store_dev_rebuild(struct device *dev,
@@ -1960,10 +1969,8 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 	myrb_cmd_mbox *mbox;
 	char tmpbuf[8];
 	ssize_t len;
-	unsigned short ldev_num = 0xFFFF;
 	unsigned short status;
 	int start;
-	bool rebuild = true;
 	const char *msg;
 
 	len = count > sizeof(tmpbuf) - 1 ? sizeof(tmpbuf) - 1 : count;
@@ -1972,45 +1979,24 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 	if (sscanf(tmpbuf, "%d", &start) != 1)
 		return -EINVAL;
 
-	if (rebuild && start &&
-	    sdev->channel >= myrb_logical_channel(sdev->host))
+	if (sdev->channel >= myrb_logical_channel(sdev->host))
 		return -ENXIO;
-	else if (sdev->channel < myrb_logical_channel(sdev->host))
-		return -ENXIO;
-	mutex_lock(&cb->dcmd_mutex);
-	myrb_reset_cmd(cmd_blk);
-	mbox->Type3.id = DAC960_MonitoringIdentifier;
-	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
-	mbox->Type3.addr = cb->rbld_addr;
-	myrb_exec_cmd(cb, cmd_blk);
-	status = cmd_blk->status;
-	if (status == DAC960_V1_NormalCompletion)
-		ldev_num = cb->rbld->ldev_num;
-	mutex_unlock(&cb->dcmd_mutex);
 
+	status = myrb_get_rbld_progress(cb, NULL);
 	if (start) {
-		if (status != DAC960_V1_NormalCompletion) {
+		if (status == DAC960_V1_NormalCompletion) {
 			sdev_printk(KERN_INFO, sdev,
-				    "%s Not Initiated; already in progress\n",
-				    rebuild ? "Rebuild" : "Check Consistency");
+				    "Rebuild Not Initiated; already in progress\n");
 			return -EALREADY;
 		}
 		mutex_lock(&cb->dcmd_mutex);
 		cmd_blk = &cb->dcmd_blk;
 		myrb_reset_cmd(cmd_blk);
 		mbox = &cmd_blk->mbox;
-		if (rebuild) {
-			mbox->Type3D.opcode = DAC960_V1_RebuildAsync;
-			mbox->Type3D.id = DAC960_DirectCommandIdentifier;
-			mbox->Type3D.Channel = sdev->channel;
-			mbox->Type3D.TargetID = sdev->id;
-		} else {
-			ldev_num = myrb_translate_ldev(&cb->common, sdev);
-			mbox->Type3C.opcode = DAC960_V1_CheckConsistencyAsync;
-			mbox->Type3C.id = DAC960_DirectCommandIdentifier;
-			mbox->Type3C.ldev_num = ldev_num;
-			mbox->Type3C.AutoRestore = true;
-		}
+		mbox->Type3D.opcode = DAC960_V1_RebuildAsync;
+		mbox->Type3D.id = DAC960_DirectCommandIdentifier;
+		mbox->Type3D.Channel = sdev->channel;
+		mbox->Type3D.TargetID = sdev->id;
 		myrb_exec_cmd(cb, cmd_blk);
 		status = cmd_blk->status;
 		mutex_unlock(&cb->dcmd_mutex);
@@ -2019,18 +2005,17 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 		unsigned char *rate;
 		dma_addr_t rate_addr;
 
-		if (ldev_num != myrb_translate_ldev(&cb->common, sdev)) {
+		if (status != DAC960_V1_NormalCompletion) {
 			sdev_printk(KERN_INFO, sdev,
-				    "%s Not Cancelled; not in progress\n",
-				    rebuild ? "Rebuild" : "Check Consistency");
+				    "Rebuild Not Cancelled; not in progress\n");
 			return 0;
 		}
+
 		rate = pci_alloc_consistent(pdev, sizeof(char), &rate_addr);
 		if (rate == NULL) {
 			sdev_printk(KERN_INFO, sdev,
-				    "Cancellation of %s Failed - "
-				    "Out of Memory\n",
-				    rebuild ? "Rebuild" : "Check Consistency");
+				    "Cancellation of Rebuild Failed - "
+				    "Out of Memory\n");
 			return -ENOMEM;
 		}
 		mutex_lock(&cb->dcmd_mutex);
@@ -2047,57 +2032,162 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 		mutex_unlock(&cb->dcmd_mutex);
 	}
 	if (status == DAC960_V1_NormalCompletion) {
-		sdev_printk(KERN_INFO, sdev, "%s %s\n",
-			    rebuild ? "Rebuild" : "Check Consistency",
+		sdev_printk(KERN_INFO, sdev, "Rebuild %s\n",
 			    start ? "Initiated" : "Cancelled");
 		return count;
 	}
 	if (!start) {
 		sdev_printk(KERN_INFO, sdev,
-			    "%s Not Cancelled, status 0x%x\n",
-			    rebuild ? "Rebuild" : "Check Consistency",
+			    "Rebuild Not Cancelled, status 0x%x\n",
 			    status);
 		return -EIO;
 	}
 
 	switch (status) {
 	case DAC960_V1_AttemptToRebuildOnlineDrive:
-		if (rebuild)
-			msg = "Attempt to Rebuild Online or Unresponsive Drive";
-		else
-			msg = "Dependent Physical Device is DEAD";
-		sdev_printk(KERN_INFO, sdev,
-			    "%s Failed - %s\n",
-			    rebuild ? "Rebuild" : "Check Consistency", msg);
+		msg = "Attempt to Rebuild Online or Unresponsive Drive";
 		break;
 	case DAC960_V1_NewDiskFailedDuringRebuild:
-		sdev_printk(KERN_INFO, sdev,
-			    "Rebuild Failed - "
-			    "New Disk Failed During Rebuild\n");
+		msg = "New Disk Failed During Rebuild";
 		break;
 	case DAC960_V1_InvalidDeviceAddress:
-		if (rebuild)
-			msg = "Invalid Device Address";
-		else
-			msg = "Invalid or Nonredundant Logical Drive";
-		sdev_printk(KERN_INFO, sdev,
-			    "%s Failed - %s\n",
-			    rebuild ? "Rebuild" : "Check Consistency", msg);
+		msg = "Invalid Device Address";
 		break;
 	case DAC960_V1_RebuildOrCheckAlreadyInProgress:
-		sdev_printk(KERN_INFO, sdev,
-			    "%s Failed - Already in Progress\n",
-			    rebuild ? "Rebuild" : "Check Consistency");
+		msg = "Already in Progress";
 		break;
 	default:
-		sdev_printk(KERN_INFO, sdev,
-			    "%s Failed, status 0x%x\n",
-			    rebuild ? "Rebuild" : "Check Consistency", status);
+		msg = NULL;
+		break;
 	}
+	if (msg)
+		sdev_printk(KERN_INFO, sdev,
+			    "Rebuild Failed - %s\n", msg);
+	else
+		sdev_printk(KERN_INFO, sdev,
+			    "Rebuild Failed, status 0x%x\n", status);
+
 	return -EIO;
 }
 static DEVICE_ATTR(rebuild, S_IRUGO | S_IWUSR, myrb_show_dev_rebuild,
 		   myrb_store_dev_rebuild);
+
+static ssize_t myrb_store_dev_consistency_check(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct scsi_device *sdev = to_scsi_device(dev);
+	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
+	myrb_rbld_progress rbld_buf;
+	myrb_cmdblk *cmd_blk;
+	myrb_cmd_mbox *mbox;
+	char tmpbuf[8];
+	ssize_t len;
+	unsigned short ldev_num = 0xFFFF;
+	unsigned short status;
+	int start;
+	const char *msg;
+
+	len = count > sizeof(tmpbuf) - 1 ? sizeof(tmpbuf) - 1 : count;
+	strncpy(tmpbuf, buf, len);
+	tmpbuf[len] = '\0';
+	if (sscanf(tmpbuf, "%d", &start) != 1)
+		return -EINVAL;
+
+	if (sdev->channel < myrb_logical_channel(sdev->host))
+		return -ENXIO;
+
+	status = myrb_get_rbld_progress(cb, &rbld_buf);
+	if (start) {
+		if (status == DAC960_V1_NormalCompletion) {
+			sdev_printk(KERN_INFO, sdev,
+				    "Check Consistency Not Initiated; "
+				    "already in progress\n");
+			return -EALREADY;
+		}
+		mutex_lock(&cb->dcmd_mutex);
+		cmd_blk = &cb->dcmd_blk;
+		myrb_reset_cmd(cmd_blk);
+		mbox = &cmd_blk->mbox;
+		mbox->Type3C.opcode = DAC960_V1_CheckConsistencyAsync;
+		mbox->Type3C.id = DAC960_DirectCommandIdentifier;
+		mbox->Type3C.ldev_num = sdev->id;
+		mbox->Type3C.AutoRestore = true;
+
+		myrb_exec_cmd(cb, cmd_blk);
+		status = cmd_blk->status;
+		mutex_unlock(&cb->dcmd_mutex);
+	} else {
+		struct pci_dev *pdev = cb->common.pdev;
+		unsigned char *rate;
+		dma_addr_t rate_addr;
+
+		if (ldev_num != sdev->id) {
+			sdev_printk(KERN_INFO, sdev,
+				    "Check Consistency Not Cancelled; "
+				    "not in progress\n");
+			return 0;
+		}
+		rate = pci_alloc_consistent(pdev, sizeof(char), &rate_addr);
+		if (rate == NULL) {
+			sdev_printk(KERN_INFO, sdev,
+				    "Cancellation of Check Consistency Failed - "
+				    "Out of Memory\n");
+			return -ENOMEM;
+		}
+		mutex_lock(&cb->dcmd_mutex);
+		cmd_blk = &cb->dcmd_blk;
+		myrb_reset_cmd(cmd_blk);
+		mbox = &cmd_blk->mbox;
+		mbox->Type3R.opcode = DAC960_V1_RebuildControl;
+		mbox->Type3R.id = DAC960_DirectCommandIdentifier;
+		mbox->Type3R.rbld_rate = 0xFF;
+		mbox->Type3R.addr = rate_addr;
+		myrb_exec_cmd(cb, cmd_blk);
+		status = cmd_blk->status;
+		pci_free_consistent(pdev, sizeof(char), rate, rate_addr);
+		mutex_unlock(&cb->dcmd_mutex);
+	}
+	if (status == DAC960_V1_NormalCompletion) {
+		sdev_printk(KERN_INFO, sdev, "Check Consistency %s\n",
+			    start ? "Initiated" : "Cancelled");
+		return count;
+	}
+	if (!start) {
+		sdev_printk(KERN_INFO, sdev,
+			    "Check Consistency Not Cancelled, status 0x%x\n",
+			    status);
+		return -EIO;
+	}
+
+	switch (status) {
+	case DAC960_V1_AttemptToRebuildOnlineDrive:
+		msg = "Dependent Physical Device is DEAD";
+		break;
+	case DAC960_V1_NewDiskFailedDuringRebuild:
+		msg = "New Disk Failed During Rebuild";
+		break;
+	case DAC960_V1_InvalidDeviceAddress:
+		msg = "Invalid or Nonredundant Logical Drive";
+		break;
+	case DAC960_V1_RebuildOrCheckAlreadyInProgress:
+		msg = "Already in Progress";
+		break;
+	default:
+		msg = NULL;
+		break;
+	}
+	if (msg)
+		sdev_printk(KERN_INFO, sdev,
+			    "Check Consistency Failed - %s\n", msg);
+	else
+		sdev_printk(KERN_INFO, sdev,
+			    "Check Consistency Failed, status 0x%x\n", status);
+
+	return -EIO;
+}
+static DEVICE_ATTR(consistency_check, S_IRUGO | S_IWUSR,
+		   myrb_show_dev_rebuild,
+		   myrb_store_dev_consistency_check);
 
 static ssize_t myrb_show_ctlr_num(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -2140,6 +2230,7 @@ static DEVICE_ATTR(flush_cache, S_IWUSR, NULL, myrb_store_flush_cache);
 
 static struct device_attribute *myrb_sdev_attrs[] = {
 	&dev_attr_rebuild,
+	&dev_attr_consistency_check,
 	&dev_attr_raid_state,
 	&dev_attr_raid_level,
 	NULL,
@@ -2188,17 +2279,18 @@ myrb_get_resync(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
 	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
+	myrb_rbld_progress rbld_buf;
 	unsigned int percent_complete = 0;
-	unsigned short ldev_num;
+	unsigned short status;
 	unsigned int ldev_size = 0, remaining = 0;
 
 	if (sdev->channel < myrb_logical_channel(sdev->host))
 		return;
-	if (DAC960_V1_ControllerIsRebuilding(cb)) {
-		ldev_num = cb->rbld->ldev_num;
-		if (ldev_num == myrb_translate_ldev(&cb->common, sdev)) {
-			ldev_size = cb->rbld->ldev_size;
-			remaining = cb->rbld->blocks_left;
+	status = myrb_get_rbld_progress(cb, &rbld_buf);
+	if (status == DAC960_V1_NormalCompletion) {
+		if (rbld_buf.ldev_num == sdev->id) {
+			ldev_size = rbld_buf.ldev_size;
+			remaining = rbld_buf.blocks_left;
 		}
 	}
 	if (remaining && ldev_size)
@@ -2217,22 +2309,26 @@ myrb_get_state(struct device *dev)
 	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
 	myrb_ldev_info *ldev_info = sdev->hostdata;
 	enum raid_state state = RAID_STATE_UNKNOWN;
+	unsigned short status;
 
 	if (sdev->channel < myrb_logical_channel(sdev->host) || !ldev_info)
 		state = RAID_STATE_UNKNOWN;
-	else if (DAC960_V1_ControllerIsRebuilding(cb))
-		 state = RAID_STATE_RESYNCING;
 	else {
-		switch (ldev_info->State) {
-		case DAC960_V1_Device_Online:
-			state = RAID_STATE_ACTIVE;
-			break;
-		case DAC960_V1_Device_WriteOnly:
-		case DAC960_V1_Device_Critical:
-			state = RAID_STATE_DEGRADED;
-			break;
-		default:
-			state = RAID_STATE_OFFLINE;
+		status = myrb_get_rbld_progress(cb, NULL);
+		if (status == DAC960_V1_NormalCompletion)
+			state = RAID_STATE_RESYNCING;
+		else {
+			switch (ldev_info->State) {
+			case DAC960_V1_Device_Online:
+				state = RAID_STATE_ACTIVE;
+				break;
+			case DAC960_V1_Device_WriteOnly:
+			case DAC960_V1_Device_Critical:
+				state = RAID_STATE_DEGRADED;
+				break;
+			default:
+				state = RAID_STATE_OFFLINE;
+			}
 		}
 	}
 	raid_set_state(myrb_raid_template, dev, state);
@@ -2359,7 +2455,7 @@ static void myrb_monitor(struct work_struct *work)
 		cb->need_rbld = false;
 		dev_dbg(&shost->shost_gendev,
 			"get rebuild progress\n");
-		DAC960_V1_MonitorRebuildProgress(cb);
+		myrb_update_rbld_progress(cb);
 		interval = 10;
 	} else if (cb->need_ldev_info) {
 		cb->need_ldev_info = false;
@@ -2371,13 +2467,13 @@ static void myrb_monitor(struct work_struct *work)
 		cb->need_rbld = false;
 		dev_dbg(&shost->shost_gendev,
 			"get rebuild progress\n");
-		DAC960_V1_MonitorRebuildProgress(cb);
+		myrb_update_rbld_progress(cb);
 		interval = 10;
 	} else if (cb->need_cc_status) {
 		cb->need_cc_status = false;
 		dev_dbg(&shost->shost_gendev,
 			"get consistency check progress\n");
-		DAC960_V1_ConsistencyCheckProgress(cb);
+		myrb_get_cc_progress(cb);
 		interval = 10;
 	} else if (cb->need_bgi_status) {
 		cb->need_bgi_status = false;
