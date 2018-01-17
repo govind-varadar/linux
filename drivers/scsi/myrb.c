@@ -1071,7 +1071,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	*/
 	switch (enquiry2->hw.SubModel) {
 	case DAC960_V1_P_PD_PU:
-		if (enquiry2->SCSICapability.BusSpeed == DAC960_V1_Ultra)
+		if (enquiry2->scsi_cap.bus_speed == DAC960_V1_Ultra)
 			strcpy(c->ModelName, "DAC960PU");
 		else
 			strcpy(c->ModelName, "DAC960PD");
@@ -1182,9 +1182,9 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 		break;
 	}
 	c->PhysicalChannelCount = enquiry2->cur_chan;
-	if (enquiry2->SCSICapability.BusWidth == DAC960_V1_Wide_32bit)
+	if (enquiry2->scsi_cap.bus_width == DAC960_V1_Wide_32bit)
 		cb->BusWidth = 32;
-	else if (enquiry2->SCSICapability.BusWidth == DAC960_V1_Wide_16bit)
+	else if (enquiry2->scsi_cap.bus_width == DAC960_V1_Wide_16bit)
 		cb->BusWidth = 16;
 	else
 		cb->BusWidth = 8;
@@ -1192,7 +1192,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	shost->max_channel = c->PhysicalChannelCount + 1;
 	shost->max_id = enquiry2->max_targets;
 	memsize = enquiry2->mem_size >> 20;
-	cb->safte_enabled = (enquiry2->FaultManagementType == DAC960_V1_SAFTE);
+	cb->safte_enabled = (enquiry2->fault_mgmt == DAC960_V1_SAFTE);
 	/*
 	  Initialize the Controller Queue Depth, Driver Queue Depth, Logical Drive
 	  Count, Maximum Blocks per Command, Controller Scatter/Gather Limit, and

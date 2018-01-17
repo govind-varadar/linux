@@ -251,90 +251,79 @@ typedef struct myrs_enquiry2_s
 	} hw;						/* Bytes 0-3 */
 	/* MajorVersion.MinorVersion-FirmwareType-TurnID */
 	struct {
-		unsigned char MajorVersion;			/* Byte 4 */
-		unsigned char MinorVersion;			/* Byte 5 */
-		unsigned char TurnID;				/* Byte 6 */
-		char FirmwareType;				/* Byte 7 */
+		unsigned char MajorVersion;		/* Byte 4 */
+		unsigned char MinorVersion;		/* Byte 5 */
+		unsigned char TurnID;			/* Byte 6 */
+		char FirmwareType;			/* Byte 7 */
 	} fw;						/* Bytes 4-7 */
-	unsigned char :8;					/* Byte 8 */
-	unsigned int :24;					/* Bytes 9-11 */
-	unsigned char cfg_chan;			/* Byte 12 */
+	unsigned int rsvd1;				/* Byte 8-11 */
+	unsigned char cfg_chan;				/* Byte 12 */
 	unsigned char cur_chan;				/* Byte 13 */
-	unsigned char max_targets;				/* Byte 14 */
-	unsigned char max_tcq;					/* Byte 15 */
+	unsigned char max_targets;			/* Byte 14 */
+	unsigned char max_tcq;				/* Byte 15 */
 	unsigned char max_ldev;				/* Byte 16 */
-	unsigned char max_arms;					/* Byte 17 */
-	unsigned char max_spans;					/* Byte 18 */
-	unsigned char :8;					/* Byte 19 */
-	unsigned int :32;					/* Bytes 20-23 */
+	unsigned char max_arms;				/* Byte 17 */
+	unsigned char max_spans;			/* Byte 18 */
+	unsigned char rsvd2;				/* Byte 19 */
+	unsigned int rsvd3;				/* Bytes 20-23 */
 	unsigned int mem_size;				/* Bytes 24-27 */
-	unsigned int cache_size;					/* Bytes 28-31 */
-	unsigned int flash_mem_size;				/* Bytes 32-35 */
-	unsigned int nv_mem_size;			/* Bytes 36-39 */
+	unsigned int cache_size;			/* Bytes 28-31 */
+	unsigned int flash_size;			/* Bytes 32-35 */
+	unsigned int nvram_size;			/* Bytes 36-39 */
 	struct {
 		enum {
 			DAC960_V1_RamType_DRAM =		0x0,
 			DAC960_V1_RamType_EDO =			0x1,
 			DAC960_V1_RamType_SDRAM =		0x2,
 			DAC960_V1_RamType_Last =		0x7
-		} __attribute__ ((packed)) RamType:3;		/* Byte 40 Bits 0-2 */
+		} __attribute__ ((packed)) ram:3;	/* Byte 40 Bits 0-2 */
 		enum {
 			DAC960_V1_ErrorCorrection_None =	0x0,
 			DAC960_V1_ErrorCorrection_Parity =	0x1,
 			DAC960_V1_ErrorCorrection_ECC =		0x2,
 			DAC960_V1_ErrorCorrection_Last =	0x7
-		} __attribute__ ((packed)) ErrorCorrection:3;	/* Byte 40 Bits 3-5 */
-		bool FastPageMode:1;				/* Byte 40 Bit 6 */
-		bool LowPowerMemory:1;				/* Byte 40 Bit 7 */
-		unsigned char :8;				/* Bytes 41 */
+		} __attribute__ ((packed)) ec:3;	/* Byte 40 Bits 3-5 */
+		bool fast_page:1;			/* Byte 40 Bit 6 */
+		bool low_power:1;			/* Byte 40 Bit 7 */
+		unsigned char rsvd4;			/* Bytes 41 */
 	} mem_type;
-	unsigned short ClockSpeed;				/* Bytes 42-43 */
-	unsigned short MemorySpeed;				/* Bytes 44-45 */
-	unsigned short HardwareSpeed;				/* Bytes 46-47 */
-	unsigned int :32;					/* Bytes 48-51 */
-	unsigned int :32;					/* Bytes 52-55 */
-	unsigned char :8;					/* Byte 56 */
-	unsigned char :8;					/* Byte 57 */
-	unsigned short :16;					/* Bytes 58-59 */
-	unsigned short max_cmds;				/* Bytes 60-61 */
-	unsigned short max_sge;			/* Bytes 62-63 */
+	unsigned short ClockSpeed;			/* Bytes 42-43 */
+	unsigned short MemorySpeed;			/* Bytes 44-45 */
+	unsigned short HardwareSpeed;			/* Bytes 46-47 */
+	unsigned char rsvd5[12];			/* Bytes 48-59 */
+	unsigned short max_cmds;			/* Bytes 60-61 */
+	unsigned short max_sge;				/* Bytes 62-63 */
 	unsigned short max_drv_cmds;			/* Bytes 64-65 */
 	unsigned short max_io_desc;			/* Bytes 66-67 */
 	unsigned short max_sectors;			/* Bytes 68-69 */
-	unsigned char latency;					/* Byte 70 */
-	unsigned char :8;					/* Byte 71 */
-	unsigned char SCSITimeout;				/* Byte 72 */
-	unsigned char :8;					/* Byte 73 */
-	unsigned short MinFreeLines;				/* Bytes 74-75 */
-	unsigned int :32;					/* Bytes 76-79 */
-	unsigned int :32;					/* Bytes 80-83 */
-	unsigned char RebuildRateConstant;			/* Byte 84 */
-	unsigned char :8;					/* Byte 85 */
-	unsigned char :8;					/* Byte 86 */
-	unsigned char :8;					/* Byte 87 */
-	unsigned int :32;					/* Bytes 88-91 */
-	unsigned int :32;					/* Bytes 92-95 */
+	unsigned char latency;				/* Byte 70 */
+	unsigned char rsvd6;				/* Byte 71 */
+	unsigned char scsi_tmo;				/* Byte 72 */
+	unsigned char rsvd7;				/* Byte 73 */
+	unsigned short min_freelines;			/* Bytes 74-75 */
+	unsigned char rsvd8[8];				/* Bytes 76-83 */
+	unsigned char rbld_rate_const;			/* Byte 84 */
+	unsigned char rsvd9[11];			/* Byte 85-95 */
 	unsigned short pdrv_block_size;			/* Bytes 96-97 */
 	unsigned short ldev_block_size;			/* Bytes 98-99 */
-	unsigned short max_blocks_per_cmd;			/* Bytes 100-101 */
-	unsigned short block_factor;				/* Bytes 102-103 */
-	unsigned short cacheline_size;				/* Bytes 104-105 */
+	unsigned short max_blocks_per_cmd;		/* Bytes 100-101 */
+	unsigned short block_factor;			/* Bytes 102-103 */
+	unsigned short cacheline_size;			/* Bytes 104-105 */
 	struct {
 		enum {
 			DAC960_V1_Narrow_8bit =			0x0,
 			DAC960_V1_Wide_16bit =			0x1,
 			DAC960_V1_Wide_32bit =			0x2
-		} __attribute__ ((packed)) BusWidth:2;		/* Byte 106 Bits 0-1 */
+		} __attribute__ ((packed)) bus_width:2;	/* Byte 106 Bits 0-1 */
 		enum {
 			DAC960_V1_Fast =			0x0,
 			DAC960_V1_Ultra =			0x1,
 			DAC960_V1_Ultra2 =			0x2
-		} __attribute__ ((packed)) BusSpeed:2;		/* Byte 106 Bits 2-3 */
-		bool Differential:1;				/* Byte 106 Bit 4 */
-		unsigned char :3;				/* Byte 106 Bits 5-7 */
-	} SCSICapability;
-	unsigned char :8;					/* Byte 107 */
-	unsigned int :32;					/* Bytes 108-111 */
+		} __attribute__ ((packed)) bus_speed:2;	/* Byte 106 Bits 2-3 */
+		bool Differential:1;			/* Byte 106 Bit 4 */
+		unsigned char rsvd10:3;			/* Byte 106 Bits 5-7 */
+	} scsi_cap;
+	unsigned char rsvd11[5];			/* Byte 107-111 */
 	unsigned short fw_build;			/* Bytes 112-113 */
 	enum {
 		DAC960_V1_AEMI =				0x01,
@@ -343,18 +332,18 @@ typedef struct myrs_enquiry2_s
 		DAC960_V1_OEM3 =				0x08,
 		DAC960_V1_Conner =				0x10,
 		DAC960_V1_SAFTE =				0x20
-	} __attribute__ ((packed)) FaultManagementType;		/* Byte 114 */
-	unsigned char :8;					/* Byte 115 */
+	} __attribute__ ((packed)) fault_mgmt;		/* Byte 114 */
+	unsigned char rsvd12;				/* Byte 115 */
 	struct {
-		bool Clustering:1;				/* Byte 116 Bit 0 */
-		bool MylexOnlineRAIDExpansion:1;		/* Byte 116 Bit 1 */
-		bool ReadAhead:1;				/* Byte 116 Bit 2 */
-		bool BackgroundInitialization:1;		/* Byte 116 Bit 3 */
-		unsigned int :28;				/* Bytes 116-119 */
+		bool Clustering:1;			/* Byte 116 Bit 0 */
+		bool MylexOnlineRAIDExpansion:1;	/* Byte 116 Bit 1 */
+		bool ReadAhead:1;			/* Byte 116 Bit 2 */
+		bool BackgroundInitialization:1;	/* Byte 116 Bit 3 */
+		unsigned int rsvd13:28;			/* Bytes 116-119 */
 	} fw_features;
-	unsigned int :32;					/* Bytes 120-123 */
-	unsigned int :32;					/* Bytes 124-127 */
+	unsigned char rsvd14[8];			/* Bytes 120-127 */
 }
+__attribute__((packed))
 myrs_enquiry2;
 
 
