@@ -59,10 +59,10 @@ static char *myrb_devstate_name(myrb_devstate state)
 	return (state == DAC960_V1_Device_Offline) ? "Offline" : "Unknown";
 }
 
-static struct DAC960_V1_RAIDLevelTbl {
-	DAC960_V1_RAIDLevel_T level;
+static struct myrb_raidlevel_name_entry {
+	myrb_raidlevel level;
 	char *name;
-} DAC960_V1_RAIDLevelNames[] = {
+} myrb_raidlevel_name_list[] = {
 	{ DAC960_V1_RAID_Level0, "RAID0" },
 	{ DAC960_V1_RAID_Level1, "RAID1" },
 	{ DAC960_V1_RAID_Level3, "RAID3" },
@@ -72,10 +72,9 @@ static struct DAC960_V1_RAIDLevelTbl {
 	{ 0xff, NULL }
 };
 
-static char *DAC960_V1_RAIDLevelName(DAC960_V1_RAIDLevel_T level)
+static char *myrb_raidlevel_name(myrb_raidlevel level)
 {
-	struct DAC960_V1_RAIDLevelTbl *entry =
-		DAC960_V1_RAIDLevelNames;
+	struct myrb_raidlevel_name_entry *entry = myrb_raidlevel_name_list;
 
 	while (entry && entry->name) {
 		if (entry->level == level)
@@ -94,7 +93,6 @@ static char *DAC960_V1_RAIDLevelName(DAC960_V1_RAIDLevel_T level)
 bool myrb_create_mempools(struct pci_dev *pdev, myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
-	struct pci_pool *DCDBPool = NULL;
 	size_t elem_size, elem_align;
 
 	elem_align = sizeof(myrb_sge);
@@ -106,25 +104,24 @@ bool myrb_create_mempools(struct pci_dev *pdev, myr_hba *c)
 			     "Failed to allocate SG pool\n");
 		return false;
 	}
-	elem_size = sizeof(myrb_dcdb);
-	elem_align = sizeof(unsigned int);
-	DCDBPool = pci_pool_create("DAC960_V1_DCDB",
-				   pdev, elem_size, elem_align, 0);
-	if (!DCDBPool) {
+
+	cb->dcdb_pool = pci_pool_create("myrb_dcdb", pdev,
+				       sizeof(myrb_dcdb),
+				       sizeof(unsigned int), 0);
+	if (!cb->dcdb_pool) {
 		pci_pool_destroy(cb->sg_pool);
 		cb->sg_pool = NULL;
 		shost_printk(KERN_ERR, c->host,
 			     "Failed to allocate DCDB pool\n");
 		return false;
 	}
-	cb->DCDBPool = DCDBPool;
 
 	snprintf(cb->work_q_name, sizeof(cb->work_q_name),
 		 "myrs_wq_%d", c->host->host_no);
 	cb->work_q = create_singlethread_workqueue(cb->work_q_name);
 	if (!cb->work_q) {
-		pci_pool_destroy(cb->DCDBPool);
-		cb->DCDBPool = NULL;
+		pci_pool_destroy(cb->dcdb_pool);
+		cb->dcdb_pool = NULL;
 		pci_pool_destroy(cb->sg_pool);
 		cb->sg_pool = NULL;
 		shost_printk(KERN_ERR, c->host,
@@ -151,9 +148,9 @@ void myrb_destroy_mempools(myr_hba *c)
 	if (cb->sg_pool != NULL)
 		pci_pool_destroy(cb->sg_pool);
 
-	if (cb->DCDBPool) {
-		pci_pool_destroy(cb->DCDBPool);
-		cb->DCDBPool = NULL;
+	if (cb->dcdb_pool) {
+		pci_pool_destroy(cb->dcdb_pool);
+		cb->dcdb_pool = NULL;
 	}
 }
 
@@ -230,7 +227,7 @@ static unsigned short myrb_exec_type3(myrb_hba *cb,
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3.opcode = op;
-	mbox->Type3.BusAddress = addr;
+	mbox->Type3.addr = addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cb->dcmd_mutex);
@@ -258,7 +255,7 @@ static unsigned short myrb_exec_type3B(myrb_hba *cb,
 	mbox->Type3B.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3B.opcode = op;
 	mbox->Type3B.CommandOpcode2 = CommandOpcode2;
-	mbox->Type3B.BusAddress = DataDMA;
+	mbox->Type3B.addr = DataDMA;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cb->dcmd_mutex);
@@ -295,7 +292,7 @@ static unsigned short myrb_exec_type3D(myrb_hba *cb,
 	mbox->Type3D.opcode = op;
 	mbox->Type3D.Channel = sdev->channel;
 	mbox->Type3D.TargetID = sdev->id;
-	mbox->Type3D.BusAddress = pdev_info_addr;
+	mbox->Type3D.addr = pdev_info_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	mutex_unlock(&cb->dcmd_mutex);
@@ -339,10 +336,10 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myrb_hba *cb,
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3E.id = DAC960_MonitoringIdentifier;
 	mbox->Type3E.opcode = DAC960_V1_PerformEventLogOperation;
-	mbox->Type3E.OperationType = DAC960_V1_GetEventLogEntry;
-	mbox->Type3E.OperationQualifier = 1;
-	mbox->Type3E.SequenceNumber = event;
-	mbox->Type3E.BusAddress = cb->ev_addr;
+	mbox->Type3E.optype = DAC960_V1_GetEventLogEntry;
+	mbox->Type3E.opqual = 1;
+	mbox->Type3E.ev_seq = event;
+	mbox->Type3E.addr = cb->ev_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
@@ -398,7 +395,7 @@ static void DAC960_V1_MonitorGetErrorTable(myrb_hba *cb)
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetErrorTable;
-	mbox->Type3.BusAddress = cb->err_table_addr;
+	mbox->Type3.addr = cb->err_table_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
@@ -429,12 +426,12 @@ static void DAC960_V1_MonitorGetErrorTable(myrb_hba *cb)
 }
 
 /*
-  DAC960_V1_GetLogicalDriveInfo executes a DAC960 V1 Firmware Controller Type 3
+  myrb_get_ldev_info executes a DAC960 V1 Firmware Controller Type 3
   Command and waits for completion.  It returns true on success and false
   on failure.
 */
 
-static unsigned short DAC960_V1_GetLogicalDriveInfo(myrb_hba *cb)
+static unsigned short myrb_get_ldev_info(myrb_hba *cb)
 {
 	unsigned short status;
 	int ldev_num, ldev_cnt = cb->enquiry->ldev_count;
@@ -456,10 +453,10 @@ static unsigned short DAC960_V1_GetLogicalDriveInfo(myrb_hba *cb)
 		sdev = scsi_device_lookup(shost, pdev_cnt, ldev_num, 0);
 		if (sdev && sdev->hostdata)
 			old = sdev->hostdata;
-		else if (new->State == DAC960_V1_Device_Online) {
+		else {
 			shost_printk(KERN_INFO, shost,
-				     "Logical Drive %d is now Online\n",
-				     ldev_num);
+				     "Adding Logical Drive %d in state %s\n",
+				     ldev_num, myrb_devstate_name(new->State));
 			scsi_add_device(shost, pdev_cnt, ldev_num, 0);
 			break;
 		}
@@ -496,14 +493,14 @@ static void DAC960_V1_MonitorRebuildProgress(myrb_hba *cb)
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
-	mbox->Type3.BusAddress = cb->rbld_addr;
+	mbox->Type3.addr = cb->rbld_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		unsigned int ldev_num = cb->rbld->LogicalDriveNumber;
-		unsigned int LogicalDriveSize = cb->rbld->LogicalDriveSize;
-		unsigned int BlocksCompleted =
-			LogicalDriveSize - cb->rbld->RemainingBlocks;
+		unsigned int ldev_num = cb->rbld->ldev_num;
+		unsigned int ldev_size = cb->rbld->ldev_size;
+		unsigned int blocks_done =
+			ldev_size - cb->rbld->blocks_left;
 		struct scsi_device *sdev;
 
 		sdev = scsi_device_lookup(c->host,
@@ -517,8 +514,8 @@ static void DAC960_V1_MonitorRebuildProgress(myrb_hba *cb)
 			sdev_printk(KERN_INFO, sdev,
 				     "Rebuild in Progress, "
 				     "%d%% completed\n",
-				     (100 * (BlocksCompleted >> 7))
-				     / (LogicalDriveSize >> 7));
+				     (100 * (blocks_done >> 7))
+				     / (ldev_size >> 7));
 			break;
 		case DAC960_V1_RebuildFailed_LogicalDriveFailure:
 			sdev_printk(KERN_INFO, sdev,
@@ -566,22 +563,22 @@ static void DAC960_V1_ConsistencyCheckProgress(myrb_hba *cb)
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_RebuildStat;
-	mbox->Type3.BusAddress = cb->rbld_addr;
+	mbox->Type3.addr = cb->rbld_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		unsigned int ldev_num = cb->rbld->LogicalDriveNumber;
-		unsigned int LogicalDriveSize = cb->rbld->LogicalDriveSize;
-		unsigned int BlocksCompleted =
-			LogicalDriveSize - cb->rbld->RemainingBlocks;
+		unsigned int ldev_num = cb->rbld->ldev_num;
+		unsigned int ldev_size = cb->rbld->ldev_size;
+		unsigned int blocks_done =
+			ldev_size - cb->rbld->blocks_left;
 		struct scsi_device *sdev;
 
 		sdev = scsi_device_lookup(c->host, c->PhysicalChannelCount,
 					  ldev_num, 0);
 		sdev_printk(KERN_INFO, sdev,
 			    "Consistency Check in Progress: %d%% completed\n",
-			    (100 * (BlocksCompleted >> 7))
-			    / (LogicalDriveSize >> 7));
+			    (100 * (blocks_done >> 7))
+			    / (ldev_size >> 7));
 	}
 }
 
@@ -604,13 +601,13 @@ static void myrb_bgi_control(myrb_hba *cb)
 	mbox->Type3B.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3B.opcode = DAC960_V1_BackgroundInitializationControl;
 	mbox->Type3B.CommandOpcode2 = 0x20;
-	mbox->Type3B.BusAddress = cb->bgi_status_addr;
+	mbox->Type3B.addr = cb->bgi_status_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	bgi = cb->bgi_status_buf;
 	last_bgi = &cb->bgi_status_old;
 	sdev = scsi_device_lookup(c->host, c->PhysicalChannelCount,
-				  bgi->LogicalDriveNumber, 0);
+				  bgi->ldev_num, 0);
 	switch (status) {
 	case DAC960_V1_NormalCompletion:
 		switch (bgi->Status) {
@@ -621,14 +618,14 @@ static void myrb_bgi_control(myrb_hba *cb)
 				    "Background Initialization Started\n");
 			break;
 		case MYRB_BGI_INPROGRESS:
-			if (bgi->BlocksCompleted == last_bgi->BlocksCompleted &&
-			    bgi->LogicalDriveNumber == last_bgi->LogicalDriveNumber)
+			if (bgi->blocks_done == last_bgi->blocks_done &&
+			    bgi->ldev_num == last_bgi->ldev_num)
 				break;
 			sdev_printk(KERN_INFO, sdev,
 				 "Background Initialization in Progress: "
 				 "%d%% completed\n",
-				 (100 * (bgi->BlocksCompleted >> 7))
-				 / (bgi->LogicalDriveSize >> 7));
+				 (100 * (bgi->blocks_done >> 7))
+				 / (bgi->ldev_size >> 7));
 			break;
 		case MYRB_BGI_SUSPENDED:
 			sdev_printk(KERN_INFO, sdev,
@@ -1016,8 +1013,8 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 	myrs_enquiry2 *enquiry2;
 	dma_addr_t enquiry2_addr;
-	DAC960_V1_Config2_T *Config2;
-	dma_addr_t Config2DMA;
+	myrb_config2 *config2;
+	dma_addr_t config2_addr;
 	struct Scsi_Host *shost = c->host;
 	struct pci_dev *pdev = c->pdev;
 	unsigned short status;
@@ -1030,11 +1027,11 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 			     "Failed to allocate V1 enquiry2 memory\n");
 		return -ENOMEM;
 	}
-	Config2 = pci_zalloc_consistent(pdev, sizeof(DAC960_V1_Config2_T),
-					&Config2DMA);
-	if (!Config2) {
+	config2 = dma_alloc_coherent(&pdev->dev, sizeof(myrb_config2),
+				     &config2_addr, GFP_KERNEL);
+	if (dma_mapping_error(&pdev->dev, config2_addr)) {
 		shost_printk(KERN_ERR, c->host,
-			     "Failed to allocate V1 Config2 memory\n");
+			     "Failed to allocate V1 config2 memory\n");
 		dma_free_coherent(&pdev->dev, sizeof(myrs_enquiry2),
 				  enquiry2, enquiry2_addr);
 		return -ENOMEM;
@@ -1055,14 +1052,14 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 		goto out;
 	}
 
-	status = myrb_exec_type3(cb, DAC960_V1_ReadConfig2, Config2DMA);
+	status = myrb_exec_type3(cb, DAC960_V1_ReadConfig2, config2_addr);
 	if (status != DAC960_V1_NormalCompletion) {
 		shost_printk(KERN_WARNING, c->host,
 			     "Failed to issue ReadConfig2\n");
 		goto out;
 	}
 
-	status = DAC960_V1_GetLogicalDriveInfo(cb);
+	status = myrb_get_ldev_info(cb);
 	if (status != DAC960_V1_NormalCompletion) {
 		shost_printk(KERN_WARNING, c->host,
 			     "Failed to get logical drive information\n");
@@ -1112,8 +1109,6 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 			     enquiry2->hw.SubModel);
 		goto out;
 	}
-	strcpy(c->FullModelName, "DAC960 ");
-	strcat(c->FullModelName, c->ModelName);
 	/*
 	  Initialize the Controller Firmware Version field and verify that it
 	  is a supported firmware version.  The supported firmware versions are:
@@ -1187,23 +1182,15 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 		break;
 	}
 	c->PhysicalChannelCount = enquiry2->cur_chan;
-	c->LogicalChannelCount = 1;
-	c->LogicalChannelMax = 1;
 	if (enquiry2->SCSICapability.BusWidth == DAC960_V1_Wide_32bit)
 		cb->BusWidth = 32;
 	else if (enquiry2->SCSICapability.BusWidth == DAC960_V1_Wide_16bit)
 		cb->BusWidth = 16;
 	else
 		cb->BusWidth = 8;
-	cb->LogicalBlockSize = enquiry2->ldev_block_size;
-	shost->max_channel = c->PhysicalChannelCount + c->LogicalChannelCount;
+	cb->ldev_block_size = enquiry2->ldev_block_size;
+	shost->max_channel = c->PhysicalChannelCount + 1;
 	shost->max_id = enquiry2->max_targets;
-	if (enquiry2->max_ldev > shost->max_id) {
-		int channels;
-
-		channels = enquiry2->max_ldev / shost->max_id;
-		c->LogicalChannelCount = c->LogicalChannelMax = channels;
-	}
 	memsize = enquiry2->mem_size >> 20;
 	cb->safte_enabled = (enquiry2->FaultManagementType == DAC960_V1_SAFTE);
 	/*
@@ -1229,11 +1216,11 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	/*
 	  Initialize the Stripe Size, Segment Size, and Geometry Translation.
 	*/
-	cb->StripeSize = Config2->BlocksPerStripe * Config2->BlockFactor
+	cb->StripeSize = config2->BlocksPerStripe * config2->BlockFactor
 		>> (10 - DAC960_BlockSizeBits);
-	cb->SegmentSize = Config2->BlocksPerCacheLine * Config2->BlockFactor
+	cb->SegmentSize = config2->BlocksPerCacheLine * config2->BlockFactor
 		>> (10 - DAC960_BlockSizeBits);
-	switch (Config2->DriveGeometry) {
+	switch (config2->DriveGeometry) {
 	case DAC960_V1_Geometry_128_32:
 		cb->GeometryTranslationHeads = 128;
 		cb->GeometryTranslationSectors = 32;
@@ -1245,7 +1232,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	default:
 		shost_printk(KERN_WARNING, c->host,
 			     "Invalid config2 drive geometry %x\n",
-			     Config2->DriveGeometry);
+			     config2->DriveGeometry);
 		goto out;
 	}
 	/*
@@ -1266,9 +1253,9 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 
 out:
 	dma_free_coherent(&pdev->dev, sizeof(myrs_enquiry2),
-			    enquiry2, enquiry2_addr);
-	pci_free_consistent(pdev, sizeof(DAC960_V1_Config2_T),
-			    Config2, Config2DMA);
+			  enquiry2, enquiry2_addr);
+	dma_free_coherent(&pdev->dev, sizeof(myrb_config2),
+			  config2, config2_addr);
 
 	shost_printk(KERN_INFO, c->host,
 		"Configuring %s PCI RAID Controller\n", c->ModelName);
@@ -1307,8 +1294,7 @@ out:
 		     c->PhysicalChannelCount, c->PhysicalChannelMax);
 
 	shost_printk(KERN_INFO, c->host,
-		     "  Logical: %d/%d channels, %d disks\n",
-		     c->LogicalChannelCount, c->LogicalChannelMax,
+		     "  Logical: 1/1 channels, %d disks\n",
 		     cb->enquiry->ldev_count);
 
 	return ret;
@@ -1330,70 +1316,67 @@ static int myrb_pthru_queuecommand(struct Scsi_Host *shost,
 	myrb_hba *cb = (myrb_hba *)shost->hostdata;
 	myrb_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-	myrb_dcdb *DCDB;
-	dma_addr_t DCDB_dma;
+	myrb_dcdb *dcdb;
+	dma_addr_t dcdb_addr;
 	struct scsi_device *sdev = scmd->device;
 	struct scatterlist *sgl;
 	unsigned long flags;
 	int nsge;
 
 	myrb_reset_cmd(cmd_blk);
-	DCDB = pci_pool_alloc(cb->DCDBPool, GFP_ATOMIC, &DCDB_dma);
-	if (!DCDB)
+	dcdb = pci_pool_alloc(cb->dcdb_pool, GFP_ATOMIC, &dcdb_addr);
+	if (!dcdb)
 		return SCSI_MLQUEUE_HOST_BUSY;
 	nsge = scsi_dma_map(scmd);
 	if (nsge > 1) {
-		pci_pool_free(cb->DCDBPool, DCDB, DCDB_dma);
-		cmd_blk->DCDB = NULL;
+		pci_pool_free(cb->dcdb_pool, dcdb, dcdb_addr);
 		scmd->result = (DID_ERROR << 16);
 		scmd->scsi_done(scmd);
 		return 0;
 	}
 
-	cmd_blk->DCDB = DCDB;
-	cmd_blk->DCDB_dma = DCDB_dma;
 	mbox->Type3.opcode = DAC960_V1_DCDB;
 	mbox->Type3.id = scmd->request->tag + 3;
-	mbox->Type3.BusAddress = DCDB_dma;
-	DCDB->Channel = sdev->channel;
-	DCDB->TargetID = sdev->id;
+	mbox->Type3.addr = dcdb_addr;
+	dcdb->Channel = sdev->channel;
+	dcdb->TargetID = sdev->id;
 	switch (scmd->sc_data_direction) {
 	case DMA_NONE:
-		DCDB->Direction = DAC960_V1_DCDB_NoDataTransfer;
+		dcdb->Direction = DAC960_V1_DCDB_NoDataTransfer;
 		break;
 	case DMA_TO_DEVICE:
-		DCDB->Direction = DAC960_V1_DCDB_DataTransferSystemToDevice;
+		dcdb->Direction = DAC960_V1_DCDB_DataTransferSystemToDevice;
 		break;
 	case DMA_FROM_DEVICE:
-		DCDB->Direction = DAC960_V1_DCDB_DataTransferDeviceToSystem;
+		dcdb->Direction = DAC960_V1_DCDB_DataTransferDeviceToSystem;
 		break;
 	default:
-		DCDB->Direction = DAC960_V1_DCDB_IllegalDataTransfer;
+		dcdb->Direction = DAC960_V1_DCDB_IllegalDataTransfer;
 		break;
 	}
-	DCDB->EarlyStatus = false;
+	dcdb->EarlyStatus = false;
 	if (scmd->request->timeout <= 10)
-		DCDB->Timeout = DAC960_V1_DCDB_Timeout_10_seconds;
+		dcdb->Timeout = DAC960_V1_DCDB_Timeout_10_seconds;
 	else if (scmd->request->timeout <= 60)
-		DCDB->Timeout = DAC960_V1_DCDB_Timeout_60_seconds;
+		dcdb->Timeout = DAC960_V1_DCDB_Timeout_60_seconds;
 	else if (scmd->request->timeout <= 600)
-		DCDB->Timeout = DAC960_V1_DCDB_Timeout_10_minutes;
+		dcdb->Timeout = DAC960_V1_DCDB_Timeout_10_minutes;
 	else
-		DCDB->Timeout = DAC960_V1_DCDB_Timeout_24_hours;
-	DCDB->NoAutomaticRequestSense = false;
-	DCDB->DisconnectPermitted = true;
+		dcdb->Timeout = DAC960_V1_DCDB_Timeout_24_hours;
+	dcdb->NoAutomaticRequestSense = false;
+	dcdb->DisconnectPermitted = true;
 	sgl = scsi_sglist(scmd);
-	DCDB->BusAddress = sg_dma_address(sgl);
+	dcdb->BusAddress = sg_dma_address(sgl);
 	if (sg_dma_len(sgl) > USHRT_MAX) {
-		DCDB->TransferLength = sg_dma_len(sgl) & 0xffff;
-		DCDB->TransferLengthHigh4 = sg_dma_len(sgl) >> 16;
+		dcdb->xfer_len_lo = sg_dma_len(sgl) & 0xffff;
+		dcdb->xfer_len_hi4 = sg_dma_len(sgl) >> 16;
 	} else {
-		DCDB->TransferLength = sg_dma_len(sgl);
-		DCDB->TransferLengthHigh4 = 0;
+		dcdb->xfer_len_lo = sg_dma_len(sgl);
+		dcdb->xfer_len_hi4 = 0;
 	}
-	DCDB->CDBLength = scmd->cmd_len;
-	DCDB->SenseLength = sizeof(DCDB->SenseData);
-	memcpy(&DCDB->CDB, scmd->cmnd, scmd->cmd_len);
+	dcdb->CDBLength = scmd->cmd_len;
+	dcdb->SenseLength = sizeof(dcdb->SenseData);
+	memcpy(&dcdb->CDB, scmd->cmnd, scmd->cmd_len);
 
 	spin_lock_irqsave(&cb->common.queue_lock, flags);
 	cb->QueueCommand(cb, cmd_blk);
@@ -1444,7 +1427,7 @@ myrb_mode_sense(myrb_hba *cb, struct scsi_cmnd *scmd,
 		unsigned char *block_desc = &modes[4];
 		modes[3] = 8;
 		put_unaligned_be32(ldev_info->Size, &block_desc[0]);
-		put_unaligned_be32(cb->LogicalBlockSize, &block_desc[5]);
+		put_unaligned_be32(cb->ldev_block_size, &block_desc[5]);
 	}
 	mode_pg[0] = 0x08;
 	mode_pg[1] = 0x12;
@@ -1475,9 +1458,9 @@ static void myrb_read_capacity(myrb_hba *cb,
 
 	dev_dbg(&scmd->device->sdev_gendev,
 		"Capacity %u, blocksize %u\n",
-		ldev_info->Size, cb->LogicalBlockSize);
+		ldev_info->Size, cb->ldev_block_size);
 	put_unaligned_be32(ldev_info->Size - 1, &data[0]);
-	put_unaligned_be32(cb->LogicalBlockSize, &data[4]);
+	put_unaligned_be32(cb->ldev_block_size, &data[4]);
 	scsi_sg_copy_from_buffer(scmd, data, 8);
 }
 
@@ -1620,10 +1603,10 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 		else
 			mbox->Type5.opcode = DAC960_V1_Write;
 
-		mbox->Type5.LD.TransferLength = block_cnt;
-		mbox->Type5.LD.LogicalDriveNumber = sdev->id;
-		mbox->Type5.LogicalBlockAddress = lba;
-		mbox->Type5.BusAddress = (u32)sg_dma_address(sgl);
+		mbox->Type5.LD.xfer_len = block_cnt;
+		mbox->Type5.LD.ldev_num = sdev->id;
+		mbox->Type5.lba = lba;
+		mbox->Type5.addr = (u32)sg_dma_address(sgl);
 	} else {
 		myrb_sge *hw_sgl;
 		dma_addr_t hw_sgl_addr;
@@ -1641,11 +1624,11 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 		else
 			mbox->Type5.opcode = DAC960_V1_WriteWithScatterGather;
 
-		mbox->Type5.LD.TransferLength = block_cnt;
-		mbox->Type5.LD.LogicalDriveNumber = sdev->id;
-		mbox->Type5.LogicalBlockAddress = lba;
-		mbox->Type5.BusAddress = hw_sgl_addr;
-		mbox->Type5.ScatterGatherCount = nsge;
+		mbox->Type5.LD.xfer_len = block_cnt;
+		mbox->Type5.LD.ldev_num = sdev->id;
+		mbox->Type5.lba = lba;
+		mbox->Type5.addr = hw_sgl_addr;
+		mbox->Type5.sg_count = nsge;
 
 		scsi_for_each_sg(scmd, sgl, nsge, i) {
 			hw_sgl->SegmentDataPointer = (u32)sg_dma_address(sgl);
@@ -1684,7 +1667,7 @@ static unsigned short myrb_translate_ldev(myr_hba *c,
 	unsigned short ldev_num;
 
 	ldev_num = sdev->id +
-		(sdev->channel - c->PhysicalChannelCount) * c->host->max_id;
+		(sdev->channel - c->PhysicalChannelCount) * DAC960_V1_MaxTargets;
 
 	return ldev_num;
 }
@@ -1768,7 +1751,7 @@ int myrb_slave_configure(struct scsi_device *sdev)
 	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
 	myrb_ldev_info *ldev_info;
 
-	if (sdev->channel > sdev->host->max_id)
+	if (sdev->channel > sdev->host->max_channel)
 		return -ENXIO;
 
 	if (sdev->channel < cb->common.PhysicalChannelCount) {
@@ -1927,7 +1910,7 @@ static ssize_t myrb_show_dev_level(struct device *dev,
 		if (!ldev_info)
 			return -ENXIO;
 
-		name = DAC960_V1_RAIDLevelName(ldev_info->RAIDLevel);
+		name = myrb_raidlevel_name(ldev_info->RAIDLevel);
 		if (!name)
 			return snprintf(buf, 32, "Invalid (%02X)\n",
 					ldev_info->State);
@@ -1956,13 +1939,13 @@ static ssize_t myrb_show_dev_rebuild(struct device *dev,
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
-	mbox->Type3.BusAddress = cb->rbld_addr;
+	mbox->Type3.addr = cb->rbld_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		ldev_num = cb->rbld->LogicalDriveNumber;
-		ldev_size = cb->rbld->LogicalDriveSize;
-		remaining = cb->rbld->RemainingBlocks;
+		ldev_num = cb->rbld->ldev_num;
+		ldev_size = cb->rbld->ldev_size;
+		remaining = cb->rbld->blocks_left;
 	}
 	mutex_unlock(&cb->dcmd_mutex);
 
@@ -2013,11 +1996,11 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3.id = DAC960_MonitoringIdentifier;
 	mbox->Type3.opcode = DAC960_V1_GetRebuildProgress;
-	mbox->Type3.BusAddress = cb->rbld_addr;
+	mbox->Type3.addr = cb->rbld_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion)
-		ldev_num = cb->rbld->LogicalDriveNumber;
+		ldev_num = cb->rbld->ldev_num;
 	mutex_unlock(&cb->dcmd_mutex);
 
 	if (start) {
@@ -2040,7 +2023,7 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 			ldev_num = myrb_translate_ldev(&cb->common, sdev);
 			mbox->Type3C.opcode = DAC960_V1_CheckConsistencyAsync;
 			mbox->Type3C.id = DAC960_DirectCommandIdentifier;
-			mbox->Type3C.LogicalDriveNumber = ldev_num;
+			mbox->Type3C.ldev_num = ldev_num;
 			mbox->Type3C.AutoRestore = true;
 		}
 		myrb_exec_cmd(cb, cmd_blk);
@@ -2071,8 +2054,8 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 		mbox = &cmd_blk->mbox;
 		mbox->Type3R.opcode = DAC960_V1_RebuildControl;
 		mbox->Type3R.id = DAC960_DirectCommandIdentifier;
-		mbox->Type3R.RebuildRateConstant = 0xFF;
-		mbox->Type3R.BusAddress = rate_addr;
+		mbox->Type3R.rbld_rate = 0xFF;
+		mbox->Type3R.addr = rate_addr;
 		myrb_exec_cmd(cb, cmd_blk);
 		status = cmd_blk->status;
 		pci_free_consistent(pdev, sizeof(char), rate, rate_addr);
@@ -2228,10 +2211,10 @@ myrb_get_resync(struct device *dev)
 	if (sdev->channel < cb->common.PhysicalChannelCount)
 		return;
 	if (DAC960_V1_ControllerIsRebuilding(cb)) {
-		ldev_num = cb->rbld->LogicalDriveNumber;
+		ldev_num = cb->rbld->ldev_num;
 		if (ldev_num == myrb_translate_ldev(&cb->common, sdev)) {
-			ldev_size = cb->rbld->LogicalDriveSize;
-			remaining = cb->rbld->RemainingBlocks;
+			ldev_size = cb->rbld->ldev_size;
+			remaining = cb->rbld->blocks_left;
 		}
 	}
 	if (remaining && ldev_size)
@@ -2289,11 +2272,11 @@ static void myrb_handle_scsi(myrb_hba *cb, myrb_cmdblk *cmd_blk,
 	BUG_ON(!scmd);
 	scsi_dma_unmap(scmd);
 
-	if (cmd_blk->DCDB) {
-		memcpy(scmd->sense_buffer, &cmd_blk->DCDB->SenseData, 64);
-		pci_pool_free(cb->DCDBPool, cmd_blk->DCDB,
-			      cmd_blk->DCDB_dma);
-		cmd_blk->DCDB = NULL;
+	if (cmd_blk->dcdb) {
+		memcpy(scmd->sense_buffer, &cmd_blk->dcdb->SenseData, 64);
+		pci_pool_free(cb->dcdb_pool, cmd_blk->dcdb,
+			      cmd_blk->dcdb_addr);
+		cmd_blk->dcdb = NULL;
 	}
 	if (cmd_blk->sgl) {
 		pci_pool_free(cb->sg_pool, cmd_blk->sgl, cmd_blk->sgl_addr);
@@ -2398,7 +2381,7 @@ static void myrb_monitor(struct work_struct *work)
 		cb->need_ldev_info = false;
 		dev_dbg(&shost->shost_gendev,
 			"get logical drive info\n");
-		DAC960_V1_GetLogicalDriveInfo(cb);
+		myrb_get_ldev_info(cb);
 		interval = 10;
 	} else if (cb->need_rbld) {
 		cb->need_rbld = false;
@@ -2730,7 +2713,7 @@ static int DAC960_PD_HardwareInit(struct pci_dev *pdev,
 	int timeout = 0;
 	unsigned char ErrorStatus, Parameter0, Parameter1;
 
-	if (!request_region(c->IO_Address, 0x80, c->FullModelName)) {
+	if (!request_region(c->IO_Address, 0x80, "myrb")) {
 		dev_err(&pdev->dev, "IO port 0x%lx busy\n",
 			(unsigned long)c->IO_Address);
 		return -EBUSY;
@@ -2877,7 +2860,7 @@ static int DAC960_P_HardwareInit(struct pci_dev *pdev,
 	int timeout = 0;
 	unsigned char ErrorStatus, Parameter0, Parameter1;
 
-	if (!request_region(c->IO_Address, 0x80, c->FullModelName)){
+	if (!request_region(c->IO_Address, 0x80, "myrb")){
 		dev_err(&pdev->dev, "IO port 0x%lx busy\n",
 			(unsigned long)c->IO_Address);
 		return -EBUSY;

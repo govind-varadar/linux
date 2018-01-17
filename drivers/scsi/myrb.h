@@ -220,7 +220,7 @@ myrb_enquiry;
   Define the DAC960 V1 Firmware Enquiry2 Command reply structure.
 */
 
-typedef struct DAC960_V1_Enquiry2
+typedef struct myrs_enquiry2_s
 {
 	struct {
 		enum {
@@ -387,7 +387,7 @@ typedef enum {
 	DAC960_V1_RAID_JBOD =		0x7,     /* RAID 7 (JBOD) */
 }
 __attribute__ ((packed))
-DAC960_V1_RAIDLevel_T;
+myrb_raidlevel;
 
 /*
   Define the DAC960 V1 Firmware Logical Drive Information structure.
@@ -408,27 +408,21 @@ typedef struct myrb_ldev_info_s
   reply structure.
 */
 
-typedef myrb_ldev_info
-myrb_ldev_info_arr[DAC960_MaxLogicalDrives];
+typedef myrb_ldev_info myrb_ldev_info_arr[DAC960_MaxLogicalDrives];
 
 
 /*
   Define the DAC960 V1 Firmware Perform Event Log Operation Types.
 */
 
-typedef enum
-{
-	DAC960_V1_GetEventLogEntry =			0x00
-}
-__attribute__ ((packed))
-DAC960_V1_PerformEventLogOpType_T;
+#define DAC960_V1_GetEventLogEntry		0x00
 
 
 /*
   Define the DAC960 V1 Firmware Get Event Log Entry Command reply structure.
 */
 
-typedef struct DAC960_V1_EventLogEntry
+typedef struct myrb_log_entry_s
 {
 	unsigned char MessageType;			/* Byte 0 */
 	unsigned char MessageLength;			/* Byte 1 */
@@ -478,11 +472,11 @@ typedef struct myrb_pdev_state_s
   Define the DAC960 V1 Firmware Get Rebuild Progress Command reply structure.
 */
 
-typedef struct DAC960_V1_RebuildProgress
+typedef struct myrb_rbld_progress_s
 {
-	unsigned int LogicalDriveNumber;		/* Bytes 0-3 */
-	unsigned int LogicalDriveSize;			/* Bytes 4-7 */
-	unsigned int RemainingBlocks;			/* Bytes 8-11 */
+	unsigned int ldev_num;		/* Bytes 0-3 */
+	unsigned int ldev_size;			/* Bytes 4-7 */
+	unsigned int blocks_left;			/* Bytes 8-11 */
 }
 myrb_rbld_progress;
 
@@ -494,10 +488,10 @@ myrb_rbld_progress;
 
 typedef struct myrb_bgi_status_s
 {
-	unsigned int LogicalDriveSize;			/* Bytes 0-3 */
-	unsigned int BlocksCompleted;			/* Bytes 4-7 */
+	unsigned int ldev_size;			/* Bytes 0-3 */
+	unsigned int blocks_done;			/* Bytes 4-7 */
 	unsigned char rsvd1[12];			/* Bytes 8-19 */
-	unsigned int LogicalDriveNumber;		/* Bytes 20-23 */
+	unsigned int ldev_num;		/* Bytes 20-23 */
 	unsigned char RAIDLevel;			/* Byte 24 */
 	enum {
 		MYRB_BGI_INVALID =	0x00,
@@ -609,7 +603,7 @@ typedef struct DAC960_V1_Config2
 	unsigned char Reserved2[9];			/* Bytes 53-61 */
 	unsigned short Checksum;			/* Bytes 62-63 */
 }
-DAC960_V1_Config2_T;
+myrb_config2;
 
 
 /*
@@ -636,10 +630,10 @@ typedef struct myrb_dcdb_s
 	} __attribute__ ((packed)) Timeout:2;		/* Byte 1 Bits 4-5 */
 	bool NoAutomaticRequestSense:1;			/* Byte 1 Bit 6 */
 	bool DisconnectPermitted:1;			/* Byte 1 Bit 7 */
-	unsigned short TransferLength;			/* Bytes 2-3 */
+	unsigned short xfer_len_lo;			/* Bytes 2-3 */
 	u32 BusAddress;					/* Bytes 4-7 */
 	unsigned char CDBLength:4;			/* Byte 8 Bits 0-3 */
-	unsigned char TransferLengthHigh4:4;		/* Byte 8 Bits 4-7 */
+	unsigned char xfer_len_hi4:4;		/* Byte 8 Bits 4-7 */
 	unsigned char SenseLength;			/* Byte 9 */
 	unsigned char CDB[12];				/* Bytes 10-21 */
 	unsigned char SenseData[64];			/* Bytes 22-85 */
@@ -673,30 +667,30 @@ typedef union myrb_cmd_mbox_s
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
-		unsigned char Dummy[14];				/* Bytes 2-15 */
+		unsigned char rsvd[14];				/* Bytes 2-15 */
 	} __attribute__ ((packed)) Common;
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
-		unsigned char Dummy1[6];				/* Bytes 2-7 */
-		u32 BusAddress;						/* Bytes 8-11 */
-		unsigned char Dummy2[4];				/* Bytes 12-15 */
+		unsigned char rsvd1[6];				/* Bytes 2-7 */
+		u32 addr;						/* Bytes 8-11 */
+		unsigned char rsvd2[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3;
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned char CommandOpcode2;				/* Byte 2 */
-		unsigned char Dummy1[5];				/* Bytes 3-7 */
-		u32 BusAddress;						/* Bytes 8-11 */
-		unsigned char Dummy2[4];				/* Bytes 12-15 */
+		unsigned char rsvd1[5];				/* Bytes 3-7 */
+		u32 addr;						/* Bytes 8-11 */
+		unsigned char rsvd2[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3B;
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
-		unsigned char Dummy1[5];				/* Bytes 2-6 */
-		unsigned char LogicalDriveNumber:6;			/* Byte 7 Bits 0-6 */
+		unsigned char rsvd1[5];				/* Bytes 2-6 */
+		unsigned char ldev_num:6;			/* Byte 7 Bits 0-6 */
 		bool AutoRestore:1;					/* Byte 7 Bit 7 */
-		unsigned char Dummy2[8];				/* Bytes 8-15 */
+		unsigned char rsvd2[8];				/* Bytes 8-15 */
 	} __attribute__ ((packed)) Type3C;
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
@@ -704,64 +698,64 @@ typedef union myrb_cmd_mbox_s
 		unsigned char Channel;					/* Byte 2 */
 		unsigned char TargetID;					/* Byte 3 */
 		myrb_devstate State;				/* Byte 4 Bits */
-		unsigned char Dummy1[3];				/* Bytes 5-7 */
-		u32 BusAddress;						/* Bytes 8-11 */
-		unsigned char Dummy2[4];				/* Bytes 12-15 */
+		unsigned char rsvd1[3];				/* Bytes 5-7 */
+		u32 addr;						/* Bytes 8-11 */
+		unsigned char rsvd2[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3D;
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
-		DAC960_V1_PerformEventLogOpType_T OperationType;	/* Byte 2 */
-		unsigned char OperationQualifier;			/* Byte 3 */
-		unsigned short SequenceNumber;				/* Bytes 4-5 */
-		unsigned char Dummy1[2];				/* Bytes 6-7 */
-		u32 BusAddress;						/* Bytes 8-11 */
-		unsigned char Dummy2[4];				/* Bytes 12-15 */
+		unsigned char optype;	/* Byte 2 */
+		unsigned char opqual;			/* Byte 3 */
+		unsigned short ev_seq;				/* Bytes 4-5 */
+		unsigned char rsvd1[2];				/* Bytes 6-7 */
+		u32 addr;						/* Bytes 8-11 */
+		unsigned char rsvd2[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3E;
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
-		unsigned char Dummy1[2];				/* Bytes 2-3 */
-		unsigned char RebuildRateConstant;			/* Byte 4 */
-		unsigned char Dummy2[3];				/* Bytes 5-7 */
-		u32 BusAddress;						/* Bytes 8-11 */
-		unsigned char Dummy3[4];				/* Bytes 12-15 */
+		unsigned char rsvd1[2];				/* Bytes 2-3 */
+		unsigned char rbld_rate;			/* Byte 4 */
+		unsigned char rsvd2[3];				/* Bytes 5-7 */
+		u32 addr;						/* Bytes 8-11 */
+		unsigned char rsvd3[4];				/* Bytes 12-15 */
 	} __attribute__ ((packed)) Type3R;
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
-		unsigned short TransferLength;				/* Bytes 2-3 */
-		unsigned int LogicalBlockAddress;			/* Bytes 4-7 */
-		u32 BusAddress;						/* Bytes 8-11 */
-		unsigned char LogicalDriveNumber;			/* Byte 12 */
-		unsigned char Dummy[3];					/* Bytes 13-15 */
+		unsigned short xfer_len;				/* Bytes 2-3 */
+		unsigned int lba;			/* Bytes 4-7 */
+		u32 addr;						/* Bytes 8-11 */
+		unsigned char ldev_num;			/* Byte 12 */
+		unsigned char rsvd[3];					/* Bytes 13-15 */
 	} __attribute__ ((packed)) Type4;
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		struct {
-			unsigned short TransferLength:11;			/* Bytes 2-3 */
-			unsigned char LogicalDriveNumber:5;		/* Byte 3 Bits 3-7 */
+			unsigned short xfer_len:11;			/* Bytes 2-3 */
+			unsigned char ldev_num:5;		/* Byte 3 Bits 3-7 */
 		} __attribute__ ((packed)) LD;
-		unsigned int LogicalBlockAddress;			/* Bytes 4-7 */
-		u32 BusAddress;						/* Bytes 8-11 */
-		unsigned char ScatterGatherCount:6;			/* Byte 12 Bits 0-5 */
+		unsigned int lba;			/* Bytes 4-7 */
+		u32 addr;						/* Bytes 8-11 */
+		unsigned char sg_count:6;			/* Byte 12 Bits 0-5 */
 		enum {
 			DAC960_V1_ScatterGather_32BitAddress_32BitByteCount = 0x0,
 			DAC960_V1_ScatterGather_32BitAddress_16BitByteCount = 0x1,
 			DAC960_V1_ScatterGather_32BitByteCount_32BitAddress = 0x2,
 			DAC960_V1_ScatterGather_16BitByteCount_32BitAddress = 0x3
-		} __attribute__ ((packed)) ScatterGatherType:2;	/* Byte 12 Bits 6-7 */
-		unsigned char Dummy[3];				/* Bytes 13-15 */
+		} __attribute__ ((packed)) sg_type:2;	/* Byte 12 Bits 6-7 */
+		unsigned char rsvd[3];				/* Bytes 13-15 */
 	} __attribute__ ((packed)) Type5;
 	struct {
 		myrb_cmd_opcode opcode;		/* Byte 0 */
 		unsigned char id;	/* Byte 1 */
 		unsigned char CommandOpcode2;				/* Byte 2 */
-		unsigned char :8;					/* Byte 3 */
+		unsigned char rsvd1:8;					/* Byte 3 */
 		u32 CommandMailboxesBusAddress;				/* Bytes 4-7 */
 		u32 StatusMailboxesBusAddress;				/* Bytes 8-11 */
-		unsigned char Dummy[4];					/* Bytes 12-15 */
+		unsigned char rsvd2[4];					/* Bytes 12-15 */
 	} __attribute__ ((packed)) TypeX;
 } myrb_cmd_mbox;
 
@@ -783,8 +777,8 @@ typedef struct myrb_cmdblk_s
 	myrb_cmd_mbox mbox;
 	unsigned short status;
 	struct completion *Completion;
-	myrb_dcdb *DCDB;
-	dma_addr_t DCDB_dma;
+	myrb_dcdb *dcdb;
+	dma_addr_t dcdb_addr;
 	myrb_sge *sgl;
 	dma_addr_t sgl_addr;
 } myrb_cmdblk;
@@ -793,7 +787,7 @@ typedef struct myrb_hba_s
 {
 	struct myr_hba_s common;
 
-	unsigned int LogicalBlockSize;
+	unsigned int ldev_block_size;
 	unsigned char GeometryTranslationHeads;
 	unsigned char GeometryTranslationSectors;
 	unsigned char BusWidth;
@@ -818,7 +812,7 @@ typedef struct myrb_hba_s
 	unsigned long secondary_monitor_time;
 
 	struct pci_pool *sg_pool;
-	struct pci_pool *DCDBPool;
+	struct pci_pool *dcdb_pool;
 
 	void (*QueueCommand)(struct myrb_hba_s *, myrb_cmdblk *);
 	void (*WriteCommandMailbox)(myrb_cmd_mbox *, myrb_cmd_mbox *);
@@ -1780,7 +1774,7 @@ static inline
 void DAC960_PD_To_P_TranslateReadWriteCommand(myrb_cmdblk *cmd_blk)
 {
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-	int ldev_num = mbox->Type5.LD.LogicalDriveNumber;
+	int ldev_num = mbox->Type5.LD.ldev_num;
 
 	mbox->Bytes[3] &= 0x7;
 	mbox->Bytes[3] |= mbox->Bytes[7] << 6;

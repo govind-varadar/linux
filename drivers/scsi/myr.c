@@ -254,7 +254,7 @@ DAC960_DetectController(struct pci_dev *pdev,
 	  Acquire shared access to the IRQ Channel.
 	*/
 	if (request_irq(pdev->irq, InterruptHandler, IRQF_SHARED,
-			c->FullModelName, c) < 0) {
+			"myrb", c) < 0) {
 		dev_err(&pdev->dev,
 			"Unable to acquire IRQ Channel %d\n", pdev->irq);
 		goto Failure;

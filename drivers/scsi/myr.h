@@ -197,7 +197,6 @@ typedef struct myr_hba_s
 	unsigned char ControllerNumber;
 	unsigned char ControllerName[4];
 	unsigned char ModelName[20];
-	unsigned char FullModelName[28];
 	unsigned char FirmwareVersion[12];
 	unsigned char IRQ_Channel;
 	unsigned char PhysicalChannelCount;
