@@ -838,9 +838,7 @@ typedef struct myrb_hba_s
 	myrb_ldev_info_arr *ldev_info_buf;
 	dma_addr_t ldev_info_addr;
 
-	myrb_bgi_status *bgi_status_buf;
-	dma_addr_t bgi_status_addr;
-	myrb_bgi_status bgi_status_old;
+	myrb_bgi_status bgi_status;
 
 	struct mutex dma_mutex;
 } myrb_hba;

@@ -35,6 +35,8 @@
 
 static void myrb_monitor(struct work_struct *work);
 
+#define myrb_logical_channel(shost) ((shost)->max_channel - 1)
+
 static struct myrb_devstate_name_entry {
 	myrb_devstate state;
 	char *name;
@@ -241,28 +243,6 @@ static unsigned short myrb_exec_type3(myrb_hba *cb,
   on failure.
 */
 
-static unsigned short myrb_exec_type3B(myrb_hba *cb,
-					      myrb_cmd_opcode op,
-					      unsigned char CommandOpcode2,
-					      dma_addr_t DataDMA)
-{
-	myrb_cmdblk *cmd_blk = &cb->dcmd_blk;
-	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-	unsigned short status;
-
-	mutex_lock(&cb->dcmd_mutex);
-	myrb_reset_cmd(cmd_blk);
-	mbox->Type3B.id = DAC960_DirectCommandIdentifier;
-	mbox->Type3B.opcode = op;
-	mbox->Type3B.CommandOpcode2 = CommandOpcode2;
-	mbox->Type3B.addr = DataDMA;
-	myrb_exec_cmd(cb, cmd_blk);
-	status = cmd_blk->status;
-	mutex_unlock(&cb->dcmd_mutex);
-	return status;
-}
-
-
 /*
   myrb_exec_type3D executes a DAC960 V1 Firmware Controller Type 3D
   Command and waits for completion.  It returns true on success and false
@@ -404,7 +384,7 @@ static void DAC960_V1_MonitorGetErrorTable(myrb_hba *cb)
 		struct scsi_device *sdev;
 
 		shost_for_each_device(sdev, c->host) {
-			if (sdev->channel >= c->PhysicalChannelCount)
+			if (sdev->channel >= myrb_logical_channel(c->host))
 				continue;
 			new_entry = &table->entries[sdev->channel][sdev->id];
 			old_entry = &old_table.entries[sdev->channel][sdev->id];
@@ -435,7 +415,6 @@ static unsigned short myrb_get_ldev_info(myrb_hba *cb)
 {
 	unsigned short status;
 	int ldev_num, ldev_cnt = cb->enquiry->ldev_count;
-	int pdev_cnt = cb->common.PhysicalChannelCount;
 	struct Scsi_Host *shost = cb->common.host;
 
 	status = myrb_exec_type3(cb, DAC960_V1_GetLogicalDeviceInfo,
@@ -450,14 +429,16 @@ static unsigned short myrb_get_ldev_info(myrb_hba *cb)
 		unsigned short ldev_num;
 		myrb_devstate old_state = DAC960_V1_Device_Offline;
 
-		sdev = scsi_device_lookup(shost, pdev_cnt, ldev_num, 0);
+		sdev = scsi_device_lookup(shost, myrb_logical_channel(shost),
+					  ldev_num, 0);
 		if (sdev && sdev->hostdata)
 			old = sdev->hostdata;
 		else {
 			shost_printk(KERN_INFO, shost,
 				     "Adding Logical Drive %d in state %s\n",
 				     ldev_num, myrb_devstate_name(new->State));
-			scsi_add_device(shost, pdev_cnt, ldev_num, 0);
+			scsi_add_device(shost, myrb_logical_channel(shost),
+					ldev_num, 0);
 			break;
 		}
 		if (old)
@@ -504,7 +485,7 @@ static void DAC960_V1_MonitorRebuildProgress(myrb_hba *cb)
 		struct scsi_device *sdev;
 
 		sdev = scsi_device_lookup(c->host,
-					  c->PhysicalChannelCount,
+					  myrb_logical_channel(c->host),
 					  ldev_num, 0);
 		if (status == DAC960_V1_NoRebuildOrCheckInProgress &&
 		    cb->last_rbld_status == DAC960_V1_NormalCompletion)
@@ -573,7 +554,8 @@ static void DAC960_V1_ConsistencyCheckProgress(myrb_hba *cb)
 			ldev_size - cb->rbld->blocks_left;
 		struct scsi_device *sdev;
 
-		sdev = scsi_device_lookup(c->host, c->PhysicalChannelCount,
+		sdev = scsi_device_lookup(c->host,
+					  myrb_logical_channel(c->host),
 					  ldev_num, 0);
 		sdev_printk(KERN_INFO, sdev,
 			    "Consistency Check in Progress: %d%% completed\n",
@@ -594,20 +576,29 @@ static void myrb_bgi_control(myrb_hba *cb)
 	myrb_cmdblk *cmd_blk = &cb->mcmd_blk;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
 	myrb_bgi_status *bgi, *last_bgi;
+	dma_addr_t bgi_addr;
 	struct scsi_device *sdev;
 	unsigned short status;
 
+	bgi = dma_alloc_coherent(&c->pdev->dev, sizeof(myrb_bgi_status),
+				 &bgi_addr, GFP_KERNEL);
+	if (dma_mapping_error(&c->pdev->dev, bgi_addr)) {
+		shost_printk(KERN_ERR, c->host,
+			     "Failed to allocate bgi memory\n");
+		return;
+	}
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3B.id = DAC960_DirectCommandIdentifier;
 	mbox->Type3B.opcode = DAC960_V1_BackgroundInitializationControl;
 	mbox->Type3B.CommandOpcode2 = 0x20;
-	mbox->Type3B.addr = cb->bgi_status_addr;
+	mbox->Type3B.addr = bgi_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
-	bgi = cb->bgi_status_buf;
-	last_bgi = &cb->bgi_status_old;
-	sdev = scsi_device_lookup(c->host, c->PhysicalChannelCount,
-				  bgi->ldev_num, 0);
+	last_bgi = &cb->bgi_status;
+	if (last_bgi->Status != MYRB_BGI_INVALID)
+		sdev = scsi_device_lookup(c->host,
+					  myrb_logical_channel(c->host),
+					  bgi->ldev_num, 0);
 	switch (status) {
 	case DAC960_V1_NormalCompletion:
 		switch (bgi->Status) {
@@ -636,25 +627,26 @@ static void myrb_bgi_control(myrb_hba *cb)
 				    "Background Initialization Cancelled\n");
 			break;
 		}
-		memcpy(&cb->bgi_status_old, cb->bgi_status_buf,
-		       sizeof(myrb_bgi_status));
+		memcpy(&cb->bgi_status, bgi, sizeof(myrb_bgi_status));
 		break;
 	case DAC960_V1_BackgroundInitSuccessful:
-		if (bgi->Status == MYRB_BGI_INPROGRESS)
+		if (cb->bgi_status.Status == MYRB_BGI_INPROGRESS)
 			sdev_printk(KERN_INFO, sdev,
 				    "Background Initialization "
 				    "Completed Successfully\n");
-		bgi->Status = MYRB_BGI_INVALID;
+		cb->bgi_status.Status = MYRB_BGI_INVALID;
 		break;
 	case DAC960_V1_BackgroundInitAborted:
-		if (bgi->Status ==  MYRB_BGI_INPROGRESS)
+		if (cb->bgi_status.Status ==  MYRB_BGI_INPROGRESS)
 			sdev_printk(KERN_INFO, sdev,
 				    "Background Initialization Aborted\n");
-		bgi->Status = MYRB_BGI_INVALID;
-		break;
+		/* Fallthrough */
 	case DAC960_V1_NoBackgroundInitInProgress:
+		cb->bgi_status.Status = MYRB_BGI_INVALID;
 		break;
 	}
+	dma_free_coherent(&c->pdev->dev, sizeof(myrb_bgi_status),
+			  bgi, bgi_addr);
 }
 
 /*
@@ -848,7 +840,6 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 		sizeof(myrb_error_table) + sizeof(myrb_log_entry) +
 		sizeof(myrb_rbld_progress) +
 		sizeof(myrb_ldev_info_arr) +
-		sizeof(myrb_bgi_status) +
 		sizeof(myrb_pdev_state);
 
 	if (!init_dma_loaf(pdev, DmaPages, DmaPagesSize))
@@ -899,9 +890,6 @@ skip_mailboxes:
 
 	cb->ldev_info_buf = slice_dma_loaf(DmaPages, sizeof(myrb_ldev_info_arr),
 					   &cb->ldev_info_addr);
-
-	cb->bgi_status_buf = slice_dma_loaf(DmaPages, sizeof(myrb_bgi_status),
-					    &cb->bgi_status_addr);
 
 	if ((hw_type == DAC960_PD_Controller) || (hw_type == DAC960_P_Controller))
 		return true;
@@ -1243,10 +1231,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	    (c->FirmwareVersion[0] == '5' &&
 	     strcmp(c->FirmwareVersion, "5.08") >= 0)) {
 		cb->bgi_status_supported = true;
-		myrb_exec_type3B(cb, DAC960_V1_BackgroundInitializationControl,
-				 0x20, cb->bgi_status_addr);
-		memcpy(&cb->bgi_status_old, cb->bgi_status_buf,
-		       sizeof(myrb_bgi_status));
+		myrb_bgi_control(cb);
 	}
 	cb->last_rbld_status = DAC960_V1_NoRebuildOrCheckInProgress;
 	ret = 0;
@@ -1294,8 +1279,8 @@ out:
 		     c->PhysicalChannelCount, c->PhysicalChannelMax);
 
 	shost_printk(KERN_INFO, c->host,
-		     "  Logical: 1/1 channels, %d disks\n",
-		     cb->enquiry->ldev_count);
+		     "  Logical: 1/1 channels, %d/%d disks\n",
+		     cb->enquiry->ldev_count, c->host->max_id);
 
 	return ret;
 }
@@ -1311,7 +1296,7 @@ int myrb_host_reset(struct scsi_cmnd *scmd)
 }
 
 static int myrb_pthru_queuecommand(struct Scsi_Host *shost,
-					struct scsi_cmnd *scmd)
+				   struct scsi_cmnd *scmd)
 {
 	myrb_hba *cb = (myrb_hba *)shost->hostdata;
 	myrb_cmdblk *cmd_blk = scsi_cmd_priv(scmd);
@@ -1647,7 +1632,6 @@ submit:
 static int myrb_queuecommand(struct Scsi_Host *shost,
 			     struct scsi_cmnd *scmd)
 {
-	myrb_hba *cb = (myrb_hba *)shost->hostdata;
 	struct scsi_device *sdev = scmd->device;
 
 	if (sdev->channel > shost->max_channel) {
@@ -1655,7 +1639,7 @@ static int myrb_queuecommand(struct Scsi_Host *shost,
 		scmd->scsi_done(scmd);
 		return 0;
 	}
-	if (sdev->channel >= cb->common.PhysicalChannelCount)
+	if (sdev->channel == myrb_logical_channel(shost))
 		return myrb_ldev_queuecommand(shost, scmd);
 
 	return myrb_pthru_queuecommand(shost, scmd);
@@ -1683,7 +1667,7 @@ static int myrb_slave_alloc(struct scsi_device *sdev)
 	if (sdev->lun > 0)
 		return -ENXIO;
 
-	if (sdev->channel >= cb->common.PhysicalChannelCount) {
+	if (sdev->channel == myrb_logical_channel(sdev->host)) {
 		myrb_ldev_info *ldev_info;
 		unsigned short ldev_num;
 
@@ -1728,6 +1712,9 @@ static int myrb_slave_alloc(struct scsi_device *sdev)
 	} else {
 		myrb_pdev_state *pdev_info;
 
+		if (sdev->id > DAC960_V1_MaxTargets)
+			return -ENXIO;
+
 		pdev_info = kzalloc(sizeof(*pdev_info), GFP_KERNEL|GFP_DMA);
 		if (!pdev_info)
 			return -ENOMEM;
@@ -1748,13 +1735,12 @@ static int myrb_slave_alloc(struct scsi_device *sdev)
 
 int myrb_slave_configure(struct scsi_device *sdev)
 {
-	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
 	myrb_ldev_info *ldev_info;
 
 	if (sdev->channel > sdev->host->max_channel)
 		return -ENXIO;
 
-	if (sdev->channel < cb->common.PhysicalChannelCount) {
+	if (sdev->channel < myrb_logical_channel(sdev->host)) {
 		sdev->no_uld_attach = 1;
 		return 0;
 	}
@@ -1793,7 +1779,7 @@ static ssize_t myrb_show_dev_state(struct device *dev,
 	if (!sdev->hostdata)
 		return snprintf(buf, 16, "Unknown\n");
 
-	if (sdev->channel >= cb->common.PhysicalChannelCount) {
+	if (sdev->channel == myrb_logical_channel(sdev->host)) {
 		myrb_ldev_info *ldev_info = sdev->hostdata;
 		const char *name;
 
@@ -1901,9 +1887,8 @@ static ssize_t myrb_show_dev_level(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
-	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
 
-	if (sdev->channel >= cb->common.PhysicalChannelCount) {
+	if (sdev->channel == myrb_logical_channel(sdev->host)) {
 		myrb_ldev_info *ldev_info = sdev->hostdata;
 		const char *name;
 
@@ -1932,7 +1917,7 @@ static ssize_t myrb_show_dev_rebuild(struct device *dev,
 	bool rebuild = true;
 	ssize_t ldev_size, remaining;
 
-	if (sdev->channel < cb->common.PhysicalChannelCount)
+	if (sdev->channel < myrb_logical_channel(sdev->host))
 		return snprintf(buf, 32, "physical device - not rebuilding\n");
 
 	mutex_lock(&cb->dcmd_mutex);
@@ -1988,9 +1973,9 @@ static ssize_t myrb_store_dev_rebuild(struct device *dev,
 		return -EINVAL;
 
 	if (rebuild && start &&
-	    sdev->channel >= cb->common.PhysicalChannelCount)
+	    sdev->channel >= myrb_logical_channel(sdev->host))
 		return -ENXIO;
-	else if (sdev->channel < cb->common.PhysicalChannelCount)
+	else if (sdev->channel < myrb_logical_channel(sdev->host))
 		return -ENXIO;
 	mutex_lock(&cb->dcmd_mutex);
 	myrb_reset_cmd(cmd_blk);
@@ -2190,9 +2175,8 @@ static int
 myrb_is_raid(struct device *dev)
 {
 	struct scsi_device *sdev = to_scsi_device(dev);
-	myrb_hba *cb = (myrb_hba *)sdev->host->hostdata;
 
-	return (sdev->channel >= cb->common.PhysicalChannelCount) ? 1 : 0;
+	return (sdev->channel == myrb_logical_channel(sdev->host)) ? 1 : 0;
 }
 
 /**
@@ -2208,7 +2192,7 @@ myrb_get_resync(struct device *dev)
 	unsigned short ldev_num;
 	unsigned int ldev_size = 0, remaining = 0;
 
-	if (sdev->channel < cb->common.PhysicalChannelCount)
+	if (sdev->channel < myrb_logical_channel(sdev->host))
 		return;
 	if (DAC960_V1_ControllerIsRebuilding(cb)) {
 		ldev_num = cb->rbld->ldev_num;
@@ -2234,7 +2218,7 @@ myrb_get_state(struct device *dev)
 	myrb_ldev_info *ldev_info = sdev->hostdata;
 	enum raid_state state = RAID_STATE_UNKNOWN;
 
-	if (sdev->channel < cb->common.PhysicalChannelCount || !ldev_info)
+	if (sdev->channel < myrb_logical_channel(sdev->host) || !ldev_info)
 		state = RAID_STATE_UNKNOWN;
 	else if (DAC960_V1_ControllerIsRebuilding(cb))
 		 state = RAID_STATE_RESYNCING;
