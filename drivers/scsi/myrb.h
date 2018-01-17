@@ -220,7 +220,7 @@ myrb_enquiry;
   Define the DAC960 V1 Firmware Enquiry2 Command reply structure.
 */
 
-typedef struct myrs_enquiry2_s
+typedef struct myrb_enquiry2_s
 {
 	struct {
 		enum {
@@ -344,7 +344,7 @@ typedef struct myrs_enquiry2_s
 	unsigned char rsvd14[8];			/* Bytes 120-127 */
 }
 __attribute__((packed))
-myrs_enquiry2;
+myrb_enquiry2;
 
 
 /*
@@ -807,17 +807,19 @@ typedef struct myrb_hba_s
 	void (*WriteCommandMailbox)(myrb_cmd_mbox *, myrb_cmd_mbox *);
 	void (*MailboxNewCommand)(void __iomem *);
 
-	dma_addr_t	FirstCommandMailboxDMA;
-	myrb_cmd_mbox *FirstCommandMailbox;
-	myrb_cmd_mbox *LastCommandMailbox;
-	myrb_cmd_mbox *NextCommandMailbox;
-	myrb_cmd_mbox *PreviousCommandMailbox1;
-	myrb_cmd_mbox *PreviousCommandMailbox2;
+	size_t cmd_mbox_size;
+	dma_addr_t cmd_mbox_addr;
+	myrb_cmd_mbox *first_cmd_mbox;
+	myrb_cmd_mbox *last_cmd_mbox;
+	myrb_cmd_mbox *next_cmd_mbox;
+	myrb_cmd_mbox *prev_cmd_mbox1;
+	myrb_cmd_mbox *prev_cmd_mbox2;
 
-	dma_addr_t	FirstStatusMailboxDMA;
-	myrb_stat_mbox *FirstStatusMailbox;
-	myrb_stat_mbox *LastStatusMailbox;
-	myrb_stat_mbox *NextStatusMailbox;
+	size_t stat_mbox_size;
+	dma_addr_t stat_mbox_addr;
+	myrb_stat_mbox *first_stat_mbox;
+	myrb_stat_mbox *last_stat_mbox;
+	myrb_stat_mbox *next_stat_mbox;
 
 	myrb_cmdblk dcmd_blk;
 	myrb_cmdblk mcmd_blk;

@@ -262,6 +262,7 @@ void myrb_destroy_mempools(myr_hba *c);
 void myrb_flush_cache(myr_hba *c);
 void myrb_get_ctlr_info(myr_hba *c);
 myr_hba *myrb_alloc_host(struct pci_dev *, const struct pci_device_id *);
+void myrb_cleanup(myr_hba *c);
 
 extern struct DAC960_privdata DAC960_LA_privdata;
 extern struct DAC960_privdata DAC960_PG_privdata;

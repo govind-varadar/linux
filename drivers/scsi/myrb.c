@@ -119,7 +119,7 @@ bool myrb_create_mempools(struct pci_dev *pdev, myr_hba *c)
 	}
 
 	snprintf(cb->work_q_name, sizeof(cb->work_q_name),
-		 "myrs_wq_%d", c->host->host_no);
+		 "myrb_wq_%d", c->host->host_no);
 	cb->work_q = create_singlethread_workqueue(cb->work_q_name);
 	if (!cb->work_q) {
 		pci_pool_destroy(cb->dcdb_pool);
@@ -178,17 +178,17 @@ static void myrb_qcmd(myrb_hba *cb, myrb_cmdblk *cmd_blk)
 {
 	void __iomem *base = cb->common.io_addr;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
-	myrb_cmd_mbox *next_mbox = cb->NextCommandMailbox;
+	myrb_cmd_mbox *next_mbox = cb->next_cmd_mbox;
 
 	cb->WriteCommandMailbox(next_mbox, mbox);
-	if (cb->PreviousCommandMailbox1->Words[0] == 0 ||
-	    cb->PreviousCommandMailbox2->Words[0] == 0)
+	if (cb->prev_cmd_mbox1->Words[0] == 0 ||
+	    cb->prev_cmd_mbox2->Words[0] == 0)
 		cb->MailboxNewCommand(base);
-	cb->PreviousCommandMailbox2 = cb->PreviousCommandMailbox1;
-	cb->PreviousCommandMailbox1 = next_mbox;
-	if (++next_mbox > cb->LastCommandMailbox)
-		next_mbox = cb->FirstCommandMailbox;
-	cb->NextCommandMailbox = next_mbox;
+	cb->prev_cmd_mbox2 = cb->prev_cmd_mbox1;
+	cb->prev_cmd_mbox1 = next_mbox;
+	if (++next_mbox > cb->last_cmd_mbox)
+		next_mbox = cb->first_cmd_mbox;
+	cb->next_cmd_mbox = next_mbox;
 }
 
 /*
@@ -849,16 +849,9 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 	void __iomem *base = c->io_addr;
 	DAC960_HardwareType_T hw_type = c->HardwareType;
 	struct pci_dev *pdev = c->pdev;
-	struct dma_loaf *DmaPages = &c->DmaPages;
-	size_t DmaPagesSize;
-	size_t CommandMailboxesSize;
-	size_t StatusMailboxesSize;
 
-	myrb_cmd_mbox *CommandMailboxesMemory;
-	dma_addr_t CommandMailboxesMemoryDMA;
-
-	myrb_stat_mbox *StatusMailboxesMemory;
-	dma_addr_t StatusMailboxesMemoryDMA;
+	myrb_cmd_mbox *cmd_mbox_mem;
+	myrb_stat_mbox *stat_mbox_mem;
 
 	myrb_cmd_mbox mbox;
 	unsigned short status;
@@ -872,61 +865,56 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 		return false;
 	}
 
-	if ((hw_type == DAC960_PD_Controller) || (hw_type == DAC960_P_Controller)) {
-		CommandMailboxesSize =  0;
-		StatusMailboxesSize = 0;
-	} else {
-		CommandMailboxesSize =  DAC960_V1_CommandMailboxCount * sizeof(myrb_cmd_mbox);
-		StatusMailboxesSize = DAC960_V1_StatusMailboxCount * sizeof(myrb_stat_mbox);
-	}
-	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
-		sizeof(myrb_dcdb) +
-		sizeof(myrb_error_table) +
-		sizeof(myrb_ldev_info_arr) +
-		sizeof(myrb_pdev_state);
-
-	if (!init_dma_loaf(pdev, DmaPages, DmaPagesSize))
-		return false;
-
-
-	if ((hw_type == DAC960_PD_Controller) || (hw_type == DAC960_P_Controller))
+	if ((hw_type == DAC960_PD_Controller) ||
+	    (hw_type == DAC960_P_Controller))
 		goto skip_mailboxes;
 
-	CommandMailboxesMemory = slice_dma_loaf(DmaPages,
-						CommandMailboxesSize, &CommandMailboxesMemoryDMA);
-
 	/* These are the base addresses for the command memory mailbox array */
-	cb->FirstCommandMailbox = CommandMailboxesMemory;
-	cb->FirstCommandMailboxDMA = CommandMailboxesMemoryDMA;
+	cb->cmd_mbox_size =  DAC960_V1_CommandMailboxCount * sizeof(myrb_cmd_mbox);
+	cb->first_cmd_mbox = dma_alloc_coherent(&c->pdev->dev,
+						cb->cmd_mbox_size,
+						&cb->cmd_mbox_addr,
+						GFP_KERNEL);
+	if (!cb->first_cmd_mbox)
+		return false;
 
-	CommandMailboxesMemory += DAC960_V1_CommandMailboxCount - 1;
-	cb->LastCommandMailbox = CommandMailboxesMemory;
-	cb->NextCommandMailbox = cb->FirstCommandMailbox;
-	cb->PreviousCommandMailbox1 = cb->LastCommandMailbox;
-	cb->PreviousCommandMailbox2 = cb->LastCommandMailbox - 1;
+	cmd_mbox_mem = cb->first_cmd_mbox;
+	cmd_mbox_mem += DAC960_V1_CommandMailboxCount - 1;
+	cb->last_cmd_mbox = cmd_mbox_mem;
+	cb->next_cmd_mbox = cb->first_cmd_mbox;
+	cb->prev_cmd_mbox1 = cb->last_cmd_mbox;
+	cb->prev_cmd_mbox2 = cb->last_cmd_mbox - 1;
 
 	/* These are the base addresses for the status memory mailbox array */
-	StatusMailboxesMemory = slice_dma_loaf(DmaPages,
-					       StatusMailboxesSize, &StatusMailboxesMemoryDMA);
+	cb->stat_mbox_size = DAC960_V1_StatusMailboxCount * sizeof(myrb_stat_mbox);
+	cb->first_stat_mbox = dma_alloc_coherent(&c->pdev->dev,
+						 cb->stat_mbox_size,
+						 &cb->stat_mbox_addr,
+						 GFP_KERNEL);
+	if (!cb->first_stat_mbox)
+		return false;
 
-	cb->FirstStatusMailbox = StatusMailboxesMemory;
-	cb->FirstStatusMailboxDMA = StatusMailboxesMemoryDMA;
-	StatusMailboxesMemory += DAC960_V1_StatusMailboxCount - 1;
-	cb->LastStatusMailbox = StatusMailboxesMemory;
-	cb->NextStatusMailbox = cb->FirstStatusMailbox;
+	stat_mbox_mem = cb->first_stat_mbox;
+	stat_mbox_mem += DAC960_V1_StatusMailboxCount - 1;
+	cb->last_stat_mbox = stat_mbox_mem;
+	cb->next_stat_mbox = cb->first_stat_mbox;
 
 skip_mailboxes:
 	cb->enquiry = kzalloc(sizeof(myrb_enquiry), GFP_KERNEL | GFP_DMA);
-	if (!cb->enquiry) {
-		/* XXX error handling ! */
+	if (!cb->enquiry)
 		return false;
-	}
 
-	cb->err_table = slice_dma_loaf(DmaPages, sizeof(myrb_error_table),
-				       &cb->err_table_addr);
+	cb->err_table = dma_alloc_coherent(&c->pdev->dev,
+					   sizeof(myrb_error_table),
+					   &cb->err_table_addr, GFP_KERNEL);
+	if (!cb->err_table)
+		return false;
 
-	cb->ldev_info_buf = slice_dma_loaf(DmaPages, sizeof(myrb_ldev_info_arr),
-					   &cb->ldev_info_addr);
+	cb->ldev_info_buf = dma_alloc_coherent(&c->pdev->dev,
+					       sizeof(myrb_ldev_info_arr),
+					       &cb->ldev_info_addr, GFP_KERNEL);
+	if (!cb->ldev_info_buf)
+		return false;
 
 	if ((hw_type == DAC960_PD_Controller) || (hw_type == DAC960_P_Controller))
 		return true;
@@ -936,8 +924,8 @@ skip_mailboxes:
 	mbox.TypeX.opcode = 0x2B;
 	mbox.TypeX.id = 0;
 	mbox.TypeX.CommandOpcode2 = 0x14;
-	mbox.TypeX.CommandMailboxesBusAddress = cb->FirstCommandMailboxDMA;
-	mbox.TypeX.StatusMailboxesBusAddress = cb->FirstStatusMailboxDMA;
+	mbox.TypeX.CommandMailboxesBusAddress = cb->cmd_mbox_addr;
+	mbox.TypeX.StatusMailboxesBusAddress = cb->stat_mbox_addr;
 
 	for (i = 0; i < 2; i++)
 		switch (c->HardwareType) {
@@ -1036,7 +1024,7 @@ skip_mailboxes:
 static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 {
 	myrb_hba *cb = container_of(c, myrb_hba, common);
-	myrs_enquiry2 *enquiry2;
+	myrb_enquiry2 *enquiry2;
 	dma_addr_t enquiry2_addr;
 	myrb_config2 *config2;
 	dma_addr_t config2_addr;
@@ -1045,7 +1033,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	unsigned short status;
 	int ret = -ENODEV, memsize;
 
-	enquiry2 = dma_alloc_coherent(&pdev->dev, sizeof(myrs_enquiry2),
+	enquiry2 = dma_alloc_coherent(&pdev->dev, sizeof(myrb_enquiry2),
 				      &enquiry2_addr, GFP_KERNEL);
 	if (dma_mapping_error(&pdev->dev, enquiry2_addr)) {
 		shost_printk(KERN_ERR, c->host,
@@ -1057,7 +1045,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	if (dma_mapping_error(&pdev->dev, config2_addr)) {
 		shost_printk(KERN_ERR, c->host,
 			     "Failed to allocate V1 config2 memory\n");
-		dma_free_coherent(&pdev->dev, sizeof(myrs_enquiry2),
+		dma_free_coherent(&pdev->dev, sizeof(myrb_enquiry2),
 				  enquiry2, enquiry2_addr);
 		return -ENOMEM;
 	}
@@ -1274,7 +1262,7 @@ static int DAC960_V1_ReadControllerConfiguration(myr_hba *c)
 	ret = 0;
 
 out:
-	dma_free_coherent(&pdev->dev, sizeof(myrs_enquiry2),
+	dma_free_coherent(&pdev->dev, sizeof(myrb_enquiry2),
 			  enquiry2, enquiry2_addr);
 	dma_free_coherent(&pdev->dev, sizeof(myrb_config2),
 			  config2, config2_addr);
@@ -1320,6 +1308,57 @@ out:
 		     cb->enquiry->ldev_count, c->host->max_id);
 
 	return ret;
+}
+
+void myrb_unmap(myrb_hba *cb)
+{
+	myr_hba *c = &cb->common;
+
+	if (cb->ldev_info_buf) {
+		dma_free_coherent(&c->pdev->dev, sizeof(myrb_ldev_info_arr),
+				  cb->ldev_info_buf, cb->ldev_info_addr);
+		cb->ldev_info_buf = NULL;
+	}
+	if (cb->err_table) {
+		dma_free_coherent(&c->pdev->dev, sizeof(myrb_error_table),
+				  cb->err_table, cb->err_table_addr);
+		cb->err_table = NULL;
+	}
+	if (cb->enquiry) {
+		kfree(cb->enquiry);
+		cb->enquiry = NULL;
+	}
+	if (cb->first_stat_mbox) {
+		dma_free_coherent(&c->pdev->dev, cb->stat_mbox_size,
+				  cb->first_stat_mbox, cb->stat_mbox_addr);
+		cb->first_stat_mbox = NULL;
+	}
+	if (cb->first_cmd_mbox) {
+		dma_free_coherent(&c->pdev->dev, cb->cmd_mbox_size,
+				  cb->first_cmd_mbox, cb->cmd_mbox_addr);
+		cb->first_cmd_mbox = NULL;
+	}
+}
+
+void myrb_cleanup(myr_hba *c)
+{
+	struct pci_dev *pdev = c->pdev;
+	myrb_hba *cb = container_of(c, myrb_hba, common);
+
+	/* Free the memory mailbox, status, and related structures */
+	myrb_unmap(cb);
+
+	if (c->mmio_base) {
+		myr_disable_intr(c);
+		iounmap(c->mmio_base);
+	}
+	if (c->IRQ_Channel)
+		free_irq(c->IRQ_Channel, c);
+	if (c->IO_Address)
+		release_region(c->IO_Address, 0x80);
+	pci_set_drvdata(pdev, NULL);
+	pci_disable_device(pdev);
+	scsi_host_put(c->host);
 }
 
 
@@ -2611,14 +2650,14 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 	myr_hba *c = DeviceIdentifier;
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 	void __iomem *base = c->io_addr;
-	myrb_stat_mbox *NextStatusMailbox;
+	myrb_stat_mbox *next_stat_mbox;
 	unsigned long flags;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
 	DAC960_LA_AcknowledgeInterrupt(base);
-	NextStatusMailbox = cb->NextStatusMailbox;
-	while (NextStatusMailbox->valid) {
-		unsigned char id = NextStatusMailbox->id;
+	next_stat_mbox = cb->next_stat_mbox;
+	while (next_stat_mbox->valid) {
+		unsigned char id = next_stat_mbox->id;
 		struct scsi_cmnd *scmd = NULL;
 		myrb_cmdblk *cmd_blk = NULL;
 
@@ -2632,21 +2671,21 @@ static irqreturn_t DAC960_LA_InterruptHandler(int IRQ_Channel,
 				cmd_blk = scsi_cmd_priv(scmd);
 		}
 		if (cmd_blk)
-			cmd_blk->status = NextStatusMailbox->status;
+			cmd_blk->status = next_stat_mbox->status;
 		else
 			dev_err(&c->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
-		memset(NextStatusMailbox, 0, sizeof(myrb_stat_mbox));
-		if (++NextStatusMailbox > cb->LastStatusMailbox)
-			NextStatusMailbox = cb->FirstStatusMailbox;
+		memset(next_stat_mbox, 0, sizeof(myrb_stat_mbox));
+		if (++next_stat_mbox > cb->last_stat_mbox)
+			next_stat_mbox = cb->first_stat_mbox;
 
 		if (id < 3)
 			myrb_handle_cmdblk(cb, cmd_blk);
 		else
 			myrb_handle_scsi(cb, cmd_blk, scmd);
 	}
-	cb->NextStatusMailbox = NextStatusMailbox;
+	cb->next_stat_mbox = next_stat_mbox;
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 	return IRQ_HANDLED;
 }
@@ -2720,14 +2759,14 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 	myr_hba *c = DeviceIdentifier;
 	myrb_hba *cb = container_of(c, myrb_hba, common);
 	void __iomem *base = c->io_addr;
-	myrb_stat_mbox *NextStatusMailbox;
+	myrb_stat_mbox *next_stat_mbox;
 	unsigned long flags;
 
 	spin_lock_irqsave(&c->queue_lock, flags);
 	DAC960_PG_AcknowledgeInterrupt(base);
-	NextStatusMailbox = cb->NextStatusMailbox;
-	while (NextStatusMailbox->valid) {
-		unsigned char id = NextStatusMailbox->id;
+	next_stat_mbox = cb->next_stat_mbox;
+	while (next_stat_mbox->valid) {
+		unsigned char id = next_stat_mbox->id;
 		struct scsi_cmnd *scmd = NULL;
 		myrb_cmdblk *cmd_blk = NULL;
 
@@ -2741,21 +2780,21 @@ static irqreturn_t DAC960_PG_InterruptHandler(int IRQ_Channel,
 				cmd_blk = scsi_cmd_priv(scmd);
 		}
 		if (cmd_blk)
-			cmd_blk->status = NextStatusMailbox->status;
+			cmd_blk->status = next_stat_mbox->status;
 		else
 			dev_err(&c->pdev->dev,
 				"Unhandled command completion %d\n", id);
 
-		memset(NextStatusMailbox, 0, sizeof(myrb_stat_mbox));
-		if (++NextStatusMailbox > cb->LastStatusMailbox)
-			NextStatusMailbox = cb->FirstStatusMailbox;
+		memset(next_stat_mbox, 0, sizeof(myrb_stat_mbox));
+		if (++next_stat_mbox > cb->last_stat_mbox)
+			next_stat_mbox = cb->first_stat_mbox;
 
 		if (id < 3)
 			myrb_handle_cmdblk(cb, cmd_blk);
 		else
 			myrb_handle_scsi(cb, cmd_blk, scmd);
 	}
-	cb->NextStatusMailbox = NextStatusMailbox;
+	cb->next_stat_mbox = next_stat_mbox;
 	spin_unlock_irqrestore(&c->queue_lock, flags);
 	return IRQ_HANDLED;
 }

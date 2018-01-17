@@ -62,51 +62,6 @@ static int DAC960_ControllerCount;
 struct raid_template *myrb_raid_template;
 
 /*
-  init_dma_loaf() and slice_dma_loaf() are helper functions for
-  aggregating the dma-mapped memory for a well-known collection of
-  data structures that are of different lengths.
-
-  These routines don't guarantee any alignment.  The caller must
-  include any space needed for alignment in the sizes of the structures
-  that are passed in.
-*/
-
-bool init_dma_loaf(struct pci_dev *dev, struct dma_loaf *loaf, size_t len)
-{
-	void *cpu_addr;
-	dma_addr_t dma_handle;
-
-	cpu_addr = pci_alloc_consistent(dev, len, &dma_handle);
-	if (cpu_addr == NULL)
-		return false;
-
-	loaf->cpu_free = loaf->cpu_base = cpu_addr;
-	loaf->dma_free =loaf->dma_base = dma_handle;
-	loaf->length = len;
-	memset(cpu_addr, 0, len);
-	return true;
-}
-
-void *slice_dma_loaf(struct dma_loaf *loaf, size_t len, dma_addr_t *dma_handle)
-{
-	void *cpu_end = loaf->cpu_free + len;
-	void *cpu_addr = loaf->cpu_free;
-
-	BUG_ON(cpu_end > loaf->cpu_base + loaf->length);
-	*dma_handle = loaf->dma_free;
-	loaf->cpu_free = cpu_end;
-	loaf->dma_free += len;
-	return cpu_addr;
-}
-
-static void free_dma_loaf(struct pci_dev *dev, struct dma_loaf *loaf_handle)
-{
-	if (loaf_handle->cpu_base != NULL)
-		pci_free_consistent(dev, loaf_handle->length,
-				    loaf_handle->cpu_base, loaf_handle->dma_base);
-}
-
-/*
   myr_err_status reports Controller BIOS Messages passed through
   the Error Status Register when the driver performs the BIOS handshaking.
   It returns true for fatal errors and false otherwise.
@@ -160,35 +115,6 @@ bool myr_err_status(myr_hba *c, unsigned char ErrorStatus,
 		return true;
 	}
 	return false;
-}
-
-/*
- * DAC960_DetectCleanup releases the resources that were allocated
- * during DAC960_DetectController().  DAC960_DetectController can
- * has several internal failure points, so not ALL resources may
- * have been allocated.  It's important to free only
- * resources that HAVE been allocated.  The code below always
- * tests that the resource has been allocated before attempting to
- * free it.
- */
-static void DAC960_DetectCleanup(myr_hba *c)
-{
-	struct pci_dev *pdev = c->pdev;
-
-	/* Free the memory mailbox, status, and related structures */
-	free_dma_loaf(pdev, &c->DmaPages);
-
-	if (c->mmio_base) {
-		myr_disable_intr(c);
-		iounmap(c->mmio_base);
-	}
-	if (c->IRQ_Channel)
-		free_irq(c->IRQ_Channel, c);
-	if (c->IO_Address)
-		release_region(c->IO_Address, 0x80);
-	pci_set_drvdata(pdev, NULL);
-	pci_disable_device(pdev);
-	scsi_host_put(c->host);
 }
 
 
@@ -265,7 +191,7 @@ DAC960_DetectController(struct pci_dev *pdev,
 Failure:
 	dev_err(&pdev->dev,
 		"Failed to initialize Controller\n");
-	DAC960_DetectCleanup(c);
+	myrb_cleanup(c);
 	DAC960_ControllerCount--;
 	return NULL;
 }
@@ -300,7 +226,7 @@ DAC960_Probe(struct pci_dev *dev, const struct pci_device_id *entry)
 
 	ret = c->ReadControllerConfiguration(c);
 	if (ret < 0) {
-		DAC960_DetectCleanup(c);
+		myrb_cleanup(c);
 		return ret;
 	}
 
@@ -318,7 +244,7 @@ DAC960_Probe(struct pci_dev *dev, const struct pci_device_id *entry)
 	scsi_scan_host(c->host);
 	return 0;
 failed:
-	DAC960_DetectCleanup(c);
+	myrb_cleanup(c);
 	return ret;
 }
 
@@ -336,8 +262,8 @@ static void DAC960_Remove(struct pci_dev *pdev)
 
 	shost_printk(KERN_NOTICE, c->host, "Flushing Cache...");
 	myrb_flush_cache(c);
+	myrb_cleanup(c);
 	DAC960_DestroyAuxiliaryStructures(c);
-	DAC960_DetectCleanup(c);
 }
 
 
