@@ -828,9 +828,6 @@ typedef struct myrb_hba_s
 	myrb_error_table *err_table;
 	dma_addr_t err_table_addr;
 
-	myrb_log_entry *ev_buf;
-	dma_addr_t ev_addr;
-
 	unsigned short last_rbld_status;
 
 	myrb_ldev_info_arr *ldev_info_buf;

@@ -287,16 +287,17 @@ static unsigned short myrb_exec_type3D(myrb_hba *cb,
 
 
 /*
-  DAC960_V1_GetEventLog executes a DAC960 V1 Firmware Controller Type 3E
-  Command and waits for completion.  It returns true on success and false
-  on failure.
+  myrb_get_event executes a DAC960 V1 Firmware Controller Type 3E
+  Command and waits for completion.
 */
 
-static unsigned short DAC960_V1_MonitorGetEventLog(myrb_hba *cb,
-						   unsigned int event)
+static void myrb_get_event(myrb_hba *cb, unsigned int event)
 {
+	myr_hba *c = &cb->common;
 	myrb_cmdblk *cmd_blk = &cb->mcmd_blk;
 	myrb_cmd_mbox *mbox = &cmd_blk->mbox;
+	myrb_log_entry *ev_buf;
+	dma_addr_t ev_addr;
 	unsigned short status;
 	static char *DAC960_EventMessages[] =
 		{ "killed because write recovery failed",
@@ -313,37 +314,41 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myrb_hba *cb,
 		  "killed due to SCSI phase sequence error",
 		  "killed due to unknown status" };
 
+	ev_buf = dma_alloc_coherent(&c->pdev->dev, sizeof(myrb_log_entry),
+				    &ev_addr, GFP_KERNEL);
+	if (!ev_buf)
+		return;
+
 	myrb_reset_cmd(cmd_blk);
 	mbox->Type3E.id = DAC960_MonitoringIdentifier;
 	mbox->Type3E.opcode = DAC960_V1_PerformEventLogOperation;
 	mbox->Type3E.optype = DAC960_V1_GetEventLogEntry;
 	mbox->Type3E.opqual = 1;
 	mbox->Type3E.ev_seq = event;
-	mbox->Type3E.addr = cb->ev_addr;
+	mbox->Type3E.addr = ev_addr;
 	myrb_exec_cmd(cb, cmd_blk);
 	status = cmd_blk->status;
 	if (status == DAC960_V1_NormalCompletion) {
-		if (cb->ev_buf->SequenceNumber == event) {
+		if (ev_buf->SequenceNumber == event) {
 			struct scsi_sense_hdr sshdr;
 
 			memset(&sshdr, 0, sizeof(sshdr));
-			scsi_normalize_sense(cb->ev_buf->SenseData, 32,
-					     &sshdr);
+			scsi_normalize_sense(ev_buf->SenseData, 32, &sshdr);
 
 			if (sshdr.sense_key == VENDOR_SPECIFIC &&
 			    sshdr.asc == 0x80 &&
 			    sshdr.ascq < ARRAY_SIZE(DAC960_EventMessages)) {
 				shost_printk(KERN_CRIT, cb->common.host,
 					     "Physical drive %d:%d: %s\n",
-					     cb->ev_buf->Channel,
-					     cb->ev_buf->TargetID,
+					     ev_buf->Channel,
+					     ev_buf->TargetID,
 					     DAC960_EventMessages[sshdr.ascq]);
 			} else {
 				shost_printk(KERN_CRIT, cb->common.host,
 					     "Physical drive %d:%d: "
 					     "Sense: %X/%02X/%02X\n",
-					     cb->ev_buf->Channel,
-					     cb->ev_buf->TargetID,
+					     ev_buf->Channel,
+					     ev_buf->TargetID,
 					     sshdr.sense_key,
 					     sshdr.asc, sshdr.ascq);
 			}
@@ -353,7 +358,9 @@ static unsigned short DAC960_V1_MonitorGetEventLog(myrb_hba *cb,
 			     "Failed to get event log %d, status %04x\n",
 			     event, status);
 
-	return status;
+	dma_free_coherent(&c->pdev->dev, sizeof(myrb_log_entry),
+			  ev_buf, ev_addr);
+	return;
 }
 
 /*
@@ -874,7 +881,7 @@ static bool DAC960_V1_EnableMemoryMailboxInterface(myrb_hba *cb)
 	}
 	DmaPagesSize = CommandMailboxesSize + StatusMailboxesSize +
 		sizeof(myrb_dcdb) +
-		sizeof(myrb_error_table) + sizeof(myrb_log_entry) +
+		sizeof(myrb_error_table) +
 		sizeof(myrb_ldev_info_arr) +
 		sizeof(myrb_pdev_state);
 
@@ -917,9 +924,6 @@ skip_mailboxes:
 
 	cb->err_table = slice_dma_loaf(DmaPages, sizeof(myrb_error_table),
 				       &cb->err_table_addr);
-
-	cb->ev_buf = slice_dma_loaf(DmaPages, sizeof(myrb_log_entry),
-				    &cb->ev_addr);
 
 	cb->ldev_info_buf = slice_dma_loaf(DmaPages, sizeof(myrb_ldev_info_arr),
 					   &cb->ldev_info_addr);
@@ -2443,7 +2447,7 @@ static void myrb_monitor(struct work_struct *work)
 		dev_dbg(&shost->shost_gendev,
 			"get event log no %d/%d\n",
 			cb->new_ev_seq, event);
-		DAC960_V1_MonitorGetEventLog(cb, event);
+		myrb_get_event(cb, event);
 		cb->old_ev_seq = event + 1;
 		interval = 10;
 	} else if (cb->need_err_info) {
