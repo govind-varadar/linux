@@ -989,10 +989,16 @@ static void virtscsi_rescan_work(struct work_struct *work)
 		return;
 	}
 	transport = virtio32_to_cpu(vscsi->vdev, cmd->resp.rescan.transport);
-	shost_printk(KERN_INFO, sh,
-		     "allocate %s target %d (WWN %*phN)\n",
-		     transport == SCSI_PROTOCOL_FCP ? "FC" : "SAS",
-		     target_id, 8, cmd->resp.rescan.port_wwn);
+	if (cmd->resp.rescan.port_wwn)
+		shost_printk(KERN_INFO, sh,
+			     "%s target %d (WWN %*phN)\n",
+			     transport == SCSI_PROTOCOL_FCP ? "FC" : "SAS",
+			     target_id, 8, cmd->resp.rescan.port_wwn);
+	else
+		shost_printk(KERN_INFO, sh,
+			     "%s target %d\n",
+			     transport == SCSI_PROTOCOL_FCP ? "FC" : "SAS",
+			     target_id);
 
 	tgt = kmalloc(sizeof(*tgt), GFP_KERNEL);
 	if (!tgt) {
@@ -1081,10 +1087,11 @@ static int virtscsi_scan_host(struct virtio_scsi *vscsi)
 		return -ENOSYS;
 	}
 	transport = virtio32_to_cpu(vscsi->vdev, cmd->resp.rescan.transport);
-	shost_printk(KERN_INFO, sh, "%s host wwnn %*phN wwpn %*phN\n",
-		     transport == SCSI_PROTOCOL_FCP ? "FC" : "SAS",
-		     8, cmd->resp.rescan.node_wwn,
-		     8, cmd->resp.rescan.port_wwn);
+	if (cmd->resp.rescan.port_wwn)
+		shost_printk(KERN_INFO, sh, "%s host wwnn %*phN wwpn %*phN\n",
+			     transport == SCSI_PROTOCOL_FCP ? "FC" : "SAS",
+			     8, cmd->resp.rescan.node_wwn,
+			     8, cmd->resp.rescan.port_wwn);
 	vscsi->protocol = transport;
 #if IS_ENABLED(CONFIG_SCSI_FC_ATTRS)
 	vscsi->wwnn = wwn_to_u64(cmd->resp.rescan.node_wwn);
