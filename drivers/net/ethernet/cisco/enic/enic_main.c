@@ -247,8 +247,7 @@ static void enic_udp_tunnel_del(struct net_device *netdev,
 
 	spin_lock_bh(&enic->devcmd_lock);
 
-	if ((sa_family != AF_INET) ||
-	    ((ntohs(port) != enic->vxlan.vxlan_udp_port_number))) {
+	if ((ntohs(port) != enic->vxlan.vxlan_udp_port_number)) {
 		netdev_info(netdev, "udp_tnl: port:%d, sa_family: %d not offloaded",
 			    ntohs(port), sa_family);
 		goto unlock;
