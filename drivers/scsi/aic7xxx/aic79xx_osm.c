@@ -2027,10 +2027,10 @@ ahd_linux_handle_scsi_status(struct ahd_softc *ahd,
 static void
 ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd)
 {
-	int status;
-	int new_status = DID_OK;
+	uint8_t status;
+	uint8_t new_status = DID_OK;
 	int do_fallback = 0;
-	int scsi_status;
+	uint8_t scsi_status;
 
 	/*
 	 * Map CAM error codes into Linux Error codes.  We
