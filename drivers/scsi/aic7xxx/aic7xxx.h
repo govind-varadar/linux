@@ -565,7 +565,7 @@ struct scb {
 		TAILQ_ENTRY(scb)  tqe;
 	} links;
 	LIST_ENTRY(scb)		  pending_links;
-	ahc_io_ctx_t		  io_ctx;
+	struct scsi_cmnd	 *io_ctx;
 	struct ahc_softc	 *ahc_softc;
 	scb_flag		  flags;
 #ifndef __linux__
@@ -1185,7 +1185,7 @@ int			ahc_search_qinfifo(struct ahc_softc *ahc, int target,
 					   role_t role, uint32_t status,
 					   ahc_search_action action);
 int			ahc_search_untagged_queues(struct ahc_softc *ahc,
-						   ahc_io_ctx_t ctx,
+						   struct scsi_cmnd *scmd,
 						   int target, char channel,
 						   int lun, uint32_t status,
 						   ahc_search_action action);

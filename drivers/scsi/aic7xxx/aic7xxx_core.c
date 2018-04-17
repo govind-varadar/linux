@@ -6053,7 +6053,7 @@ ahc_search_qinfifo(struct ahc_softc *ahc, int target, char channel,
 }
 
 int
-ahc_search_untagged_queues(struct ahc_softc *ahc, ahc_io_ctx_t ctx,
+ahc_search_untagged_queues(struct ahc_softc *ahc, struct scsi_cmnd *scmd,
 			   int target, char channel, int lun, uint32_t status,
 			   ahc_search_action action)
 {
@@ -6111,7 +6111,7 @@ ahc_search_untagged_queues(struct ahc_softc *ahc, ahc_io_ctx_t ctx,
 
 			if (ahc_match_scb(ahc, scb, target, channel, lun,
 					  SCB_LIST_NULL, ROLE_INITIATOR) == 0
-			 || (ctx != NULL && ctx != scb->io_ctx))
+			 || (scmd != NULL && scmd != scb->io_ctx))
 				continue;
 
 			/*
