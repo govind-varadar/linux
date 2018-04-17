@@ -92,7 +92,6 @@
 /************************* Forward Declarations *******************************/
 struct ahd_softc;
 typedef struct pci_dev *ahd_dev_softc_t;
-typedef struct scsi_cmnd      *ahd_io_ctx_t;
 
 /******************************* Byte Order ***********************************/
 #define ahd_htobe16(x)	cpu_to_be16(x)

@@ -607,7 +607,7 @@ struct scb {
 #define pending_links links2.le
 #define collision_links links2.le
 	struct scb		 *col_scb;
-	ahd_io_ctx_t		  io_ctx;
+	struct scsi_cmnd	 *io_ctx;
 	struct ahd_softc	 *ahd_softc;
 	scb_flag		  flags;
 #ifndef __linux__
