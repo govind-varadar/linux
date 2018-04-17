@@ -1787,8 +1787,8 @@ ahd_done(struct ahd_softc *ahd, struct scb *scb)
 	dev = scb->platform_data->dev;
 	dev->active--;
 	dev->openings++;
-	if ((cmd->result & (CAM_DEV_QFRZN << 16)) != 0) {
-		cmd->result &= ~(CAM_DEV_QFRZN << 16);
+	if (scb->flags & SCB_DEVICE_QFROZEN) {
+		cmd->result &= ~(SCB_DEVICE_QFROZEN);
 		dev->qfrozen--;
 	}
 	ahd_linux_unmap_scb(ahd, scb);

@@ -581,11 +581,14 @@ typedef enum {
 	SCB_PKT_SENSE		= 0x02000,
 	SCB_EXTERNAL_RESET	= 0x04000,/* Device was reset externally */
 	SCB_ON_COL_LIST		= 0x08000,
-	SCB_SILENT		= 0x10000 /*
+	SCB_SILENT		= 0x10000,/*
 					   * Be quiet about transmission type
 					   * errors.  They are expected and we
 					   * don't want to upset the user.  This
 					   * flag is typically used during DV.
+					   */
+	SCB_DEVICE_QFROZEN	= 0x20000 /*
+					   * Device queue is frozen
 					   */
 } scb_flag;
 

@@ -654,8 +654,8 @@ void	ahd_platform_freeze_devq(struct ahd_softc *ahd, struct scb *scb);
 static inline void
 ahd_freeze_scb(struct scb *scb)
 {
-	if ((scb->io_ctx->result & (CAM_DEV_QFRZN << 16)) == 0) {
-                scb->io_ctx->result |= CAM_DEV_QFRZN << 16;
+	if (!(scb->flags & SCB_DEVICE_QFROZEN)) {
+                scb->flags |= SCB_DEVICE_QFROZEN;
                 scb->platform_data->dev->qfrozen++;
         }
 }
