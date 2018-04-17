@@ -514,7 +514,6 @@ int	ahc_linux_show_info(struct seq_file *, struct Scsi_Host *);
 
 /*************************** Domain Validation ********************************/
 /*********************** Transaction Access Wrappers *************************/
-static inline void ahc_cmd_set_transaction_status(struct scsi_cmnd *, uint32_t);
 static inline void ahc_set_transaction_status(struct scb *, uint32_t);
 static inline void ahc_cmd_set_scsi_status(struct scsi_cmnd *, uint32_t);
 static inline void ahc_set_scsi_status(struct scb *, uint32_t);
@@ -539,16 +538,10 @@ static inline void ahc_platform_scb_free(struct ahc_softc *ahc,
 static inline void ahc_freeze_scb(struct scb *scb);
 
 static inline
-void ahc_cmd_set_transaction_status(struct scsi_cmnd *cmd, uint32_t status)
-{
-	cmd->result &= ~(CAM_STATUS_MASK << 16);
-	cmd->result |= status << 16;
-}
-
-static inline
 void ahc_set_transaction_status(struct scb *scb, uint32_t status)
 {
-	ahc_cmd_set_transaction_status(scb->io_ctx,status);
+	scb->io_ctx->result &= ~(0xFF << 16);
+	scb->io_ctx->result |= status << 16;
 }
 
 static inline
@@ -567,7 +560,7 @@ void ahc_set_scsi_status(struct scb *scb, uint32_t status)
 static inline
 uint32_t ahc_cmd_get_transaction_status(struct scsi_cmnd *cmd)
 {
-	return ((cmd->result >> 16) & CAM_STATUS_MASK);
+	return ((cmd->result >> 16) & 0xFF);
 }
 
 static inline

@@ -2001,8 +2001,7 @@ ahc_linux_queue_cmd_complete(struct ahc_softc *ahc, struct scsi_cmnd *cmd)
 			new_status = DID_ERROR;
 			break;
 		}
-
-		ahc_cmd_set_transaction_status(cmd, new_status);
+		set_host_byte(cmd, new_status);
 	}
 
 	cmd->scsi_done(cmd);

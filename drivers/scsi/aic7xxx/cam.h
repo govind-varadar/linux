@@ -80,9 +80,6 @@ typedef enum {
 	 * back into the XPT queue.
 	 */
 	CAM_REQUEUE_REQ,
-	CAM_DEV_QFRZN		= 0x40,
-
-	CAM_STATUS_MASK		= 0x3F
 } cam_status;
 
 /*

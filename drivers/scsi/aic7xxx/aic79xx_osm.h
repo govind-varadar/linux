@@ -497,7 +497,6 @@ int	ahd_proc_write_seeprom(struct Scsi_Host *, char *, int);
 int	ahd_linux_show_info(struct seq_file *,struct Scsi_Host *);
 
 /*********************** Transaction Access Wrappers **************************/
-static inline void ahd_cmd_set_transaction_status(struct scsi_cmnd *, uint32_t);
 static inline void ahd_set_transaction_status(struct scb *, uint32_t);
 static inline void ahd_cmd_set_scsi_status(struct scsi_cmnd *, uint32_t);
 static inline void ahd_set_scsi_status(struct scb *, uint32_t);
@@ -522,16 +521,10 @@ static inline void ahd_platform_scb_free(struct ahd_softc *ahd,
 static inline void ahd_freeze_scb(struct scb *scb);
 
 static inline
-void ahd_cmd_set_transaction_status(struct scsi_cmnd *cmd, uint32_t status)
-{
-	cmd->result &= ~(CAM_STATUS_MASK << 16);
-	cmd->result |= status << 16;
-}
-
-static inline
 void ahd_set_transaction_status(struct scb *scb, uint32_t status)
 {
-	ahd_cmd_set_transaction_status(scb->io_ctx,status);
+	scb->io_ctx->result &= ~(0xFF << 16);
+	scb->io_ctx->result |= status << 16;
 }
 
 static inline
@@ -550,7 +543,7 @@ void ahd_set_scsi_status(struct scb *scb, uint32_t status)
 static inline
 uint32_t ahd_cmd_get_transaction_status(struct scsi_cmnd *cmd)
 {
-	return ((cmd->result >> 16) & CAM_STATUS_MASK);
+	return ((cmd->result >> 16) & 0xFF);
 }
 
 static inline

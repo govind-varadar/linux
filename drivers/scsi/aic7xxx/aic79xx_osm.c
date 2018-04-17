@@ -2127,7 +2127,7 @@ ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd)
 		       cmd->device->id, (u8)cmd->device->lun);
 	}
 
-	ahd_cmd_set_transaction_status(cmd, new_status);
+	set_host_byte(cmd, new_status);
 
 	cmd->scsi_done(cmd);
 }
