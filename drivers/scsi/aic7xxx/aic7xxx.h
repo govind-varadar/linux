@@ -550,11 +550,14 @@ typedef enum {
 					  * to report the error.
 					  */
 	SCB_TARGET_SCB		= 0x2000,
-	SCB_SILENT		= 0x4000 /*
+	SCB_SILENT		= 0x4000,/*
 					  * Be quiet about transmission type
 					  * errors.  They are expected and we
 					  * don't want to upset the user.  This
 					  * flag is typically used during DV.
+					  */
+	SCB_DEVICE_QFROZEN	= 0x8000 /*
+					  * Device queue is frozen
 					  */
 } scb_flag;
 
