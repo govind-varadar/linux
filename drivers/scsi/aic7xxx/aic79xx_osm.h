@@ -497,8 +497,7 @@ int	ahd_linux_show_info(struct seq_file *,struct Scsi_Host *);
 
 /*********************** Transaction Access Wrappers **************************/
 static inline void ahd_set_transaction_status(struct scb *, uint32_t);
-static inline void ahd_cmd_set_scsi_status(struct scsi_cmnd *, uint32_t);
-static inline void ahd_set_scsi_status(struct scb *, uint32_t);
+static inline void ahd_set_scsi_status(struct scb *, uint8_t);
 static inline uint32_t ahd_cmd_get_transaction_status(struct scsi_cmnd *cmd);
 static inline uint32_t ahd_get_transaction_status(struct scb *);
 static inline uint32_t ahd_cmd_get_scsi_status(struct scsi_cmnd *cmd);
@@ -527,16 +526,10 @@ void ahd_set_transaction_status(struct scb *scb, uint32_t status)
 }
 
 static inline
-void ahd_cmd_set_scsi_status(struct scsi_cmnd *cmd, uint32_t status)
+void ahd_set_scsi_status(struct scb *scb, uint8_t status)
 {
-	cmd->result &= ~0xFFFF;
-	cmd->result |= status;
-}
-
-static inline
-void ahd_set_scsi_status(struct scb *scb, uint32_t status)
-{
-	ahd_cmd_set_scsi_status(scb->io_ctx, status);
+	scb->io_ctx->result &= ~0xFF;
+	scb->io_ctx->result |= status;
 }
 
 static inline
