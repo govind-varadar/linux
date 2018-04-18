@@ -1039,10 +1039,10 @@ ahc_handle_seqint(struct ahc_softc *ahc, u_int intstat)
 			 * complete.
 			 */
 			scb->flags &= ~SCB_SENSE;
-			ahc_set_transaction_status(scb, CAM_AUTOSENSE_FAIL);
+			scb->cam_status = CAM_AUTOSENSE_FAIL;
 			break;
 		}
-		ahc_set_transaction_status(scb, CAM_SCSI_STATUS_ERROR);
+		scb->cam_status = CAM_SCSI_STATUS_ERROR;
 		/* Freeze the queue until the client sees the error. */
 		ahc_freeze_devq(ahc, scb);
 		ahc_freeze_scb(scb);
@@ -1364,8 +1364,8 @@ ahc_handle_seqint(struct ahc_softc *ahc, u_int intstat)
 					scb_index = ahc_inb(ahc, SCB_TAG);
 					scb = ahc_lookup_scb(ahc, scb_index);
 					if (scb != NULL)
-						ahc_set_transaction_status(scb,
-						    CAM_UNCOR_PARITY);
+						scb->cam_status =
+						    CAM_UNCOR_PARITY;
 					ahc_reset_channel(ahc, devinfo.channel, 
 							  /*init reset*/TRUE);
 				}
@@ -1421,10 +1421,10 @@ ahc_handle_seqint(struct ahc_softc *ahc, u_int intstat)
 		 */
 		ahc_freeze_devq(ahc, scb);
 		if ((scb->flags & SCB_SENSE) == 0) {
-			ahc_set_transaction_status(scb, CAM_DATA_RUN_ERR);
+			scb->cam_status = CAM_DATA_RUN_ERR;
 		} else {
 			scb->flags &= ~SCB_SENSE;
-			ahc_set_transaction_status(scb, CAM_AUTOSENSE_FAIL);
+			scb->cam_status = CAM_AUTOSENSE_FAIL;
 		}
 		ahc_freeze_scb(scb);
 
@@ -1760,7 +1760,7 @@ ahc_handle_scsiint(struct ahc_softc *ahc, u_int intstat)
 			}
 #endif
 			ahc_scb_devinfo(ahc, &devinfo, scb);
-			ahc_set_transaction_status(scb, CAM_SEL_TIMEOUT);
+			scb->cam_status = CAM_SEL_TIMEOUT;
 			ahc_freeze_devq(ahc, scb);
 
 			/*
@@ -3156,7 +3156,7 @@ ahc_handle_proto_violation(struct ahc_softc *ahc)
 		printk("No SCB found during protocol violation\n");
 		goto proto_violation_reset;
 	} else {
-		ahc_set_transaction_status(scb, CAM_SEQUENCE_FAIL);
+		scb->cam_status = CAM_SEQUENCE_FAIL;
 		if ((seq_flags & NO_CDB_SENT) != 0) {
 			ahc_print_path(ahc, scb);
 			printk("No or incomplete CDB sent to device.\n");
@@ -5904,10 +5904,10 @@ ahc_search_qinfifo(struct ahc_softc *ahc, int target, char channel,
 				cam_status ostat;
 				cam_status cstat;
 
-				ostat = ahc_get_transaction_status(scb);
+				ostat = scb->cam_status;
 				if (ostat == CAM_REQ_INPROG)
-					ahc_set_transaction_status(scb, status);
-				cstat = ahc_get_transaction_status(scb);
+					scb->cam_status = status;
+				cstat = scb->cam_status;
 				if (cstat != CAM_REQ_CMP)
 					ahc_freeze_scb(scb);
 				if ((scb->flags & SCB_ACTIVE) == 0)
@@ -6016,11 +6016,10 @@ ahc_search_qinfifo(struct ahc_softc *ahc, int target, char channel,
 				cam_status ostat;
 				cam_status cstat;
 
-				ostat = ahc_get_transaction_status(scb);
+				ostat = scb->cam_status;
 				if (ostat == CAM_REQ_INPROG)
-					ahc_set_transaction_status(scb,
-								   status);
-				cstat = ahc_get_transaction_status(scb);
+					scb->cam_status = status;
+				cstat = scb->cam_status;
 				if (cstat != CAM_REQ_CMP)
 					ahc_freeze_scb(scb);
 				if ((scb->flags & SCB_ACTIVE) == 0)
@@ -6124,10 +6123,10 @@ ahc_search_untagged_queues(struct ahc_softc *ahc, struct scsi_cmnd *scmd,
 				cam_status ostat;
 				cam_status cstat;
 
-				ostat = ahc_get_transaction_status(scb);
+				ostat = scb->cam_status;
 				if (ostat == CAM_REQ_INPROG)
-					ahc_set_transaction_status(scb, status);
-				cstat = ahc_get_transaction_status(scb);
+					scb->cam_status = status;
+				cstat = scb->cam_status;
 				if (cstat != CAM_REQ_CMP)
 					ahc_freeze_scb(scb);
 				if ((scb->flags & SCB_ACTIVE) == 0)
@@ -6428,10 +6427,10 @@ ahc_abort_scbs(struct ahc_softc *ahc, int target, char channel,
 		if (ahc_match_scb(ahc, scbp, target, channel, lun, tag, role)) {
 			cam_status ostat;
 
-			ostat = ahc_get_transaction_status(scbp);
+			ostat = scbp->cam_status;
 			if (ostat == CAM_REQ_INPROG)
-				ahc_set_transaction_status(scbp, status);
-			if (ahc_get_transaction_status(scbp) != CAM_REQ_CMP)
+				scbp->cam_status = status;
+			if (scbp->cam_status != CAM_REQ_CMP)
 				ahc_freeze_scb(scbp);
 			if ((scbp->flags & SCB_ACTIVE) == 0)
 				printk("Inactive SCB on pending list\n");

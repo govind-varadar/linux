@@ -571,6 +571,7 @@ struct scb {
 	struct scsi_cmnd	 *io_ctx;
 	struct ahc_softc	 *ahc_softc;
 	scb_flag		  flags;
+	cam_status		  cam_status;
 #ifndef __linux__
 	bus_dmamap_t		  dmamap;
 #endif
