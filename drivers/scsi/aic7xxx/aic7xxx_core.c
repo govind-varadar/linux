@@ -1090,7 +1090,7 @@ ahc_handle_seqint(struct ahc_softc *ahc, u_int intstat)
 			}
 #endif
 			sg->addr = ahc_get_sense_bufaddr(ahc, scb);
-			sg->len = ahc_get_sense_bufsize(ahc, scb);
+			sg->len = sizeof(struct scsi_sense_data);
 			sg->len |= AHC_DMA_LAST_SEG;
 
 			/* Fixup byte order */

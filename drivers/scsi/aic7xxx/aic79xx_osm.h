@@ -590,12 +590,6 @@ int ahd_perform_autosense(struct scb *scb)
 	return (1);
 }
 
-static inline uint32_t
-ahd_get_sense_bufsize(struct ahd_softc *ahd, struct scb *scb)
-{
-	return (sizeof(struct scsi_sense_data));
-}
-
 static inline void
 ahd_notify_xfer_settings_change(struct ahd_softc *ahd,
 				struct ahd_devinfo *devinfo)

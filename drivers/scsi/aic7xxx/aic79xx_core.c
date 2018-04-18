@@ -9053,7 +9053,7 @@ ahd_handle_scsi_status(struct ahd_softc *ahd, struct scb *scb)
 #endif
 		scb->sg_count = 0;
 		sg = ahd_sg_setup(ahd, scb, sg, ahd_get_sense_bufaddr(ahd, scb),
-				  ahd_get_sense_bufsize(ahd, scb),
+				  sizeof(struct scsi_sense_data),
 				  /*last*/TRUE);
 		sc->opcode = REQUEST_SENSE;
 		sc->byte2 = 0;
@@ -9062,7 +9062,7 @@ ahd_handle_scsi_status(struct ahd_softc *ahd, struct scb *scb)
 			sc->byte2 = SCB_GET_LUN(scb) << 5;
 		sc->unused[0] = 0;
 		sc->unused[1] = 0;
-		sc->length = ahd_get_sense_bufsize(ahd, scb);
+		sc->length = sizeof(struct scsi_sense_data);
 		sc->control = 0;
 
 		/*

@@ -2031,6 +2031,7 @@ ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd)
 	uint8_t new_status = DID_OK;
 	int do_fallback = 0;
 	uint8_t scsi_status;
+	struct scsi_sense_hdr sshdr;
 
 	/*
 	 * Map CAM error codes into Linux Error codes.  We
@@ -2056,14 +2057,10 @@ ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd)
 		case SAM_STAT_CHECK_CONDITION:
 			if ((cmd->result >> 24) != DRIVER_SENSE) {
 				do_fallback = 1;
-			} else {
-				struct scsi_sense_data *sense;
-				
-				sense = (struct scsi_sense_data *)
-					cmd->sense_buffer;
-				if (sense->extra_len >= 5 &&
-				    (sense->add_sense_code == 0x47
-				     || sense->add_sense_code == 0x48))
+			} else if (scsi_normalize_sense(cmd->sense_buffer,
+							SCSI_SENSE_BUFFERSIZE,
+							&sshdr)) {
+				if (sshdr.asc == 0x47 || sshdr.asc == 0x48)
 					do_fallback = 1;
 			}
 			break;
