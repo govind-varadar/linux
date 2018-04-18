@@ -2028,7 +2028,6 @@ static void
 ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd,
 			     cam_status cam_status)
 {
-	uint8_t status;
 	uint8_t new_status = DID_OK;
 	int do_fallback = 0;
 	uint8_t scsi_status;
@@ -2120,7 +2119,7 @@ ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd,
 
 	if (do_fallback) {
 		printk("%s: device overrun (status %x) on %d:%d:%d\n",
-		       ahd_name(ahd), status, cmd->device->channel,
+		       ahd_name(ahd), new_status, cmd->device->channel,
 		       cmd->device->id, (u8)cmd->device->lun);
 	}
 
