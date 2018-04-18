@@ -497,29 +497,10 @@ int	ahd_linux_show_info(struct seq_file *,struct Scsi_Host *);
 
 /*********************** Transaction Access Wrappers **************************/
 static inline
-void ahd_set_transaction_status(struct scb *scb, uint32_t status)
-{
-	scb->io_ctx->result &= ~(0xFF << 16);
-	scb->io_ctx->result |= status << 16;
-}
-
-static inline
 void ahd_set_scsi_status(struct scb *scb, uint8_t status)
 {
 	scb->io_ctx->result &= ~0xFF;
 	scb->io_ctx->result |= status;
-}
-
-static inline
-uint32_t ahd_cmd_get_transaction_status(struct scsi_cmnd *cmd)
-{
-	return ((cmd->result >> 16) & 0xFF);
-}
-
-static inline
-uint32_t ahd_get_transaction_status(struct scb *scb)
-{
-	return (ahd_cmd_get_transaction_status(scb->io_ctx));
 }
 
 static inline

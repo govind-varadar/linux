@@ -353,7 +353,8 @@ static void ahd_linux_handle_scsi_status(struct ahd_softc *,
 					 struct scsi_device *,
 					 struct scb *);
 static void ahd_linux_queue_cmd_complete(struct ahd_softc *ahd,
-					 struct scsi_cmnd *cmd);
+					 struct scsi_cmnd *cmd,
+					 cam_status cam_status);
 static int ahd_linux_queue_abort_cmd(struct scsi_cmnd *cmd);
 static void ahd_linux_initialize_scsi_bus(struct ahd_softc *ahd);
 static u_int ahd_linux_user_tagdepth(struct ahd_softc *ahd,
@@ -1776,6 +1777,7 @@ ahd_done(struct ahd_softc *ahd, struct scb *scb)
 {
 	struct scsi_cmnd *cmd;
 	struct	  ahd_linux_device *dev;
+	cam_status cam_status;
 
 	if ((scb->flags & SCB_ACTIVE) == 0) {
 		printk("SCB %d done'd twice\n", SCB_GET_TAG(scb));
@@ -1800,7 +1802,7 @@ ahd_done(struct ahd_softc *ahd, struct scb *scb)
 	 * the sense buffer looks "sane".
 	 */
 	cmd->sense_buffer[0] = 0;
-	if (ahd_get_transaction_status(scb) == CAM_REQ_INPROG) {
+	if (scb->cam_status == CAM_REQ_INPROG) {
 		uint32_t amount_xferred;
 
 		amount_xferred =
@@ -1812,7 +1814,7 @@ ahd_done(struct ahd_softc *ahd, struct scb *scb)
 				printk("Set CAM_UNCOR_PARITY\n");
 			}
 #endif
-			ahd_set_transaction_status(scb, CAM_UNCOR_PARITY);
+			scb->cam_status = CAM_UNCOR_PARITY;
 #ifdef AHD_REPORT_UNDERFLOWS
 		/*
 		 * This code is disabled by default as some
@@ -1836,17 +1838,15 @@ ahd_done(struct ahd_softc *ahd, struct scb *scb)
 			       "Treated as error\n",
 				ahd_get_residual(scb),
 				ahd_get_transfer_length(scb));
-			ahd_set_transaction_status(scb, CAM_DATA_RUN_ERR);
+			scb->cam_status = CAM_DATA_RUN_ERR;
 #endif
-		} else {
-			ahd_set_transaction_status(scb, CAM_REQ_CMP);
-		}
-	} else if (ahd_get_transaction_status(scb) == CAM_SCSI_STATUS_ERROR) {
+		} else
+			scb->cam_status = CAM_REQ_CMP;
+	} else if (scb->cam_status == CAM_SCSI_STATUS_ERROR)
 		ahd_linux_handle_scsi_status(ahd, cmd->device, scb);
-	}
 
 	if (dev->openings == 1
-	 && ahd_get_transaction_status(scb) == CAM_REQ_CMP
+	 && scb->cam_status == CAM_REQ_CMP
 	 && ahd_get_scsi_status(scb) != SAM_STAT_TASK_SET_FULL)
 		dev->tag_success_count++;
 	/*
@@ -1864,18 +1864,18 @@ ahd_done(struct ahd_softc *ahd, struct scb *scb)
 	if (dev->active == 0)
 		dev->commands_since_idle_or_otag = 0;
 
+	cam_status = scb->cam_status;
 	if ((scb->flags & SCB_RECOVERY_SCB) != 0) {
 		printk("Recovery SCB completes\n");
-		if (ahd_get_transaction_status(scb) == CAM_BDR_SENT
-		 || ahd_get_transaction_status(scb) == CAM_REQ_ABORTED)
-			ahd_set_transaction_status(scb, CAM_CMD_TIMEOUT);
+		if (cam_status == CAM_BDR_SENT || cam_status == CAM_REQ_ABORTED)
+			cam_status = CAM_CMD_TIMEOUT;
 
 		if (ahd->platform_data->eh_done)
 			complete(ahd->platform_data->eh_done);
 	}
 
 	ahd_free_scb(ahd, scb);
-	ahd_linux_queue_cmd_complete(ahd, cmd);
+	ahd_linux_queue_cmd_complete(ahd, cmd, cam_status);
 }
 
 static void
@@ -2005,7 +2005,7 @@ ahd_linux_handle_scsi_status(struct ahd_softc *ahd,
 				dev->tags_on_last_queuefull = dev->active;
 				dev->last_queuefull_same_count = 0;
 			}
-			ahd_set_transaction_status(scb, CAM_REQUEUE_REQ);
+			scb->cam_status = CAM_REQUEUE_REQ;
 			ahd_set_scsi_status(scb, SAM_STAT_GOOD);
 			ahd_platform_set_tags(ahd, sdev, &devinfo,
 				     (dev->flags & AHD_DEV_Q_BASIC)
@@ -2025,7 +2025,8 @@ ahd_linux_handle_scsi_status(struct ahd_softc *ahd,
 }
 
 static void
-ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd)
+ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd,
+			     cam_status cam_status)
 {
 	uint8_t status;
 	uint8_t new_status = DID_OK;
@@ -2040,8 +2041,7 @@ ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd)
 	 * state change decisions.
 	 */
 
-	status = ahd_cmd_get_transaction_status(cmd);
-	switch (status) {
+	switch (cam_status) {
 	case CAM_REQ_INPROG:
 	case CAM_REQ_CMP:
 		new_status = DID_OK;

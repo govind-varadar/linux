@@ -1978,7 +1978,7 @@ ahd_handle_seqint(struct ahd_softc *ahd, u_int intstat)
 			scb->flags &= ~SCB_PACKETIZED;
 			scb->flags |= SCB_ABORT|SCB_EXTERNAL_RESET;
 			ahd_freeze_devq(ahd, scb);
-			ahd_set_transaction_status(scb, CAM_REQUEUE_REQ);
+			scb->cam_status = CAM_REQUEUE_REQ;
 			ahd_freeze_scb(scb);
 
 			/* Notify XPT */
@@ -2241,7 +2241,7 @@ ahd_handle_seqint(struct ahd_softc *ahd, u_int intstat)
 		 * target does a command complete.
 		 */
 		ahd_freeze_devq(ahd, scb);
-		ahd_set_transaction_status(scb, CAM_DATA_RUN_ERR);
+		scb->cam_status = CAM_DATA_RUN_ERR;
 		ahd_freeze_scb(scb);
 		break;
 	}
@@ -2511,7 +2511,7 @@ ahd_handle_scsiint(struct ahd_softc *ahd, u_int intstat)
 			}
 #endif
 			ahd_scb_devinfo(ahd, &devinfo, scb);
-			ahd_set_transaction_status(scb, CAM_SEL_TIMEOUT);
+			scb->cam_status = CAM_SEL_TIMEOUT;
 			ahd_freeze_devq(ahd, scb);
 
 			/*
@@ -2981,7 +2981,7 @@ ahd_handle_pkt_busfree(struct ahd_softc *ahd, u_int busfreetime)
 			}
 			scb->crc_retry_count++;
 		} else {
-			ahd_set_transaction_status(scb, CAM_UNCOR_PARITY);
+			scb->cam_status = CAM_UNCOR_PARITY;
 			ahd_freeze_scb(scb);
 			ahd_freeze_devq(ahd, scb);
 		}
@@ -3124,7 +3124,7 @@ ahd_handle_nonpkt_busfree(struct ahd_softc *ahd)
 			 && ahd_match_scb(ahd, scb, target, 'A',
 					  CAM_LUN_WILDCARD, SCB_LIST_NULL,
 					  ROLE_INITIATOR))
-				ahd_set_transaction_status(scb, CAM_REQ_CMP);
+				scb->cam_status = CAM_REQ_CMP;
 #endif
 			ahd_handle_devreset(ahd, &devinfo, CAM_LUN_WILDCARD,
 					    CAM_BDR_SENT, "Bus Device Reset",
@@ -3265,7 +3265,7 @@ ahd_handle_nonpkt_busfree(struct ahd_softc *ahd)
 	 && ((ahd->msg_flags & MSG_FLAG_EXPECT_PPR_BUSFREE) != 0)) {
 
 		ahd_freeze_devq(ahd, scb);
-		ahd_set_transaction_status(scb, CAM_REQUEUE_REQ);
+		scb->cam_status = CAM_REQUEUE_REQ;
 		ahd_freeze_scb(scb);
 		if ((ahd->msg_flags & MSG_FLAG_IU_REQ_CHANGED) != 0) {
 			ahd_abort_scbs(ahd, SCB_GET_TARGET(ahd, scb),
@@ -3354,7 +3354,7 @@ ahd_handle_proto_violation(struct ahd_softc *ahd)
 		printk("No SCB found during protocol violation\n");
 		goto proto_violation_reset;
 	} else {
-		ahd_set_transaction_status(scb, CAM_SEQUENCE_FAIL);
+		scb->cam_status = CAM_SEQUENCE_FAIL;
 		if ((seq_flags & NO_CDB_SENT) != 0) {
 			ahd_print_path(ahd, scb);
 			printk("No or incomplete CDB sent to device.\n");
@@ -8169,14 +8169,9 @@ ahd_reset_cmds_pending(struct ahd_softc *ahd)
 static void
 ahd_done_with_status(struct ahd_softc *ahd, struct scb *scb, uint32_t status)
 {
-	cam_status ostat;
-	cam_status cstat;
-
-	ostat = ahd_get_transaction_status(scb);
-	if (ostat == CAM_REQ_INPROG)
-		ahd_set_transaction_status(scb, status);
-	cstat = ahd_get_transaction_status(scb);
-	if (cstat != CAM_REQ_CMP)
+	if (scb->cam_status == CAM_REQ_INPROG)
+		scb->cam_status = status;
+	if (scb->cam_status != CAM_REQ_CMP)
 		ahd_freeze_scb(scb);
 	ahd_done(ahd, scb);
 }
@@ -8646,10 +8641,10 @@ ahd_abort_scbs(struct ahd_softc *ahd, int target, char channel,
 		if (ahd_match_scb(ahd, scbp, target, channel, lun, tag, role)) {
 			cam_status ostat;
 
-			ostat = ahd_get_transaction_status(scbp);
+			ostat = scbp->cam_status;
 			if (ostat == CAM_REQ_INPROG)
-				ahd_set_transaction_status(scbp, status);
-			if (ahd_get_transaction_status(scbp) != CAM_REQ_CMP)
+				scbp->cam_status = status;
+			if (scbp->cam_status != CAM_REQ_CMP)
 				ahd_freeze_scb(scbp);
 			if ((scbp->flags & SCB_ACTIVE) == 0)
 				printk("Inactive SCB on pending list\n");
@@ -8941,11 +8936,11 @@ ahd_handle_scsi_status(struct ahd_softc *ahd, struct scb *scb)
 		 * a normal command completion.
 		 */
 		scb->flags &= ~SCB_SENSE;
-		ahd_set_transaction_status(scb, CAM_AUTOSENSE_FAIL);
+		scb->cam_status = CAM_AUTOSENSE_FAIL;
 		ahd_done(ahd, scb);
 		return;
 	}
-	ahd_set_transaction_status(scb, CAM_SCSI_STATUS_ERROR);
+	scb->cam_status = CAM_SCSI_STATUS_ERROR;
 	ahd_set_scsi_status(scb, hscb->shared_data.istatus.scsi_status);
 	switch (hscb->shared_data.istatus.scsi_status) {
 	case STATUS_PKT_SENSE:
@@ -8995,8 +8990,7 @@ ahd_handle_scsi_status(struct ahd_softc *ahd, struct scb *scb)
 				}
 			}
 			if (siu->status == SAM_STAT_GOOD)
-				ahd_set_transaction_status(scb,
-							   CAM_REQ_CMP_ERR);
+				scb->cam_status = CAM_REQ_CMP_ERR;
 		}
 		if ((siu->flags & SIU_SNSVALID) != 0) {
 			scb->flags |= SCB_PKT_SENSE;
@@ -9178,7 +9172,7 @@ ahd_calc_residual(struct ahd_softc *ahd, struct scb *scb)
 		printk("data overrun detected Tag == 0x%x.\n",
 		       SCB_GET_TAG(scb));
 		ahd_freeze_devq(ahd, scb);
-		ahd_set_transaction_status(scb, CAM_DATA_RUN_ERR);
+		scb->cam_status = CAM_DATA_RUN_ERR;
 		ahd_freeze_scb(scb);
 		return;
 	} else if ((resid_sgptr & ~SG_PTR_MASK) != 0) {
