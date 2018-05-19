@@ -1,0 +1,5 @@
+config ENIC_KPROBE
+	tristate "Kprobe driver for enic"
+	depends on ENIC
+	---help---
+	  Kprobe driver for enic
