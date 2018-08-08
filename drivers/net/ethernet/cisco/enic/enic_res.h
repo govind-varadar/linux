@@ -20,6 +20,8 @@
 #ifndef _ENIC_RES_H_
 #define _ENIC_RES_H_
 
+#include <linux/skbuff.h>
+
 #include "wq_enet_desc.h"
 #include "rq_enet_desc.h"
 #include "vnic_wq.h"
@@ -67,56 +69,56 @@ static inline void enic_queue_wq_desc_ex(struct vnic_wq *wq,
 }
 
 static inline void enic_queue_wq_desc_cont(struct vnic_wq *wq,
-	void *os_buf, dma_addr_t dma_addr, unsigned int len,
+	struct sk_buff *skb, dma_addr_t dma_addr, unsigned int len,
 	int eop, int loopback)
 {
-	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
+	enic_queue_wq_desc_ex(wq, skb, dma_addr, len,
 		0, 0, 0, 0, 0,
-		eop, 0 /* !SOP */, eop, loopback);
+		(eop && !skb->xmit_more), 0 /* !SOP */, eop, loopback);
 }
 
-static inline void enic_queue_wq_desc(struct vnic_wq *wq, void *os_buf,
+static inline void enic_queue_wq_desc(struct vnic_wq *wq, struct sk_buff *skb,
 	dma_addr_t dma_addr, unsigned int len, int vlan_tag_insert,
 	unsigned int vlan_tag, int eop, int loopback)
 {
-	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
+	enic_queue_wq_desc_ex(wq, skb, dma_addr, len,
 		0, 0, vlan_tag_insert, vlan_tag,
 		WQ_ENET_OFFLOAD_MODE_CSUM,
-		eop, 1 /* SOP */, eop, loopback);
+		(eop && !skb->xmit_more), 1 /* SOP */, eop, loopback);
 }
 
 static inline void enic_queue_wq_desc_csum(struct vnic_wq *wq,
-	void *os_buf, dma_addr_t dma_addr, unsigned int len,
+	struct sk_buff *skb, dma_addr_t dma_addr, unsigned int len,
 	int ip_csum, int tcpudp_csum, int vlan_tag_insert,
 	unsigned int vlan_tag, int eop, int loopback)
 {
-	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
+	enic_queue_wq_desc_ex(wq, skb, dma_addr, len,
 		(ip_csum ? 1 : 0) + (tcpudp_csum ? 2 : 0),
 		0, vlan_tag_insert, vlan_tag,
 		WQ_ENET_OFFLOAD_MODE_CSUM,
-		eop, 1 /* SOP */, eop, loopback);
+		(eop && !skb->xmit_more), 1 /* SOP */, eop, loopback);
 }
 
 static inline void enic_queue_wq_desc_csum_l4(struct vnic_wq *wq,
-	void *os_buf, dma_addr_t dma_addr, unsigned int len,
+	struct sk_buff *skb, dma_addr_t dma_addr, unsigned int len,
 	unsigned int csum_offset, unsigned int hdr_len,
 	int vlan_tag_insert, unsigned int vlan_tag, int eop, int loopback)
 {
-	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
+	enic_queue_wq_desc_ex(wq, skb, dma_addr, len,
 		csum_offset, hdr_len, vlan_tag_insert, vlan_tag,
 		WQ_ENET_OFFLOAD_MODE_CSUM_L4,
-		eop, 1 /* SOP */, eop, loopback);
+		(eop && ~skb->xmit_more), 1 /* SOP */, eop, loopback);
 }
 
 static inline void enic_queue_wq_desc_tso(struct vnic_wq *wq,
-	void *os_buf, dma_addr_t dma_addr, unsigned int len,
+	struct sk_buff *skb, dma_addr_t dma_addr, unsigned int len,
 	unsigned int mss, unsigned int hdr_len, int vlan_tag_insert,
 	unsigned int vlan_tag, int eop, int loopback)
 {
-	enic_queue_wq_desc_ex(wq, os_buf, dma_addr, len,
+	enic_queue_wq_desc_ex(wq, skb, dma_addr, len,
 		mss, hdr_len, vlan_tag_insert, vlan_tag,
 		WQ_ENET_OFFLOAD_MODE_TSO,
-		eop, 1 /* SOP */, eop, loopback);
+		(eop && ~skb->xmit_more), 1 /* SOP */, eop, loopback);
 }
 
 static inline void enic_queue_rq_desc(struct vnic_rq *rq,
