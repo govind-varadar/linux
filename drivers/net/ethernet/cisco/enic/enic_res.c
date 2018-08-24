@@ -186,16 +186,8 @@ int enic_set_rss_cpu(struct enic *enic, dma_addr_t cpu_pa, u64 len)
 
 void enic_free_vnic_resources(struct enic *enic)
 {
-	unsigned int i;
-
-	for (i = 0; i < enic->wq_count; i++)
-		vnic_wq_free(&enic->wq[i]);
-	for (i = 0; i < enic->rq_count; i++)
-		vnic_rq_free(&enic->rq[i]);
-	for (i = 0; i < enic->cq_count; i++)
-		vnic_cq_free(&enic->cq[i]);
-	for (i = 0; i < enic->intr_count; i++)
-		vnic_intr_free(&enic->intr[i]);
+	enic->notify_ctrl = NULL;
+	enic->err_ctrl = NULL;
 }
 
 void enic_get_res_counts(struct enic *enic)
@@ -216,11 +208,8 @@ void enic_init_vnic_resources(struct enic *enic)
 {
 	enum vnic_dev_intr_mode intr_mode;
 	unsigned int mask_on_assertion;
-	unsigned int interrupt_offset;
 	unsigned int error_interrupt_enable;
 	unsigned int error_interrupt_offset;
-	unsigned int cq_index;
-	unsigned int i;
 
 	intr_mode = vnic_dev_get_intr_mode(enic->vdev);
 
@@ -244,51 +233,11 @@ void enic_init_vnic_resources(struct enic *enic)
 		break;
 	}
 
-	for (i = 0; i < enic->rq_count; i++) {
-		cq_index = i;
-		vnic_rq_init(&enic->rq[i],
-			cq_index,
-			error_interrupt_enable,
-			error_interrupt_offset);
-	}
-
-	for (i = 0; i < enic->wq_count; i++) {
-		cq_index = enic->rq_count + i;
-		vnic_wq_init(&enic->wq[i],
-			cq_index,
-			error_interrupt_enable,
-			error_interrupt_offset);
-	}
-
 	/* Init CQ resources
 	 *
 	 * CQ[0 - n+m-1] point to INTR[0] for INTx, MSI
 	 * CQ[0 - n+m-1] point to INTR[0 - n+m-1] for MSI-X
 	 */
-
-	for (i = 0; i < enic->cq_count; i++) {
-
-		switch (intr_mode) {
-		case VNIC_DEV_INTR_MODE_MSIX:
-			interrupt_offset = i;
-			break;
-		default:
-			interrupt_offset = 0;
-			break;
-		}
-
-		vnic_cq_init(&enic->cq[i],
-			0 /* flow_control_enable */,
-			1 /* color_enable */,
-			0 /* cq_head */,
-			0 /* cq_tail */,
-			1 /* cq_tail_color */,
-			1 /* interrupt_enable */,
-			1 /* cq_entry_enable */,
-			0 /* cq_message_enable */,
-			interrupt_offset,
-			0 /* cq_message_addr */);
-	}
 
 	/* Init INTR resources
 	 *
@@ -306,18 +255,11 @@ void enic_init_vnic_resources(struct enic *enic)
 		break;
 	}
 
-	for (i = 0; i < enic->intr_count; i++) {
-		vnic_intr_init(&enic->intr[i],
-			enic->config.intr_timer_usec,
-			enic->config.intr_timer_type,
-			mask_on_assertion);
-	}
 }
 
 int enic_alloc_vnic_resources(struct enic *enic)
 {
 	enum vnic_dev_intr_mode intr_mode;
-	unsigned int i;
 	int err;
 
 	intr_mode = vnic_dev_get_intr_mode(enic->vdev);
@@ -334,40 +276,6 @@ int enic_alloc_vnic_resources(struct enic *enic)
 	/* Allocate queue resources
 	 */
 
-	for (i = 0; i < enic->wq_count; i++) {
-		err = vnic_wq_alloc(enic->vdev, &enic->wq[i], i,
-			enic->config.wq_desc_count,
-			sizeof(struct wq_enet_desc));
-		if (err)
-			goto err_out_cleanup;
-	}
-
-	for (i = 0; i < enic->rq_count; i++) {
-		err = vnic_rq_alloc(enic->vdev, &enic->rq[i], i,
-			enic->config.rq_desc_count,
-			sizeof(struct rq_enet_desc));
-		if (err)
-			goto err_out_cleanup;
-	}
-
-	for (i = 0; i < enic->cq_count; i++) {
-		if (i < enic->rq_count)
-			err = vnic_cq_alloc(enic->vdev, &enic->cq[i], i,
-				enic->config.rq_desc_count,
-				sizeof(struct cq_enet_rq_desc));
-		else
-			err = vnic_cq_alloc(enic->vdev, &enic->cq[i], i,
-				enic->config.wq_desc_count,
-				sizeof(struct cq_enet_wq_desc));
-		if (err)
-			goto err_out_cleanup;
-	}
-
-	for (i = 0; i < enic->intr_count; i++) {
-		err = vnic_intr_alloc(enic->vdev, &enic->intr[i], i);
-		if (err)
-			goto err_out_cleanup;
-	}
 
 	/* Hook remaining resource
 	 */

@@ -102,6 +102,9 @@ static inline u32 vnic_intr_legacy_pba(u32 __iomem *legacy_pba)
 void vnic_intr_free(struct vnic_intr *intr);
 int vnic_intr_alloc(struct vnic_dev *vdev, struct vnic_intr *intr,
 	unsigned int index);
+void vnic_intr_init_ctrl(struct vnic_intr_ctrl *ctrl, u32 coalescing_timer,
+			 unsigned int coalescing_type,
+			 unsigned int mask_on_assertion);
 void vnic_intr_init(struct vnic_intr *intr, u32 coalescing_timer,
 	unsigned int coalescing_type, unsigned int mask_on_assertion);
 void vnic_intr_coalescing_timer_set(struct vnic_intr *intr,
