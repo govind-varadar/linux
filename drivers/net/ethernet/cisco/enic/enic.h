@@ -336,8 +336,6 @@ int enic_is_valid_vf(struct enic *enic, int vf);
 int enic_is_dynamic(struct enic *enic);
 void enic_set_ethtool_ops(struct net_device *netdev);
 int __enic_set_rsskey(struct enic *enic);
-void enic_preload_tcp_csum_encap(struct sk_buff *skb);
-void enic_preload_tcp_csum(struct sk_buff *skb);
 void enic_intr_ctrl_init(struct vnic_intr_ctrl __iomem *ctrl,
 				       u32 coalescing_timer,
 				       u32 coalescing_type,

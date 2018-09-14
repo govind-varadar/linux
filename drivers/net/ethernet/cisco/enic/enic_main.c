@@ -592,47 +592,6 @@ static int enic_queue_wq_skb_csum_l4(struct enic *enic, struct vnic_wq *wq,
 	return err;
 }
 
-void enic_preload_tcp_csum_encap(struct sk_buff *skb)
-{
-	const struct ethhdr *eth = (struct ethhdr *)skb_inner_mac_header(skb);
-
-	switch (eth->h_proto) {
-	case ntohs(ETH_P_IP):
-		inner_ip_hdr(skb)->check = 0;
-		inner_tcp_hdr(skb)->check =
-			~csum_tcpudp_magic(inner_ip_hdr(skb)->saddr,
-					   inner_ip_hdr(skb)->daddr, 0,
-					   IPPROTO_TCP, 0);
-		break;
-	case ntohs(ETH_P_IPV6):
-		inner_tcp_hdr(skb)->check =
-			~csum_ipv6_magic(&inner_ipv6_hdr(skb)->saddr,
-					 &inner_ipv6_hdr(skb)->daddr, 0,
-					 IPPROTO_TCP, 0);
-		break;
-	default:
-		WARN_ONCE(1, "Non ipv4/ipv6 inner pkt for encap offload");
-		break;
-	}
-}
-
-void enic_preload_tcp_csum(struct sk_buff *skb)
-{
-	/* Preload TCP csum field with IP pseudo hdr calculated
-	 * with IP length set to zero.  HW will later add in length
-	 * to each TCP segment resulting from the TSO.
-	 */
-
-	if (skb->protocol == cpu_to_be16(ETH_P_IP)) {
-		ip_hdr(skb)->check = 0;
-		tcp_hdr(skb)->check = ~csum_tcpudp_magic(ip_hdr(skb)->saddr,
-			ip_hdr(skb)->daddr, 0, IPPROTO_TCP, 0);
-	} else if (skb->protocol == cpu_to_be16(ETH_P_IPV6)) {
-		tcp_hdr(skb)->check = ~csum_ipv6_magic(&ipv6_hdr(skb)->saddr,
-			&ipv6_hdr(skb)->daddr, 0, IPPROTO_TCP, 0);
-	}
-}
-
 static int enic_queue_wq_skb_tso(struct enic *enic, struct vnic_wq *wq,
 				 struct sk_buff *skb, unsigned int mss,
 				 int vlan_tag_insert, unsigned int vlan_tag,
@@ -781,55 +740,6 @@ static inline void enic_queue_wq_skb(struct enic *enic,
 		wq->to_use = buf->next;
 		dev_kfree_skb(skb);
 	}
-}
-
-/* netif_tx_lock held, process context with BHs disabled, or BH */
-static netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb,
-	struct net_device *netdev)
-{
-	struct enic *enic = netdev_priv(netdev);
-	struct enic_qp *qp;
-	unsigned int txq_map;
-	struct netdev_queue *txq;
-
-	if (skb->len <= 0) {
-		dev_kfree_skb_any(skb);
-		return NETDEV_TX_OK;
-	}
-
-	txq_map = skb_get_queue_mapping(skb) % enic->wq_count;
-	qp = &enic->qp[txq_map];
-	txq = netdev_get_tx_queue(netdev, txq_map);
-
-	/* Non-TSO sends must fit within ENIC_NON_TSO_MAX_DESC descs,
-	 * which is very likely.  In the off chance it's going to take
-	 * more than * ENIC_NON_TSO_MAX_DESC, linearize the skb.
-	 */
-
-	if (skb_shinfo(skb)->gso_size == 0 &&
-	    skb_shinfo(skb)->nr_frags + 1 > ENIC_NON_TSO_MAX_DESC &&
-	    skb_linearize(skb)) {
-		dev_kfree_skb_any(skb);
-		return NETDEV_TX_OK;
-	}
-
-	if (enic_wq_desc_avail(qp) <
-	    skb_shinfo(skb)->nr_frags + ENIC_DESC_MAX_SPLITS) {
-		netif_tx_stop_queue(txq);
-		/* This is a hard error, log it */
-		netdev_err(netdev, "BUG! Tx ring full when queue awake!\n");
-		return NETDEV_TX_BUSY;
-	}
-
-	enic_post_xmit_skb(qp, skb);
-
-	if (enic_wq_desc_avail(qp) < MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS)
-		netif_tx_stop_queue(txq);
-	skb_tx_timestamp(skb);
-	if (!skb->xmit_more || netif_xmit_stopped(txq))
-		enic_qp_doorbell(qp);
-
-	return NETDEV_TX_OK;
 }
 
 /* dev_base_lock rwlock held, nominally process context */
