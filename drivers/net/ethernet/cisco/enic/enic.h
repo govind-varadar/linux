@@ -176,7 +176,7 @@ struct enic {
 #ifdef CONFIG_PCI_IOV
 	u16 num_vfs;
 #endif
-	spinlock_t enic_api_lock;
+	struct mutex enic_api_lock;
 	struct enic_port_profile *pp;
 
 	/* work queue cache line section */

@@ -33,7 +33,7 @@ int enic_api_devcmd_proxy_by_index(struct net_device *netdev, int vf,
 	struct enic *enic = netdev_priv(netdev);
 	struct vnic_dev *vdev = enic->vdev;
 
-	spin_lock(&enic->enic_api_lock);
+	mutex_lock(&enic->enic_api_lock);
 	spin_lock_bh(&enic->devcmd_lock);
 
 	vnic_dev_cmd_proxy_by_index_start(vdev, vf);
@@ -41,7 +41,7 @@ int enic_api_devcmd_proxy_by_index(struct net_device *netdev, int vf,
 	vnic_dev_cmd_proxy_end(vdev);
 
 	spin_unlock_bh(&enic->devcmd_lock);
-	spin_unlock(&enic->enic_api_lock);
+	mutex_unlock(&enic->enic_api_lock);
 
 	return err;
 }
