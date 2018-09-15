@@ -968,7 +968,7 @@ again:
 		skb_head_len -= length;
 		eop = !skb_head_len && !skb_data_len;
 		buf->skb = eop ? skb : NULL;
-		cq_entry = eop && !skb->xmit_more;
+		cq_entry = eop;
 		enic_enc_wq_desc(&qp->wq.wq_base[buf->index],
 				 dma_addr + offset, length, mss, header_length,
 				 offload_mode, eop, cq_entry, vlan_tag);
