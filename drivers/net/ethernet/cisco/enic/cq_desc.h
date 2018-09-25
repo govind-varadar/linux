@@ -77,4 +77,13 @@ static inline void cq_desc_dec(const struct cq_desc *desc_arg,
 		CQ_DESC_COMP_NDX_MASK;
 }
 
+#define CQ_DESC_COLOR(desc)						\
+	(READ_ONCE((desc)->type_color) >> CQ_DESC_COLOR_SHIFT)
+
+#define CQ_DESC_INDEX(desc)						\
+	(le16_to_cpu(((struct cq_desc *)desc)->completed_index) &	\
+	 CQ_DESC_COMP_NDX_MASK)
+
+#define CQ_DESC_TYPE(desc) ((desc)->type_color & CQ_DESC_TYPE_MASK)
+
 #endif /* _CQ_DESC_H_ */

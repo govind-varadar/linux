@@ -101,6 +101,46 @@ struct cq_enet_rq_desc {
 #define CQ_ENET_RQ_DESC_FLAGS_IPV4_FRAGMENT         (0x1 << 6)
 #define CQ_ENET_RQ_DESC_FLAGS_FCS_OK                (0x1 << 7)
 
+#define CQ_DESC_PKT_ERR(desc)						\
+	(le16_to_cpu((desc)->bytes_written_flags) &			\
+	 CQ_ENET_RQ_DESC_FLAGS_TRUNCATED)
+
+#define CQ_DESC_PKT_LEN(desc)						\
+	(le16_to_cpu((desc)->bytes_written_flags) &			\
+	 CQ_ENET_RQ_DESC_BYTES_WRITTEN_MASK)
+
+#define CQ_DESC_RSS_HASH(desc) (le32_to_cpu((desc)->rss_hash))
+
+#define CQ_DESC_RSS_TYPE(desc)						\
+	((le16_to_cpu((desc)->q_number_rss_type_flags) >> CQ_DESC_Q_NUM_BITS) &\
+	 CQ_ENET_RQ_DESC_RSS_TYPE_MASK)
+
+#define CQ_DESC_FCOE(desc)						\
+	(!!(le16_to_cpu((desc)->completed_index_flags) &		\
+	 CQ_ENET_RQ_DESC_FLAGS_FCOE))
+
+#define CQ_DESC_FC_CRC_OK(desc)						\
+	(!!((desc)->flags & CQ_ENET_RQ_DESC_FCOE_FC_CRC_OK))
+
+#define CQ_DESC_CSUM_NOT_CALC(desc)					\
+	(!!(le16_to_cpu((desc)->q_number_rss_type_flags) &		\
+	 CQ_ENET_RQ_DESC_FLAGS_CSUM_NOT_CALC))
+
+#define CQ_DESC_TCP_UDP_CSUM_OK(desc)					\
+	(!!((desc)->flags & CQ_ENET_RQ_DESC_FLAGS_TCP_UDP_CSUM_OK))
+
+#define CQ_DESC_IPV4_CSUM_OK(desc)					\
+	(!!((desc)->flags & CQ_ENET_RQ_DESC_FLAGS_IPV4_CSUM_OK))
+
+#define CQ_DESC_IPV6(desc)						\
+	(!!((desc)->flags & CQ_ENET_RQ_DESC_FLAGS_IPV6))
+
+#define CQ_DESC_VLAN_STRIPPED(desc)					\
+	(!!(le16_to_cpu((desc)->bytes_written_flags) &			\
+	 CQ_ENET_RQ_DESC_FLAGS_VLAN_STRIPPED))
+
+#define CQ_DESC_VLAN_TCI(desc) (le16_to_cpu((desc)->vlan))
+
 static inline void cq_enet_rq_desc_dec(struct cq_enet_rq_desc *desc,
 	u8 *type, u8 *color, u16 *q_number, u16 *completed_index,
 	u8 *ingress_port, u8 *fcoe, u8 *eop, u8 *sop, u8 *rss_type,
