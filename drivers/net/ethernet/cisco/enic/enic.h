@@ -29,6 +29,7 @@
 #include "vnic_stats.h"
 #include "vnic_nic.h"
 #include "vnic_rss.h"
+#include "enic_qp.h"
 #include <linux/irq.h>
 
 #define DRV_NAME		"enic"
@@ -181,6 +182,12 @@ struct enic {
 
 	/* receive queue cache line section */
 	____cacheline_aligned struct vnic_rq rq[ENIC_RQ_MAX];
+	struct enic_qp *qp;
+	struct enic_qp_ring *qp_ring;
+	unsigned int qp_count;
+	struct vnic_intr_ctrl __iomem *err_ctrl;
+	struct vnic_intr_ctrl __iomem *notify_ctrl;
+
 	unsigned int rq_count;
 	struct vxlan_offload vxlan;
 	u64 rq_truncated_pkts;
@@ -283,6 +290,16 @@ static inline bool enic_is_err_intr(struct enic *enic, int intr)
 	}
 }
 
+static inline void enic_intr_return_credits(struct vnic_intr_ctrl *ctrl,
+					    unsigned int credits,
+					    int unmask, int reset_timer)
+{
+	u32 value = (credits & 0xffff) |
+		    (unmask ? (1 << VNIC_INTR_UNMASK_SHIFT) : 0) |
+		    (reset_timer ? (1 << VNIC_INTR_RESET_TIMER_SHIFT) : 0);
+	iowrite32(value, &ctrl->int_credit_return);
+}
+
 static inline bool enic_is_notify_intr(struct enic *enic, int intr)
 {
 	switch (vnic_dev_get_intr_mode(enic->vdev)) {
@@ -294,6 +311,16 @@ static inline bool enic_is_notify_intr(struct enic *enic, int intr)
 	default:
 		return false;
 	}
+}
+
+static inline void enic_intr_return_all_credits(struct vnic_intr_ctrl *ctrl)
+{
+	unsigned int credits;
+	int unmask = 1;
+	int reset_timer = 1;
+
+	credits = ioread32(&ctrl->int_credits);
+	enic_intr_return_credits(ctrl, credits, unmask, reset_timer);
 }
 
 static inline int enic_dma_map_check(struct enic *enic, dma_addr_t dma_addr)
@@ -315,5 +342,8 @@ int enic_is_valid_vf(struct enic *enic, int vf);
 int enic_is_dynamic(struct enic *enic);
 void enic_set_ethtool_ops(struct net_device *netdev);
 int __enic_set_rsskey(struct enic *enic);
+void enic_intr_ctrl_init(struct vnic_intr_ctrl __iomem *ctrl,
+			 u32 coalescing_timer, u32 coalescing_type,
+			 u32 mask_on_assertion, u32 int_credits);
 
 #endif /* _ENIC_H_ */
