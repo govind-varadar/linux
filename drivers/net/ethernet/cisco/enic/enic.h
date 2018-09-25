@@ -47,6 +47,11 @@
 
 #define ENIC_AIC_LARGE_PKT_DIFF	3
 
+#define ENIC_NOTIFY_TIMER_PERIOD	(2 * HZ)
+#define WQ_ENET_MAX_DESC_LEN		BIT(WQ_ENET_LEN_BITS)
+#define MAX_TSO				BIT(16)
+#define ENIC_DESC_MAX_SPLITS		(MAX_TSO / WQ_ENET_MAX_DESC_LEN + 1)
+
 struct enic_msix_entry {
 	int requested;
 	char devname[IFNAMSIZ + 8];
