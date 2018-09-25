@@ -141,6 +141,8 @@ struct cq_enet_rq_desc {
 
 #define CQ_DESC_VLAN_TCI(desc) (le16_to_cpu((desc)->vlan))
 
+#define CQ_DESC_FCS_OK(desc) (!!((desc)->flags & CQ_ENET_RQ_DESC_FLAGS_FCS_OK))
+
 static inline void cq_enet_rq_desc_dec(struct cq_enet_rq_desc *desc,
 	u8 *type, u8 *color, u16 *q_number, u16 *completed_index,
 	u8 *ingress_port, u8 *fcoe, u8 *eop, u8 *sop, u8 *rss_type,
