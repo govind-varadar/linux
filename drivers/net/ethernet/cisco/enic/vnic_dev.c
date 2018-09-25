@@ -1037,6 +1037,16 @@ u32 vnic_dev_intr_coal_timer_hw_to_usec(struct vnic_dev *vdev, u32 hw_cycles)
 		vdev->intr_coal_timer_info.mul;
 }
 
+u32 vnic_dev_get_coal_timer_mul(struct vnic_dev *vdev)
+{
+	return vdev->intr_coal_timer_info.mul;
+}
+
+u32 vnic_dev_get_coal_timer_div(struct vnic_dev *vdev)
+{
+	return vdev->intr_coal_timer_info.div;
+}
+
 u32 vnic_dev_get_intr_coal_timer_max(struct vnic_dev *vdev)
 {
 	return vdev->intr_coal_timer_info.max_usec;

@@ -164,6 +164,8 @@ enum vnic_dev_intr_mode vnic_dev_get_intr_mode(struct vnic_dev *vdev);
 u32 vnic_dev_intr_coal_timer_usec_to_hw(struct vnic_dev *vdev, u32 usec);
 u32 vnic_dev_intr_coal_timer_hw_to_usec(struct vnic_dev *vdev, u32 hw_cycles);
 u32 vnic_dev_get_intr_coal_timer_max(struct vnic_dev *vdev);
+u32 vnic_dev_get_coal_timer_mul(struct vnic_dev *vdev);
+u32 vnic_dev_get_coal_timer_div(struct vnic_dev *vdev);
 void vnic_dev_unregister(struct vnic_dev *vdev);
 int vnic_dev_set_ig_vlan_rewrite_mode(struct vnic_dev *vdev,
 	u8 ig_vlan_rewrite_mode);
