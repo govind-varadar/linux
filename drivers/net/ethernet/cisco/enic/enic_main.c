@@ -2367,6 +2367,20 @@ static int enic_set_intr_mode(struct enic *enic)
 	for (i = 0; i < n + m + 2; i++)
 		enic->msix_entry[i].entry = i;
 
+	if (enic->intr_count < 3) {
+		n = 1;
+		m = 1;
+		enic->intr_count = 1;
+		/* MSIX needs atleast 3 interrupts. If not try MSI */
+		enic->config.intr_mode = (enic->config.intr_mode == 2) ? 2 : 1;
+	}
+
+	if (enic->cq_count < (n + m)) {
+		n = min_t(unsigned int, n, (enic->cq_count / 2));
+		m = min_t(unsigned int, m, (enic->cq_count / 2));
+		if (!n || !m)
+			return -ENOSPC;
+	}
 	if (enic->config.intr_mode < 1 &&
 	    enic->rq_count >= n &&
 	    enic->wq_count >= m &&
