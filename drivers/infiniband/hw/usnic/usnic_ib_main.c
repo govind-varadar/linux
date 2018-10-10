@@ -71,6 +71,7 @@ static const char usnic_version[] =
 
 static DEFINE_MUTEX(usnic_ib_ibdev_list_lock);
 static LIST_HEAD(usnic_ib_ibdev_list);
+static struct workqueue_struct *usnic_notify_work;
 
 /* Callback dump funcs */
 static int usnic_ib_dump_vf_hdr(void *obj, char *buf, int buf_sz)
@@ -212,21 +213,35 @@ static void usnic_ib_handle_usdev_event(struct usnic_ib_dev *us_ibdev,
 	mutex_unlock(&us_ibdev->usdev_lock);
 }
 
-static int usnic_ib_netdevice_event(struct notifier_block *notifier,
-					unsigned long event, void *ptr)
+static void usnic_ib_netdevice_work(struct work_struct *work)
 {
+	struct usnic_work *uswork = container_of(work, struct usnic_work, work);
+	struct net_device *netdev = netdev_notifier_info_to_dev(uswork->ptr);
 	struct usnic_ib_dev *us_ibdev;
-
-	struct net_device *netdev = netdev_notifier_info_to_dev(ptr);
 
 	mutex_lock(&usnic_ib_ibdev_list_lock);
 	list_for_each_entry(us_ibdev, &usnic_ib_ibdev_list, ib_dev_link) {
 		if (us_ibdev->netdev == netdev) {
-			usnic_ib_handle_usdev_event(us_ibdev, event);
+			usnic_ib_handle_usdev_event(us_ibdev, uswork->event);
 			break;
 		}
 	}
 	mutex_unlock(&usnic_ib_ibdev_list_lock);
+	kfree(uswork);
+}
+
+static int usnic_ib_netdevice_event(struct notifier_block *nblock,
+				    unsigned long event, void *ptr)
+{
+	struct usnic_work *uswork;
+
+	uswork = kzalloc(sizeof(*uswork), GFP_ATOMIC);
+	if (uswork) {
+		uswork->event = event;
+		uswork->ptr = ptr;
+		INIT_WORK(&uswork->work, usnic_ib_netdevice_work);
+		queue_work(usnic_notify_work, &uswork->work);
+	}
 
 	return NOTIFY_DONE;
 }
@@ -276,24 +291,42 @@ static int usnic_ib_handle_inet_event(struct usnic_ib_dev *us_ibdev,
 	return NOTIFY_DONE;
 }
 
-static int usnic_ib_inetaddr_event(struct notifier_block *notifier,
-					unsigned long event, void *ptr)
+static void usnic_ib_inetaddr_work(struct work_struct *work)
 {
+	struct usnic_work *uswork = container_of(work, struct usnic_work, work);
 	struct usnic_ib_dev *us_ibdev;
-	struct in_ifaddr *ifa = ptr;
+	struct in_ifaddr *ifa = uswork->ptr;
 	struct net_device *netdev = ifa->ifa_dev->dev;
 
 	mutex_lock(&usnic_ib_ibdev_list_lock);
 	list_for_each_entry(us_ibdev, &usnic_ib_ibdev_list, ib_dev_link) {
 		if (us_ibdev->netdev == netdev) {
-			usnic_ib_handle_inet_event(us_ibdev, event, ptr);
+			usnic_ib_handle_inet_event(us_ibdev, uswork->event,
+						   uswork->ptr);
 			break;
 		}
 	}
 	mutex_unlock(&usnic_ib_ibdev_list_lock);
+	kfree(uswork);
+}
+
+static int usnic_ib_inetaddr_event(struct notifier_block *nblock,
+				   unsigned long event, void *ptr)
+{
+	struct usnic_work *uswork;
+
+	uswork = kzalloc(sizeof(*uswork), GFP_ATOMIC);
+
+	if (uswork) {
+		uswork->ptr = ptr;
+		uswork->event = event;
+		INIT_WORK(&uswork->work, usnic_ib_inetaddr_work);
+		queue_work(usnic_notify_work, &uswork->work);
+	}
 
 	return NOTIFY_DONE;
 }
+
 static struct notifier_block usnic_ib_inetaddr_notifier = {
 	.notifier_call = usnic_ib_inetaddr_event
 };
@@ -653,10 +686,15 @@ static int __init usnic_ib_init(void)
 		return err;
 	}
 
+	usnic_notify_work = create_singlethread_workqueue("usnic_notify_work");
+	if (!usnic_notify_work) {
+		usnic_err("Failed to create notify workqueue");
+		goto out_umem_fini;
+	}
 	err = pci_register_driver(&usnic_ib_pci_driver);
 	if (err) {
 		usnic_err("Unable to register with PCI\n");
-		goto out_umem_fini;
+		goto out_notify_work;
 	}
 
 	err = register_netdevice_notifier(&usnic_ib_netdevice_notifier);
@@ -687,6 +725,8 @@ out_unreg_netdev_notifier:
 	unregister_netdevice_notifier(&usnic_ib_netdevice_notifier);
 out_pci_unreg:
 	pci_unregister_driver(&usnic_ib_pci_driver);
+out_notify_work:
+	destroy_workqueue(usnic_notify_work);
 out_umem_fini:
 	usnic_uiom_fini();
 

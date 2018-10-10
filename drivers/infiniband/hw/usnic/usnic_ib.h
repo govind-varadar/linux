@@ -93,6 +93,12 @@ struct usnic_ib_vf {
 	struct list_head		link;
 };
 
+struct usnic_work {
+	struct work_struct	work;
+	unsigned long		event;
+	void			*ptr;
+};
+
 static inline
 struct usnic_ib_dev *to_usdev(struct ib_device *ibdev)
 {
