@@ -3053,15 +3053,34 @@ static struct pci_driver enic_driver = {
 	.remove = enic_remove,
 };
 
+static int enic_bus_match(struct device *dev, struct device_driver *drv)
+{
+	struct enic *enic = container_of(dev, struct enic, rdma_device);
+
+	netdev_err(enic->netdev, "drv->name = %s, drv->bus_type->name = %s, dev->init_name = %s",
+		   drv->name, drv->bus ? drv->bus->name : "NULL",
+		   dev->init_name);
+
+	return 1;
+}
+
+struct bus_type enic_bus = {
+	.name = "enic",
+	.match = enic_bus_match,
+};
+EXPORT_SYMBOL(enic_bus);
+
 static int __init enic_init_module(void)
 {
 	pr_info("%s, ver %s\n", DRV_DESCRIPTION, DRV_VERSION);
+	bus_register(&enic_bus);
 
 	return pci_register_driver(&enic_driver);
 }
 
 static void __exit enic_cleanup_module(void)
 {
+	bus_unregister(&enic_bus);
 	pci_unregister_driver(&enic_driver);
 }
 
