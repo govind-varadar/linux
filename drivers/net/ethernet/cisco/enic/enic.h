@@ -200,6 +200,7 @@ struct enic {
 	u32 rx_copybreak;
 	u8 rss_key[ENIC_RSS_LEN];
 	struct vnic_gen_stats gen_stats;
+	struct device rdma_device;
 };
 
 static inline struct net_device *vnic_get_netdev(struct vnic_dev *vdev)
@@ -323,4 +324,5 @@ int enic_is_dynamic(struct enic *enic);
 void enic_set_ethtool_ops(struct net_device *netdev);
 int __enic_set_rsskey(struct enic *enic);
 
+extern struct bus_type enic_bus;
 #endif /* _ENIC_H_ */

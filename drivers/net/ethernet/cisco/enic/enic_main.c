@@ -2682,6 +2682,13 @@ static void enic_iounmap(struct enic *enic)
 			iounmap(enic->bar[i].vaddr);
 }
 
+static void enic_rdma_device_release(struct device *dev)
+{
+	struct enic *enic = container_of(dev, struct enic, rdma_device);
+
+	netdev_err(enic->netdev, "rdma_device release");
+}
+
 static int enic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct device *dev = &pdev->dev;
@@ -2990,6 +2997,23 @@ static int enic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 	enic->rx_copybreak = RX_COPYBREAK_DEFAULT;
 
+	/* Check if enic has rdma configured here*/
+#define ENIC_HAS_RDMA	true
+	if (ENIC_HAS_RDMA) {
+		/* Load enic_rdma driver */
+		request_module_nowait("enic_rdma");
+		enic->rdma_device.parent = &pdev->dev;
+		enic->rdma_device.bus = &enic_bus;
+		enic->rdma_device.release = enic_rdma_device_release;
+		dev_set_name(&enic->rdma_device, "enic_rdma:%s",
+			     pci_slot_name(pdev->slot));
+		err = device_register(&enic->rdma_device);
+		if (err) {
+			netdev_err(netdev, "rdma device registration failed");
+			put_device(&enic->rdma_device);
+		}
+	}
+
 	return 0;
 
 err_out_dev_deinit:
@@ -3025,6 +3049,10 @@ static void enic_remove(struct pci_dev *pdev)
 
 	if (netdev) {
 		struct enic *enic = netdev_priv(netdev);
+
+		if (ENIC_HAS_RDMA) {
+			device_unregister(&enic->rdma_device);
+		}
 
 		cancel_work_sync(&enic->reset);
 		cancel_work_sync(&enic->change_mtu_work);
