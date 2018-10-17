@@ -1,0 +1,5 @@
+config ENIC_RDMA
+	tristate "enic rdma driver"
+	depends on ENIC
+	---help---
+	  enic_rdma interface
