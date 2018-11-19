@@ -459,6 +459,9 @@ struct scsi_host_template {
 	/* True if the host uses host-wide tagspace */
 	unsigned host_tagset:1;
 
+	/* True if an admin queue for the host should be allocated */
+	unsigned admin_queue:1;
+
 	/*
 	 * Countdown for host blocking with no commands outstanding.
 	 */
@@ -561,6 +564,7 @@ struct Scsi_Host {
 
 	/* Area to keep a shared tag map */
 	struct blk_mq_tag_set	tag_set;
+	struct request_queue	*admin_q;
 
 	atomic_t host_blocked;
 
