@@ -1917,6 +1917,7 @@ int scsi_mq_setup_tags(struct Scsi_Host *shost)
 {
 	unsigned int cmd_size, sgl_size;
 	struct blk_mq_tag_set *tag_set = &shost->tag_set;
+	int ret;
 
 	sgl_size = max_t(unsigned int, sizeof(struct scatterlist),
 				scsi_mq_inline_sgl_size(shost));
@@ -1944,11 +1945,21 @@ int scsi_mq_setup_tags(struct Scsi_Host *shost)
 	if (shost->host_tagset)
 		tag_set->flags |= BLK_MQ_F_TAG_HCTX_SHARED;
 
-	return blk_mq_alloc_tag_set(tag_set);
+	ret = blk_mq_alloc_tag_set(tag_set);
+	if (ret)
+		return ret;
+
+	if (shost->hostt->admin_queue && shost->nr_reserved_cmds) {
+		shost->admin_q = blk_mq_init_queue(tag_set);
+		if (IS_ERR(shost->admin_q))
+			ret = PTR_ERR(shost->admin_q);
+	}
+	return ret;
 }
 
 void scsi_mq_destroy_tags(struct Scsi_Host *shost)
 {
+	blk_cleanup_queue(shost->admin_q);
 	blk_mq_free_tag_set(&shost->tag_set);
 }
 
