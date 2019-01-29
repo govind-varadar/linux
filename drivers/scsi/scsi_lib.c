@@ -1902,6 +1902,41 @@ void scsi_mq_destroy_tags(struct Scsi_Host *shost)
 }
 
 /**
+ * scsi_get_reserved_cmd - allocate a SCSI command from reserved tags
+ * @sdev: SCSI device from which to allocate the command
+ * @data_direction: Data direction for the allocated command
+ */
+struct scsi_cmnd *scsi_get_reserved_cmd(struct scsi_device *sdev,
+					int data_direction)
+{
+	struct request *rq;
+	struct scsi_cmnd *scmd;
+
+	rq = blk_mq_alloc_request(sdev->request_queue,
+				  data_direction == DMA_TO_DEVICE ?
+				  REQ_OP_SCSI_OUT : REQ_OP_SCSI_IN | REQ_NOWAIT,
+				  BLK_MQ_REQ_RESERVED);
+	if (IS_ERR(rq))
+		return NULL;
+	scmd = blk_mq_rq_to_pdu(rq);
+	scmd->request = rq;
+	return scmd;
+}
+EXPORT_SYMBOL_GPL(scsi_get_reserved_cmd);
+
+/**
+ * scsi_put_reserved_cmd - free a SCSI command allocated from reserved tags
+ * @scmd: SCSI command to be freed
+ */
+void scsi_put_reserved_cmd(struct scsi_cmnd *scmd)
+{
+	struct request *rq = blk_mq_rq_from_pdu(scmd);
+
+	blk_mq_free_request(rq);
+}
+EXPORT_SYMBOL_GPL(scsi_put_reserved_cmd);
+
+/**
  * scsi_device_from_queue - return sdev associated with a request_queue
  * @q: The request queue to return the sdev from
  *
