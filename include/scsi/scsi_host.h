@@ -600,6 +600,7 @@ struct Scsi_Host {
 	 * Number of reserved commands, if any.
 	 */
 	unsigned nr_reserved_cmds;
+	struct request_queue *reserved_cmd_q;
 
 	unsigned active_mode:2;
 	unsigned unchecked_isa_dma:1;
@@ -636,6 +637,9 @@ struct Scsi_Host {
 
 	/* The transport requires the LUN bits NOT to be stored in CDB[1] */
 	unsigned no_scsi2_lun_in_cdb:1;
+
+	/* Host requires a separate reserved_cmd_q */
+	unsigned use_reserved_cmd_q:1;
 
 	/*
 	 * Optional work queue to be utilized by the transport
