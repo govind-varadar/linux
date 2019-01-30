@@ -2394,11 +2394,7 @@ static int enic_set_intr_mode(struct enic *enic)
 	for (i = 0; i < n + m + 2; i++)
 		enic->msix_entry[i].entry = i;
 
-	/* Use multiple RQs if RSS is enabled
-	 */
-
-	if (ENIC_SETTING(enic, RSS) &&
-	    enic->config.intr_mode < 1 &&
+	if (enic->config.intr_mode < 1 &&
 	    enic->rq_count >= n &&
 	    enic->wq_count >= m &&
 	    enic->cq_count >= n + m &&
