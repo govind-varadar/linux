@@ -1542,7 +1542,7 @@ static int enic_poll(struct napi_struct *napi, int budget)
 	unsigned int intr = ENIC_LEGACY_IO_INTR;
 	unsigned int rq_work_to_do = budget;
 	unsigned int wq_work_to_do = ENIC_WQ_NAPI_BUDGET;
-	unsigned int  work_done, rq_work_done = 0, wq_work_done;
+	unsigned int rq_work_done = 0, wq_work_done;
 	int err;
 
 	wq_work_done = vnic_cq_service(&enic->cq[cq_wq], wq_work_to_do,
@@ -1551,19 +1551,6 @@ static int enic_poll(struct napi_struct *napi, int budget)
 	if (budget > 0)
 		rq_work_done = vnic_cq_service(&enic->cq[cq_rq],
 			rq_work_to_do, enic_rq_service, NULL);
-
-	/* Accumulate intr event credits for this polling
-	 * cycle.  An intr event is the completion of a
-	 * a WQ or RQ packet.
-	 */
-
-	work_done = rq_work_done + wq_work_done;
-
-	if (work_done > 0)
-		vnic_intr_return_credits(&enic->intr[intr],
-			work_done,
-			0 /* don't unmask intr */,
-			0 /* don't reset intr timer */);
 
 	err = vnic_rq_fill(&enic->rq[0], enic_rq_alloc_buf);
 
@@ -1649,9 +1636,6 @@ static int enic_poll_msix_wq(struct napi_struct *napi, int budget)
 	wq_work_done = vnic_cq_service(&enic->cq[cq], wq_work_to_do,
 				       enic_wq_service, NULL);
 
-	vnic_intr_return_credits(&enic->intr[intr], wq_work_done,
-				 0 /* don't unmask intr */,
-				 1 /* reset intr timer */);
 	if (!wq_work_done) {
 		napi_complete(napi);
 		vnic_intr_unmask(&enic->intr[intr]);
@@ -1678,17 +1662,6 @@ static int enic_poll_msix_rq(struct napi_struct *napi, int budget)
 	if (budget > 0)
 		work_done = vnic_cq_service(&enic->cq[cq],
 			work_to_do, enic_rq_service, NULL);
-
-	/* Return intr event credits for this polling
-	 * cycle.  An intr event is the completion of a
-	 * RQ packet.
-	 */
-
-	if (work_done > 0)
-		vnic_intr_return_credits(&enic->intr[intr],
-			work_done,
-			0 /* don't unmask intr */,
-			0 /* don't reset intr timer */);
 
 	err = vnic_rq_fill(&enic->rq[rq], enic_rq_alloc_buf);
 
