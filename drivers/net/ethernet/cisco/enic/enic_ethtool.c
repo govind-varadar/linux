@@ -302,15 +302,15 @@ static int enic_get_coalesce(struct net_device *netdev,
 	struct ethtool_coalesce *ecmd)
 {
 	struct enic *enic = netdev_priv(netdev);
-	struct enic_rx_coal *rxcoal = &enic->rx_coalesce_setting;
+	struct enic_rx_coal *rxcoal = &enic->rx_coal;
 
 	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX)
 		ecmd->tx_coalesce_usecs = enic->tx_coalesce_usecs;
-	ecmd->rx_coalesce_usecs = enic->rx_coalesce_usecs;
+	ecmd->rx_coalesce_usecs = enic->rx_coal.coal_usecs;
 	if (rxcoal->use_adaptive_rx_coalesce)
 		ecmd->use_adaptive_rx_coalesce = 1;
-	ecmd->rx_coalesce_usecs_low = rxcoal->small_pkt_range_start;
-	ecmd->rx_coalesce_usecs_high = rxcoal->range_end;
+	ecmd->rx_coalesce_usecs_low = rxcoal->acoal_low;
+	ecmd->rx_coalesce_usecs_high = rxcoal->acoal_high;
 
 	return 0;
 }
@@ -373,7 +373,7 @@ static int enic_set_coalesce(struct net_device *netdev,
 	u32 coalesce_usecs_max;
 	unsigned int i, intr;
 	int ret;
-	struct enic_rx_coal *rxcoal = &enic->rx_coalesce_setting;
+	struct enic_rx_coal *rxcoal = &enic->rx_coal;
 
 	ret = enic_coalesce_valid(enic, ecmd);
 	if (ret)
@@ -401,13 +401,11 @@ static int enic_set_coalesce(struct net_device *netdev,
 	if (!rxcoal->use_adaptive_rx_coalesce)
 		enic_intr_coal_set_rx(enic, rx_coalesce_usecs);
 	if (ecmd->rx_coalesce_usecs_high) {
-		rxcoal->range_end = rx_coalesce_usecs_high;
-		rxcoal->small_pkt_range_start = rx_coalesce_usecs_low;
-		rxcoal->large_pkt_range_start = rx_coalesce_usecs_low +
-						ENIC_AIC_LARGE_PKT_DIFF;
+		rxcoal->acoal_high = rx_coalesce_usecs_high;
+		rxcoal->acoal_low = rx_coalesce_usecs_low;
 	}
 
-	enic->rx_coalesce_usecs = rx_coalesce_usecs;
+	enic->rx_coal.coal_usecs = rx_coalesce_usecs;
 
 	return 0;
 }

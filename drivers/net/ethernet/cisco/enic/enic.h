@@ -55,12 +55,6 @@ struct enic_msix_entry {
 	cpumask_var_t affinity_mask;
 };
 
-/* Store only the lower range.  Higher range is given by fw. */
-struct enic_intr_mod_range {
-	u32 small_pkt_range_start;
-	u32 large_pkt_range_start;
-};
-
 struct enic_intr_mod_table {
 	u32 rx_rate;
 	u32 range_percent;
@@ -74,12 +68,13 @@ struct enic_intr_mod_table {
 #define ENIC_LINK_4G_INDEX		0
 #define ENIC_RX_COALESCE_RANGE_END	125
 #define ENIC_AIC_TS_BREAK		100
+#define ENIC_AIC_MIN_DEFAULT		3
 
 struct enic_rx_coal {
-	u32 small_pkt_range_start;
-	u32 large_pkt_range_start;
-	u32 range_end;
-	u32 use_adaptive_rx_coalesce;
+	u16 coal_usecs;
+	u16 acoal_high;
+	u16 acoal_low;
+	unsigned int use_adaptive_rx_coalesce : 1;
 };
 
 /* priv_flags */
@@ -164,8 +159,7 @@ struct enic {
 	unsigned int mc_count;
 	unsigned int uc_count;
 	u32 port_mtu;
-	struct enic_rx_coal rx_coalesce_setting;
-	u32 rx_coalesce_usecs;
+	struct enic_rx_coal rx_coal;
 	u32 tx_coalesce_usecs;
 #ifdef CONFIG_PCI_IOV
 	u16 num_vfs;
