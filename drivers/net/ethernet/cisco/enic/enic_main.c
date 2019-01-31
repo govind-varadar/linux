@@ -82,35 +82,6 @@ MODULE_AUTHOR("Scott Feldman <scofeldm@cisco.com>");
 MODULE_LICENSE("GPL");
 MODULE_DEVICE_TABLE(pci, enic_id_table);
 
-#define ENIC_LARGE_PKT_THRESHOLD		1000
-#define ENIC_MAX_COALESCE_TIMERS		10
-/*  Interrupt moderation table, which will be used to decide the
- *  coalescing timer values
- *  {rx_rate in Mbps, mapping percentage of the range}
- */
-static struct enic_intr_mod_table mod_table[ENIC_MAX_COALESCE_TIMERS + 1] = {
-	{4000,  0},
-	{4400, 10},
-	{5060, 20},
-	{5230, 30},
-	{5540, 40},
-	{5820, 50},
-	{6120, 60},
-	{6435, 70},
-	{6745, 80},
-	{7000, 90},
-	{0xFFFFFFFF, 100}
-};
-
-/* This table helps the driver to pick different ranges for rx coalescing
- * timer depending on the link speed.
- */
-static struct enic_intr_mod_range mod_range[ENIC_MAX_LINK_SPEEDS] = {
-	{0,  0}, /* 0  - 4  Gbps */
-	{0,  3}, /* 4  - 10 Gbps */
-	{3,  6}, /* 10 - 40 Gbps */
-};
-
 static void enic_init_affinity_hint(struct enic *enic)
 {
 	int numa_node = dev_to_node(&enic->pdev->dev);
@@ -1295,15 +1266,6 @@ static int enic_rq_alloc_buf(struct vnic_rq *rq)
 	return 0;
 }
 
-static void enic_intr_update_pkt_size(struct vnic_rx_bytes_counter *pkt_size,
-				      u32 pkt_len)
-{
-	if (ENIC_LARGE_PKT_THRESHOLD <= pkt_len)
-		pkt_size->large_pkt_bytes_cnt += pkt_len;
-	else
-		pkt_size->small_pkt_bytes_cnt += pkt_len;
-}
-
 static bool enic_rxcopybreak(struct net_device *netdev, struct sk_buff **skb,
 			     struct vnic_rq_buf *buf, u16 len)
 {
@@ -1330,7 +1292,6 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 	struct enic *enic = vnic_dev_priv(rq->vdev);
 	struct net_device *netdev = enic->netdev;
 	struct sk_buff *skb;
-	struct vnic_cq *cq = &enic->cq[enic_cq_rq(enic, rq->index)];
 
 	u8 type, color, eop, sop, ingress_port, vlan_stripped;
 	u8 fcoe, fcoe_sof, fcoe_fc_crc_ok, fcoe_enc_error, fcoe_eof;
@@ -1446,9 +1407,6 @@ static void enic_rq_indicate_buf(struct vnic_rq *rq,
 			netif_receive_skb(skb);
 		else
 			napi_gro_receive(&enic->napi[q_number], skb);
-		if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
-			enic_intr_update_pkt_size(&cq->pkt_size_counter,
-						  bytes_written);
 	} else {
 
 		/* Buffer overflow
@@ -1471,64 +1429,6 @@ static int enic_rq_service(struct vnic_dev *vdev, struct cq_desc *cq_desc,
 		enic_rq_indicate_buf, opaque);
 
 	return 0;
-}
-
-static void enic_set_int_moderation(struct enic *enic, struct vnic_rq *rq)
-{
-	unsigned int intr = enic_msix_rq_intr(enic, rq->index);
-	struct vnic_cq *cq = &enic->cq[enic_cq_rq(enic, rq->index)];
-	u32 timer = cq->tobe_rx_coal_timeval;
-
-	if (cq->tobe_rx_coal_timeval != cq->cur_rx_coal_timeval) {
-		vnic_intr_coalescing_timer_set(&enic->intr[intr], timer);
-		cq->cur_rx_coal_timeval = cq->tobe_rx_coal_timeval;
-	}
-}
-
-static void enic_calc_int_moderation(struct enic *enic, struct vnic_rq *rq)
-{
-	struct enic_rx_coal *rx_coal = &enic->rx_coalesce_setting;
-	struct vnic_cq *cq = &enic->cq[enic_cq_rq(enic, rq->index)];
-	struct vnic_rx_bytes_counter *pkt_size_counter = &cq->pkt_size_counter;
-	int index;
-	u32 timer;
-	u32 range_start;
-	u32 traffic;
-	u64 delta;
-	ktime_t now = ktime_get();
-
-	delta = ktime_us_delta(now, cq->prev_ts);
-	if (delta < ENIC_AIC_TS_BREAK)
-		return;
-	cq->prev_ts = now;
-
-	traffic = pkt_size_counter->large_pkt_bytes_cnt +
-		  pkt_size_counter->small_pkt_bytes_cnt;
-	/* The table takes Mbps
-	 * traffic *= 8    => bits
-	 * traffic *= (10^6 / delta)    => bps
-	 * traffic /= 10^6     => Mbps
-	 *
-	 * Combining, traffic *= (8 / delta)
-	 */
-
-	traffic <<= 3;
-	traffic = delta > UINT_MAX ? 0 : traffic / (u32)delta;
-
-	for (index = 0; index < ENIC_MAX_COALESCE_TIMERS; index++)
-		if (traffic < mod_table[index].rx_rate)
-			break;
-	range_start = (pkt_size_counter->small_pkt_bytes_cnt >
-		       pkt_size_counter->large_pkt_bytes_cnt << 1) ?
-		      rx_coal->small_pkt_range_start :
-		      rx_coal->large_pkt_range_start;
-	timer = range_start + ((rx_coal->range_end - range_start) *
-			       mod_table[index].range_percent / 100);
-	/* Damping */
-	cq->tobe_rx_coal_timeval = (timer + cq->tobe_rx_coal_timeval) >> 1;
-
-	pkt_size_counter->large_pkt_bytes_cnt = 0;
-	pkt_size_counter->small_pkt_bytes_cnt = 0;
 }
 
 static int enic_poll(struct napi_struct *napi, int budget)
@@ -1571,11 +1471,6 @@ static int enic_poll(struct napi_struct *napi, int budget)
 
 	if (err)
 		rq_work_done = rq_work_to_do;
-	if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
-		/* Call the function which refreshes the intr coalescing timer
-		 * value based on the traffic.
-		 */
-		enic_calc_int_moderation(enic, &enic->rq[0]);
 
 	if ((rq_work_done < budget) && napi_complete_done(napi, rq_work_done)) {
 
@@ -1583,8 +1478,6 @@ static int enic_poll(struct napi_struct *napi, int budget)
 		 * exit polling
 		 */
 
-		if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
-			enic_set_int_moderation(enic, &enic->rq[0]);
 		vnic_intr_unmask(&enic->intr[intr]);
 	}
 
@@ -1696,11 +1589,6 @@ static int enic_poll_msix_rq(struct napi_struct *napi, int budget)
 
 	if (err)
 		work_done = work_to_do;
-	if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
-		/* Call the function which refreshes the intr coalescing timer
-		 * value based on the traffic.
-		 */
-		enic_calc_int_moderation(enic, &enic->rq[rq]);
 
 	if ((work_done < budget) && napi_complete_done(napi, work_done)) {
 
@@ -1708,8 +1596,6 @@ static int enic_poll_msix_rq(struct napi_struct *napi, int budget)
 		 * exit polling
 		 */
 
-		if (enic->rx_coalesce_setting.use_adaptive_rx_coalesce)
-			enic_set_int_moderation(enic, &enic->rq[rq]);
 		vnic_intr_unmask(&enic->intr[intr]);
 	}
 
@@ -1847,36 +1733,6 @@ static void enic_synchronize_irqs(struct enic *enic)
 	default:
 		break;
 	}
-}
-
-static void enic_set_rx_coal_setting(struct enic *enic)
-{
-	unsigned int speed;
-	int index = -1;
-	struct enic_rx_coal *rx_coal = &enic->rx_coalesce_setting;
-
-	/* 1. Read the link speed from fw
-	 * 2. Pick the default range for the speed
-	 * 3. Update it in enic->rx_coalesce_setting
-	 */
-	speed = vnic_dev_port_speed(enic->vdev);
-	if (ENIC_LINK_SPEED_10G < speed)
-		index = ENIC_LINK_40G_INDEX;
-	else if (ENIC_LINK_SPEED_4G < speed)
-		index = ENIC_LINK_10G_INDEX;
-	else
-		index = ENIC_LINK_4G_INDEX;
-
-	rx_coal->small_pkt_range_start = mod_range[index].small_pkt_range_start;
-	rx_coal->large_pkt_range_start = mod_range[index].large_pkt_range_start;
-	rx_coal->range_end = ENIC_RX_COALESCE_RANGE_END;
-
-	/* Start with the value provided by UCSM */
-	for (index = 0; index < enic->rq_count; index++)
-		enic->cq[index].cur_rx_coal_timeval =
-				enic->config.intr_timer_usec;
-
-	rx_coal->use_adaptive_rx_coalesce = 1;
 }
 
 static int enic_dev_notify_set(struct enic *enic)
@@ -2888,7 +2744,6 @@ static int enic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	timer_setup(&enic->notify_timer, enic_notify_timer, 0);
 
 	enic_rfs_flw_tbl_init(enic);
-	enic_set_rx_coal_setting(enic);
 	INIT_WORK(&enic->reset, enic_reset);
 	INIT_WORK(&enic->tx_hang_reset, enic_tx_hang_reset);
 	INIT_WORK(&enic->change_mtu_work, enic_change_mtu_work);
@@ -2907,11 +2762,11 @@ static int enic_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_out_dev_deinit;
 	}
 
+	enic->rx_coalesce_usecs = enic->config.intr_timer_usec;
 	enic->tx_coalesce_usecs = enic->config.intr_timer_usec;
 	/* rx coalesce time already got initialized. This gets used
 	 * if adaptive coal is turned off
 	 */
-	enic->rx_coalesce_usecs = enic->tx_coalesce_usecs;
 
 	if (enic_is_dynamic(enic) || enic_is_sriov_vf(enic))
 		netdev->netdev_ops = &enic_netdev_dynamic_ops;
