@@ -1871,6 +1871,27 @@ void scsi_mq_destroy_tags(struct Scsi_Host *shost)
 	blk_mq_free_tag_set(&shost->tag_set);
 }
 
+struct scsi_cmnd *scsi_host_get_reserved_cmd(struct Scsi_Host *shost)
+{
+	struct request *rq;
+	struct scsi_cmnd *scmd;
+
+	if (WARN_ON(!shost->reserved_cmd_q))
+		return NULL;
+
+	rq = blk_mq_alloc_request(shost->reserved_cmd_q,
+				  REQ_OP_DRV_OUT | REQ_NOWAIT,
+				  BLK_MQ_REQ_RESERVED);
+	if (IS_ERR(rq))
+		return NULL;
+	WARN_ON(rq->tag == -1);
+	scmd = blk_mq_rq_to_pdu(rq);
+	scmd->request = rq;
+
+	return scmd;
+}
+EXPORT_SYMBOL_GPL(scsi_host_get_reserved_cmd);
+
 /**
  * scsi_device_from_queue - return sdev associated with a request_queue
  * @q: The request queue to return the sdev from
