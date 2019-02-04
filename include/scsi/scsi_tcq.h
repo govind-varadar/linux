@@ -58,7 +58,15 @@ static inline void scsi_put_reserved_cmd(struct scsi_cmnd *scmd)
 {
 	struct request *rq = blk_mq_rq_from_pdu(scmd);
 
-	blk_mq_free_request(rq);
+	if (blk_mq_rq_is_reserved(rq))
+		blk_mq_free_request(rq);
+}
+
+static inline bool scsi_is_reserved_cmd(struct scsi_cmnd *scmd)
+{
+	struct request *rq = blk_mq_rq_from_pdu(scmd);
+
+	return blk_mq_rq_is_reserved(rq);
 }
 
 #endif /* CONFIG_BLOCK */
