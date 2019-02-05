@@ -149,5 +149,6 @@ void enic_get_res_counts(struct enic *enic);
 void enic_init_vnic_resources(struct enic *enic);
 int enic_alloc_vnic_resources(struct enic *);
 void enic_free_vnic_resources(struct enic *);
+void enic_print_resources(struct enic *enic);
 
 #endif /* _ENIC_RES_H_ */
