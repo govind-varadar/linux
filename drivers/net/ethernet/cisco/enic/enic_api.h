@@ -25,6 +25,7 @@
 #include "vnic_devcmd.h"
 
 int enic_api_devcmd_proxy_by_index(struct net_device *netdev, int vf,
-	enum vnic_devcmd_cmd cmd, u64 *a0, u64 *a1, int wait);
+				   enum vnic_devcmd_cmd cmd, u64 *a0, u64 *a1,
+				   int wait);
 
 #endif
