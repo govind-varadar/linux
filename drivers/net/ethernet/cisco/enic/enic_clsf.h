@@ -21,7 +21,7 @@ void enic_flow_may_expire(struct timer_list *t);
 static inline void enic_rfs_timer_start(struct enic *enic)
 {
 	timer_setup(&enic->rfs_h.rfs_may_expire, enic_flow_may_expire, 0);
-	mod_timer(&enic->rfs_h.rfs_may_expire, jiffies + HZ/4);
+	mod_timer(&enic->rfs_h.rfs_may_expire, jiffies + HZ / 4);
 }
 
 static inline void enic_rfs_timer_stop(struct enic *enic)
