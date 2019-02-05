@@ -43,8 +43,6 @@
 #define ENIC_INTR_MAX		(((ENIC_WQ_MAX) > (ENIC_RQ_MAX) ? ENIC_WQ_MAX :\
 							     ENIC_RQ_MAX) + 2)
 
-#define ENIC_WQ_NAPI_BUDGET	256
-
 #define ENIC_NOTIFY_TIMER_PERIOD	(2 * HZ)
 #define WQ_ENET_MAX_DESC_LEN		BIT(WQ_ENET_LEN_BITS)
 #define MAX_TSO				BIT(16)
@@ -147,15 +145,10 @@ struct enic {
 	spinlock_t enic_api_lock;
 	struct enic_port_profile *pp;
 
-	/* work queue cache line section */
-	____cacheline_aligned struct vnic_wq wq[ENIC_WQ_MAX];
-	spinlock_t wq_lock[ENIC_WQ_MAX];
 	unsigned int wq_count;
 	u16 loop_enable;
 	u16 loop_tag;
 
-	/* receive queue cache line section */
-	____cacheline_aligned struct vnic_rq rq[ENIC_RQ_MAX];
 	struct enic_qp *qp;
 	struct enic_qp_ring *qp_ring;
 	unsigned int qp_count;
@@ -166,15 +159,9 @@ struct enic {
 	struct vxlan_offload vxlan;
 	u64 rq_truncated_pkts;
 	u64 rq_bad_fcs;
-	struct napi_struct napi[ENIC_RQ_MAX + ENIC_WQ_MAX];
-
-	/* interrupt resource cache line section */
-	____cacheline_aligned struct vnic_intr intr[ENIC_INTR_MAX];
 	unsigned int intr_count;
 	u32 __iomem *legacy_pba;		/* memory-mapped */
 
-	/* completion queue cache line section */
-	____cacheline_aligned struct vnic_cq cq[ENIC_CQ_MAX];
 	unsigned int cq_count;
 	struct enic_rfs_flw_tbl rfs_h;
 	u32 rx_copybreak;
@@ -210,38 +197,6 @@ static inline struct device *enic_get_dev(struct enic *enic)
 	return &(enic->pdev->dev);
 }
 
-static inline unsigned int enic_cq_rq(struct enic *enic, unsigned int rq)
-{
-	return rq;
-}
-
-static inline unsigned int enic_cq_wq(struct enic *enic, unsigned int wq)
-{
-	return enic->rq_count + wq;
-}
-
-static inline unsigned int enic_legacy_notify_intr(void)
-{
-	return 2;
-}
-
-static inline unsigned int enic_msix_rq_intr(struct enic *enic,
-	unsigned int rq)
-{
-	return enic->cq[enic_cq_rq(enic, rq)].interrupt_offset;
-}
-
-static inline unsigned int enic_msix_wq_intr(struct enic *enic,
-	unsigned int wq)
-{
-	return enic->cq[enic_cq_wq(enic, wq)].interrupt_offset;
-}
-
-static inline unsigned int enic_msix_err_intr(struct enic *enic)
-{
-	return enic->rq_count + enic->wq_count;
-}
-
 #define ENIC_LEGACY_IO_INTR	0
 #define ENIC_LEGACY_ERR_INTR	1
 #define ENIC_LEGACY_NOTIFY_INTR	2
@@ -256,19 +211,6 @@ static inline unsigned int enic_msix_error_intr(struct enic *enic)
 	return enic->qp_count;
 }
 
-static inline bool enic_is_err_intr(struct enic *enic, int intr)
-{
-	switch (vnic_dev_get_intr_mode(enic->vdev)) {
-	case VNIC_DEV_INTR_MODE_INTX:
-		return intr == ENIC_LEGACY_ERR_INTR;
-	case VNIC_DEV_INTR_MODE_MSIX:
-		return intr == enic_msix_err_intr(enic);
-	case VNIC_DEV_INTR_MODE_MSI:
-	default:
-		return false;
-	}
-}
-
 static inline void enic_intr_return_credits(struct vnic_intr_ctrl *ctrl,
 					    unsigned int credits,
 					    int unmask, int reset_timer)
@@ -279,19 +221,6 @@ static inline void enic_intr_return_credits(struct vnic_intr_ctrl *ctrl,
 	iowrite32(value, &ctrl->int_credit_return);
 }
 
-static inline bool enic_is_notify_intr(struct enic *enic, int intr)
-{
-	switch (vnic_dev_get_intr_mode(enic->vdev)) {
-	case VNIC_DEV_INTR_MODE_INTX:
-		return intr == ENIC_LEGACY_NOTIFY_INTR;
-	case VNIC_DEV_INTR_MODE_MSIX:
-		return intr == enic_msix_notify_intr(enic);
-	case VNIC_DEV_INTR_MODE_MSI:
-	default:
-		return false;
-	}
-}
-
 static inline void enic_intr_return_all_credits(struct vnic_intr_ctrl *ctrl)
 {
 	unsigned int credits;
@@ -300,19 +229,6 @@ static inline void enic_intr_return_all_credits(struct vnic_intr_ctrl *ctrl)
 
 	credits = ioread32(&ctrl->int_credits);
 	enic_intr_return_credits(ctrl, credits, unmask, reset_timer);
-}
-
-static inline int enic_dma_map_check(struct enic *enic, dma_addr_t dma_addr)
-{
-	if (unlikely(pci_dma_mapping_error(enic->pdev, dma_addr))) {
-		net_warn_ratelimited("%s: PCI dma mapping failed!\n",
-				     enic->netdev->name);
-		enic->gen_stats.dma_map_error++;
-
-		return -ENOMEM;
-	}
-
-	return 0;
 }
 
 void enic_reset_addr_lists(struct enic *enic);
