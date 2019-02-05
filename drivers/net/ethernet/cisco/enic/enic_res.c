@@ -212,6 +212,31 @@ void enic_get_res_counts(struct enic *enic)
 		enic->cq_count, enic->intr_count);
 }
 
+void enic_print_resources(struct enic *enic)
+{
+	char *intr_mode;
+
+	switch (vnic_dev_get_intr_mode(enic->vdev)) {
+	case VNIC_DEV_INTR_MODE_INTX:
+		intr_mode = "legacy PCI INTx";
+		break;
+	case VNIC_DEV_INTR_MODE_MSI:
+		intr_mode = "MSI";
+		break;
+	case VNIC_DEV_INTR_MODE_MSIX:
+		intr_mode = "MSIX";
+		break;
+	default:
+		intr_mode = "Unknown";
+	}
+
+	netdev_info(enic->netdev, "vNIC resources used: wq %d rq %d cq %d qp %d intr %d rq_desc %d wq_desc %d intr mode %s\n",
+		    enic->wq_count, enic->rq_count, enic->cq_count,
+		    enic->qp_count, enic->intr_count,
+		    enic->config.rq_desc_count, enic->config.wq_desc_count,
+		    intr_mode);
+}
+
 void enic_init_vnic_resources(struct enic *enic)
 {
 	enum vnic_dev_intr_mode intr_mode;
