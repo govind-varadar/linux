@@ -162,4 +162,6 @@ static inline unsigned int enic_wq_error_status(struct enic_qp *qp)
 int enic_alloc_qp(struct enic *enic);
 int enic_napi_poll(struct napi_struct *napi, int budget);
 void enic_free_qp(struct enic *enic);
+netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb,
+				 struct net_device *netdev);
 #endif /* _ENIC_QP_H_ */

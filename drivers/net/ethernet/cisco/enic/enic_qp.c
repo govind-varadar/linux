@@ -1163,3 +1163,50 @@ dma_error:
 	dev_kfree_skb_any(skb);
 }
 
+/* netif_tx_lock held, process context with BHs disabled, or BH */
+netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+{
+	struct enic *enic = netdev_priv(netdev);
+	struct enic_qp *qp;
+	unsigned int txq_map;
+	struct netdev_queue *txq;
+
+	if (skb->len <= 0) {
+		dev_kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+
+	txq_map = skb_get_queue_mapping(skb) % enic->wq_count;
+	qp = &enic->qp[txq_map];
+	txq = netdev_get_tx_queue(netdev, txq_map);
+
+	/* Non-TSO sends must fit within ENIC_NON_TSO_MAX_DESC descs,
+	 * which is very likely.  In the off chance it's going to take
+	 * more than * ENIC_NON_TSO_MAX_DESC, linearize the skb.
+	 */
+
+	if (unlikely(skb_shinfo(skb)->gso_size == 0 &&
+		     skb_shinfo(skb)->nr_frags + 1 > ENIC_NON_TSO_MAX_DESC &&
+		     skb_linearize(skb))) {
+		dev_kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+
+	if (unlikely(enic_wq_desc_avail(qp) <
+		     skb_shinfo(skb)->nr_frags + ENIC_DESC_MAX_SPLITS)) {
+		netif_tx_stop_queue(txq);
+		/* This is a hard error, log it */
+		netdev_err(netdev, "BUG! Tx ring full when queue awake!\n");
+		return NETDEV_TX_BUSY;
+	}
+
+	enic_post_xmit_skb(qp, skb);
+
+	if (enic_wq_desc_avail(qp) < MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS)
+		netif_tx_stop_queue(txq);
+	skb_tx_timestamp(skb);
+	enic_qp_doorbell(qp);
+
+	return NETDEV_TX_OK;
+}
+

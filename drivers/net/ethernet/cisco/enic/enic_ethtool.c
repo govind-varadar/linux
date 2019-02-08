@@ -26,6 +26,7 @@
 #include "enic_clsf.h"
 #include "vnic_rss.h"
 #include "vnic_stats.h"
+#include "enic_qp.h"
 
 struct enic_stat {
 	char name[ETH_GSTRING_LEN];
@@ -93,15 +94,22 @@ static const unsigned int enic_n_tx_stats = ARRAY_SIZE(enic_tx_stats);
 static const unsigned int enic_n_rx_stats = ARRAY_SIZE(enic_rx_stats);
 static const unsigned int enic_n_gen_stats = ARRAY_SIZE(enic_gen_stats);
 
-static void enic_intr_coal_set_rx(struct enic *enic, u32 timer)
+static void enic_intr_coal_set(struct enic *enic, u32 timer)
 {
+	struct enic_qp *qp;
+	u32 timer_hw;
 	int i;
-	int intr;
 
-	for (i = 0; i < enic->rq_count; i++) {
-		intr = enic_msix_rq_intr(enic, i);
-		vnic_intr_coalescing_timer_set(&enic->intr[intr], timer);
+	/* enic_open will set the coalescing timer during ifup
+	 */
+	if (!enic->qp)
+		return;
+	timer_hw = vnic_dev_intr_coal_timer_usec_to_hw(enic->vdev, timer);
+	for (i = 0; i < enic->qp_count; i++) {
+		qp = &enic->qp[i];
+		iowrite32(timer_hw, &qp->ctrl->coalescing_timer);
 	}
+	return;
 }
 
 static int enic_get_ksettings(struct net_device *netdev,
@@ -231,15 +239,6 @@ static int enic_set_ringparam(struct net_device *netdev,
 		ring->rx_pending & 0xffffffe0; /* must be aligned to groups of 32 */
 	c->wq_desc_count =
 		ring->tx_pending & 0xffffffe0; /* must be aligned to groups of 32 */
-	enic_free_vnic_resources(enic);
-	err = enic_alloc_vnic_resources(enic);
-	if (err) {
-		netdev_err(netdev,
-			   "Failed to alloc vNIC resources, aborting\n");
-		enic_free_vnic_resources(enic);
-		goto err_out;
-	}
-	enic_init_vnic_resources(enic);
 	if (running) {
 		err = dev_open(netdev, NULL);
 		if (err)
@@ -302,15 +301,12 @@ static int enic_get_coalesce(struct net_device *netdev,
 	struct ethtool_coalesce *ecmd)
 {
 	struct enic *enic = netdev_priv(netdev);
-	struct enic_rx_coal *rxcoal = &enic->rx_coal;
 
-	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX)
-		ecmd->tx_coalesce_usecs = enic->tx_coalesce_usecs;
 	ecmd->rx_coalesce_usecs = enic->rx_coal.coal_usecs;
-	if (rxcoal->use_adaptive_rx_coalesce)
+	if (enic->rx_coal.use_adaptive_rx_coalesce)
 		ecmd->use_adaptive_rx_coalesce = 1;
-	ecmd->rx_coalesce_usecs_low = rxcoal->acoal_low;
-	ecmd->rx_coalesce_usecs_high = rxcoal->acoal_high;
+	ecmd->rx_coalesce_usecs_low = enic->rx_coal.acoal_low;
+	ecmd->rx_coalesce_usecs_high = enic->rx_coal.acoal_high;
 
 	return 0;
 }
@@ -324,6 +320,10 @@ static int enic_coalesce_valid(struct enic *enic,
 	u32 rx_coalesce_usecs_low = min_t(u32, coalesce_usecs_max,
 					  ec->rx_coalesce_usecs_low);
 
+	if (ec->tx_coalesce_usecs) {
+		netdev_info(enic->netdev, "Use rx-usecs instead of tx-usecs, this will set coalescing value for both rx & tx");
+		return -EINVAL;
+	}
 	if (ec->rx_max_coalesced_frames		||
 	    ec->rx_coalesce_usecs_irq		||
 	    ec->rx_max_coalesced_frames_irq	||
@@ -343,20 +343,15 @@ static int enic_coalesce_valid(struct enic *enic,
 	    ec->rate_sample_interval)
 		return -EINVAL;
 
-	if ((vnic_dev_get_intr_mode(enic->vdev) != VNIC_DEV_INTR_MODE_MSIX) &&
-	    ec->tx_coalesce_usecs)
-		return -EINVAL;
-
-	if ((ec->tx_coalesce_usecs > coalesce_usecs_max)	||
-	    (ec->rx_coalesce_usecs > coalesce_usecs_max)	||
-	    (ec->rx_coalesce_usecs_low > coalesce_usecs_max)	||
-	    (ec->rx_coalesce_usecs_high > coalesce_usecs_max))
+	if (ec->rx_coalesce_usecs > coalesce_usecs_max	||
+	    ec->rx_coalesce_usecs_high > coalesce_usecs_max	||
+	    ec->rx_coalesce_usecs_low > coalesce_usecs_max)
 		netdev_info(enic->netdev, "ethtool_set_coalesce: adaptor supports max coalesce value of %d. Setting max value.\n",
 			    coalesce_usecs_max);
 
 	if (ec->rx_coalesce_usecs_high &&
 	    (rx_coalesce_usecs_high <
-	     rx_coalesce_usecs_low + ENIC_AIC_LARGE_PKT_DIFF))
+	     rx_coalesce_usecs_low))
 		return -EINVAL;
 
 	return 0;
@@ -366,46 +361,57 @@ static int enic_set_coalesce(struct net_device *netdev,
 	struct ethtool_coalesce *ecmd)
 {
 	struct enic *enic = netdev_priv(netdev);
-	u32 tx_coalesce_usecs;
+	struct enic_qp *qp;
 	u32 rx_coalesce_usecs;
 	u32 rx_coalesce_usecs_low;
 	u32 rx_coalesce_usecs_high;
 	u32 coalesce_usecs_max;
-	unsigned int i, intr;
 	int ret;
 	struct enic_rx_coal *rxcoal = &enic->rx_coal;
+	int i;
 
 	ret = enic_coalesce_valid(enic, ecmd);
 	if (ret)
 		return ret;
 	coalesce_usecs_max = vnic_dev_get_intr_coal_timer_max(enic->vdev);
-	tx_coalesce_usecs = min_t(u32, ecmd->tx_coalesce_usecs,
-				  coalesce_usecs_max);
 	rx_coalesce_usecs = min_t(u32, ecmd->rx_coalesce_usecs,
 				  coalesce_usecs_max);
-
 	rx_coalesce_usecs_low = min_t(u32, ecmd->rx_coalesce_usecs_low,
 				      coalesce_usecs_max);
 	rx_coalesce_usecs_high = min_t(u32, ecmd->rx_coalesce_usecs_high,
 				       coalesce_usecs_max);
-
-	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX) {
-		for (i = 0; i < enic->wq_count; i++) {
-			intr = enic_msix_wq_intr(enic, i);
-			vnic_intr_coalescing_timer_set(&enic->intr[intr],
-						       tx_coalesce_usecs);
-		}
-		enic->tx_coalesce_usecs = tx_coalesce_usecs;
-	}
 	rxcoal->use_adaptive_rx_coalesce = !!ecmd->use_adaptive_rx_coalesce;
-	if (!rxcoal->use_adaptive_rx_coalesce)
-		enic_intr_coal_set_rx(enic, rx_coalesce_usecs);
+	/* enic->qp is NULL when interface is down. enic_alloc_qp will set
+	 * the coalescing settings during enic_open()
+	 */
+	if (enic->qp) {
+		for (i = 0; i < enic->qp_count; i++) {
+			qp = &enic->qp[i];
+			qp->rq.adaptive_coal = rxcoal->use_adaptive_rx_coalesce;
+		}
+	}
+	rxcoal->coal_usecs = rx_coalesce_usecs;
+	if (!rxcoal->use_adaptive_rx_coalesce) {
+		enic_intr_coal_set(enic, rx_coalesce_usecs);
+		if (enic->qp) {
+			for (i = 0; i < enic->qp_count; i++) {
+				qp = &enic->qp[i];
+				qp->rq.coal_timer = rx_coalesce_usecs;
+			}
+		}
+	}
 	if (ecmd->rx_coalesce_usecs_high) {
 		rxcoal->acoal_high = rx_coalesce_usecs_high;
 		rxcoal->acoal_low = rx_coalesce_usecs_low;
-	}
+		if (enic->qp) {
+			for (i = 0; i < enic->qp_count; i++) {
+				qp = &enic->qp[i];
 
-	enic->rx_coal.coal_usecs = rx_coalesce_usecs;
+				qp->rq.acoal_high = rx_coalesce_usecs_high;
+				qp->rq.acoal_low = rx_coalesce_usecs_low;
+			}
+		}
+	}
 
 	return 0;
 }
