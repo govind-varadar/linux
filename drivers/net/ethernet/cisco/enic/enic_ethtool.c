@@ -26,6 +26,7 @@
 #include "enic_clsf.h"
 #include "vnic_rss.h"
 #include "vnic_stats.h"
+#include "enic_qp.h"
 
 struct enic_stat {
 	char name[ETH_GSTRING_LEN];
@@ -93,15 +94,18 @@ static const unsigned int enic_n_tx_stats = ARRAY_SIZE(enic_tx_stats);
 static const unsigned int enic_n_rx_stats = ARRAY_SIZE(enic_rx_stats);
 static const unsigned int enic_n_gen_stats = ARRAY_SIZE(enic_gen_stats);
 
-static void enic_intr_coal_set_rx(struct enic *enic, u32 timer)
+static void enic_intr_coal_set(struct enic *enic, u32 timer)
 {
+	struct enic_qp *qp;
+	u32 timer_hw;
 	int i;
-	int intr;
 
-	for (i = 0; i < enic->rq_count; i++) {
-		intr = enic_msix_rq_intr(enic, i);
-		vnic_intr_coalescing_timer_set(&enic->intr[intr], timer);
+	timer_hw = vnic_dev_intr_coal_timer_usec_to_hw(enic->vdev, timer);
+	for (i = 0; i < enic->qp_count; i++) {
+		qp = &enic->qp[i];
+		iowrite32(timer_hw, &qp->ctrl->coalescing_timer);
 	}
+	return;
 }
 
 static int enic_get_ksettings(struct net_device *netdev,
@@ -230,15 +234,6 @@ static int enic_set_ringparam(struct net_device *netdev,
 		ring->rx_pending & 0xffffffe0; /* must be aligned to groups of 32 */
 	c->wq_desc_count =
 		ring->tx_pending & 0xffffffe0; /* must be aligned to groups of 32 */
-	enic_free_vnic_resources(enic);
-	err = enic_alloc_vnic_resources(enic);
-	if (err) {
-		netdev_err(netdev,
-			   "Failed to alloc vNIC resources, aborting\n");
-		enic_free_vnic_resources(enic);
-		goto err_out;
-	}
-	enic_init_vnic_resources(enic);
 	if (running) {
 		err = dev_open(netdev, NULL);
 		if (err)
@@ -302,8 +297,6 @@ static int enic_get_coalesce(struct net_device *netdev,
 {
 	struct enic *enic = netdev_priv(netdev);
 
-	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX)
-		ecmd->tx_coalesce_usecs = enic->tx_coalesce_usecs;
 	ecmd->rx_coalesce_usecs = enic->rx_coalesce_usecs;
 
 	return 0;
@@ -314,14 +307,11 @@ static int enic_coalesce_valid(struct enic *enic,
 {
 	u32 coalesce_usecs_max = vnic_dev_get_intr_coal_timer_max(enic->vdev);
 
-	if ((vnic_dev_get_intr_mode(enic->vdev) != VNIC_DEV_INTR_MODE_MSIX) &&
-	    ec->tx_coalesce_usecs)
-		return -EINVAL;
-
-	if ((ec->tx_coalesce_usecs > coalesce_usecs_max)	||
-	    (ec->rx_coalesce_usecs > coalesce_usecs_max)) {
+	if (ec->rx_coalesce_usecs > coalesce_usecs_max) {
 		netdev_info(enic->netdev, "ethtool_set_coalesce: adaptor supports max coalesce value of %d. Setting max value.\n",
 			    coalesce_usecs_max);
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -330,32 +320,14 @@ static int enic_set_coalesce(struct net_device *netdev,
 	struct ethtool_coalesce *ecmd)
 {
 	struct enic *enic = netdev_priv(netdev);
-	u32 tx_coalesce_usecs;
-	u32 rx_coalesce_usecs;
-	u32 coalesce_usecs_max;
-	unsigned int i, intr;
 	int ret;
 
 	ret = enic_coalesce_valid(enic, ecmd);
 	if (ret)
 		return ret;
-	coalesce_usecs_max = vnic_dev_get_intr_coal_timer_max(enic->vdev);
-	tx_coalesce_usecs = min_t(u32, ecmd->tx_coalesce_usecs,
-				  coalesce_usecs_max);
-	rx_coalesce_usecs = min_t(u32, ecmd->rx_coalesce_usecs,
-				  coalesce_usecs_max);
 
-	if (vnic_dev_get_intr_mode(enic->vdev) == VNIC_DEV_INTR_MODE_MSIX) {
-		for (i = 0; i < enic->wq_count; i++) {
-			intr = enic_msix_wq_intr(enic, i);
-			vnic_intr_coalescing_timer_set(&enic->intr[intr],
-						       tx_coalesce_usecs);
-		}
-		enic->tx_coalesce_usecs = tx_coalesce_usecs;
-	}
-
-	enic->rx_coalesce_usecs = rx_coalesce_usecs;
-	enic_intr_coal_set_rx(enic, rx_coalesce_usecs);
+	enic->rx_coalesce_usecs = ecmd->rx_coalesce_usecs;
+	enic_intr_coal_set(enic, enic->rx_coalesce_usecs);
 
 	return 0;
 }
@@ -584,7 +556,7 @@ static int enic_get_ts_info(struct net_device *netdev,
 }
 
 static const struct ethtool_ops enic_ethtool_ops = {
-	.supported_coalesce_params = ETHTOOL_COALESCE_USECS;
+	.supported_coalesce_params = ETHTOOL_COALESCE_RX_USECS,
 	.get_drvinfo = enic_get_drvinfo,
 	.get_msglevel = enic_get_msglevel,
 	.set_msglevel = enic_set_msglevel,

@@ -37,10 +37,11 @@
 
 #define ENIC_BARS_MAX		6
 
-#define ENIC_WQ_MAX		8
-#define ENIC_RQ_MAX		8
+#define ENIC_WQ_MAX		256
+#define ENIC_RQ_MAX		256
 #define ENIC_CQ_MAX		(ENIC_WQ_MAX + ENIC_RQ_MAX)
-#define ENIC_INTR_MAX		(ENIC_CQ_MAX + 2)
+#define ENIC_INTR_MAX		(((ENIC_WQ_MAX) > (ENIC_RQ_MAX) ? ENIC_WQ_MAX :\
+							     ENIC_RQ_MAX) + 2)
 
 #define ENIC_WQ_NAPI_BUDGET	256
 
@@ -139,7 +140,6 @@ struct enic {
 	unsigned int mc_count;
 	unsigned int uc_count;
 	u32 port_mtu;
-	u32 tx_coalesce_usecs;
 	u32 rx_coalesce_usecs;
 #ifdef CONFIG_PCI_IOV
 	u16 num_vfs;
@@ -248,7 +248,12 @@ static inline unsigned int enic_msix_err_intr(struct enic *enic)
 
 static inline unsigned int enic_msix_notify_intr(struct enic *enic)
 {
-	return enic->rq_count + enic->wq_count + 1;
+	return enic->qp_count + 1;
+}
+
+static inline unsigned int enic_msix_error_intr(struct enic *enic)
+{
+	return enic->qp_count;
 }
 
 static inline bool enic_is_err_intr(struct enic *enic, int intr)
