@@ -31,6 +31,8 @@
 #include "vnic_dev.h"
 #include "vnic_intr.h"
 
+#define ENIC_RX_DMA_ATTR (DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING)
+
 struct enic_wq_buf {
 	struct enic_wq_buf *next;
 	dma_addr_t dma_addr;
@@ -52,11 +54,26 @@ struct enic_wq {
 	struct vnic_wq_ctrl __iomem *ctrl;
 };
 
+struct enic_rx_page_frag {
+	struct page_frag_cache nc;
+	u16 count;
+	u16 fragsz;
+	dma_addr_t dma_addr;
+	void *old_va;
+	struct page *page;
+};
+
 struct enic_rq_buf {
 	struct enic_rq_buf *next;
-	struct sk_buff *skb;
+	struct enic_rx_page_frag *nc;
+	struct enic_rx_page_frag *nc_reuse;
+	struct page *page;
+	/* nc->va + offset */
+	void *va;
+	/* nc->dma_addr + offset */
 	dma_addr_t dma_addr;
 	u32 len;
+	u32 offset;
 	u16 index;
 };
 

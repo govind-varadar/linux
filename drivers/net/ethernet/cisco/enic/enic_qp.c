@@ -186,6 +186,39 @@ static int enic_wq_alloc_bufs(struct enic_qp *qp)
 	return 0;
 }
 
+static void enic_page_frag_cache_drain(struct enic_qp *qp,
+				       struct enic_rx_page_frag *nc)
+{
+	int size;
+
+	if (!nc->nc.va)
+		return;
+
+	size = (PAGE_SIZE < PAGE_FRAG_CACHE_MAX_SIZE) ?
+	       PAGE_FRAG_CACHE_MAX_SIZE : PAGE_SIZE;
+	dma_sync_single_range_for_cpu(qp->dev, nc->dma_addr, 0, size,
+				      DMA_FROM_DEVICE);
+	dma_unmap_page_attrs(qp->dev, nc->dma_addr, size, DMA_FROM_DEVICE,
+			     ENIC_RX_DMA_ATTR);
+	nc->dma_addr = 0;
+	__page_frag_cache_drain(virt_to_page(nc->nc.va), nc->nc.pagecnt_bias);
+	nc->old_va = NULL;
+	nc->nc.va = NULL;
+	nc->page = NULL;
+}
+
+static void enic_free_page_frag_cache(struct enic_qp *qp,
+				      struct enic_rx_page_frag *nc)
+{
+	if (!nc)
+		return;
+	nc->count--;
+	if (nc->count)
+		return;
+	enic_page_frag_cache_drain(qp, nc);
+	kfree(nc);
+}
+
 static void enic_rq_free_bufs(struct enic_qp *qp)
 {
 	struct enic_rq_buf *buf, *end, *next;
@@ -198,10 +231,11 @@ static void enic_rq_free_bufs(struct enic_qp *qp)
 
 	do {
 		next = buf->next;
-		if (buf->dma_addr)
-			dma_unmap_single(qp->dev, buf->dma_addr, buf->len,
-					 DMA_FROM_DEVICE);
-		dev_kfree_skb_any(buf->skb);
+		if (buf->va)
+			page_frag_free(buf->va);
+		buf->va = NULL;
+		enic_free_page_frag_cache(qp, buf->nc);
+		enic_free_page_frag_cache(qp, buf->nc_reuse);
 		kfree(buf);
 		buf = next;
 	} while (buf && buf != end);
@@ -215,20 +249,62 @@ static int enic_rq_alloc_bufs(struct enic_qp *qp)
 	struct enic_rq_buf *buf;
 	struct enic *enic = qp->enic;
 	struct enic_qp_ring *qp_ring = &enic->qp_ring[qp->index];
+	struct enic_rx_page_frag *nc;
+	struct enic_rx_page_frag *nc_reuse;
+	int size = 0;
+	int len;
 	int i;
 
+	len = SKB_DATA_ALIGN(qp->netdev->mtu + VLAN_ETH_HLEN + NET_IP_ALIGN);
 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 	qp->rq.to_clean = buf;
 	qp->rq.to_use = buf;
 
+	nc = kzalloc(sizeof(*nc), GFP_KERNEL);
+	if (!nc)
+		goto out;
+	nc_reuse = kzalloc(sizeof(*nc_reuse), GFP_KERNEL);
+	if (!nc_reuse) {
+		kfree(nc);
+		goto out;
+	}
+	size = (PAGE_SIZE < PAGE_FRAG_CACHE_MAX_SIZE) ?
+	       PAGE_FRAG_CACHE_MAX_SIZE : PAGE_SIZE;
+	buf->nc = nc;
+	buf->nc_reuse = nc_reuse;
+	nc->count++;
+	nc_reuse->count++;
+	nc->fragsz = len;
+	nc_reuse->fragsz = len;
+	size -= len;
 	for (i = 1; i < qp_ring->rq_ring.desc_count; i++) {
 		buf->next = kzalloc(sizeof(*buf), GFP_KERNEL);
 		if (!buf->next)
 			goto out;
 		buf = buf->next;
 		buf->index = i;
+		size -= len;
+		if (size  < 0) {
+			nc = kzalloc(sizeof(*nc), GFP_KERNEL);
+			if (!nc)
+				goto out;
+			nc_reuse = kzalloc(sizeof(*nc_reuse), GFP_KERNEL);
+			if (!nc_reuse) {
+				kfree(nc);
+				goto out;
+			}
+			size = (PAGE_SIZE < PAGE_FRAG_CACHE_MAX_SIZE) ?
+			       PAGE_FRAG_CACHE_MAX_SIZE : PAGE_SIZE;
+			size -= len;
+		}
+		buf->nc = nc;
+		buf->nc_reuse = nc_reuse;
+		nc->count++;
+		nc_reuse->count++;
+		nc->fragsz = len;
+		nc_reuse->fragsz = len;
 	}
 	buf->next = qp->rq.to_clean;
 
@@ -487,11 +563,65 @@ static void enic_qp_ctrl_init(struct enic_qp *qp)
 			    mask_on_assertion, 0);
 }
 
+static bool enic_rq_get_page_frag(struct enic_qp *qp, struct enic_rq_buf *buf)
+{
+	struct enic_rx_page_frag *nc;
+
+	nc = buf->nc;
+	buf->va = page_frag_alloc(&nc->nc, nc->fragsz, GFP_ATOMIC);
+
+	/* no other buffer uses this page */
+	if (unlikely(nc->nc.va != nc->old_va)) {
+		size_t size;
+
+		if (!nc->old_va)
+			goto skip_dma_unmap;
+
+		size = (PAGE_SIZE < PAGE_FRAG_CACHE_MAX_SIZE) ?
+		       PAGE_FRAG_CACHE_MAX_SIZE : PAGE_SIZE;
+		/* Invalidate cache lines that may have been written to by
+		 * device
+		 */
+		dma_sync_single_range_for_cpu(qp->dev, nc->dma_addr, 0,
+					      size, DMA_FROM_DEVICE);
+		dma_unmap_page_attrs(qp->dev, nc->dma_addr, size,
+				     DMA_FROM_DEVICE, ENIC_RX_DMA_ATTR);
+skip_dma_unmap:
+		nc->page = virt_to_page(nc->nc.va);
+		nc->old_va = nc->nc.va;
+		nc->dma_addr = dma_map_page_attrs(qp->dev, nc->page, 0,
+						  size, DMA_FROM_DEVICE,
+						  ENIC_RX_DMA_ATTR);
+		if (dma_mapping_error(qp->dev, nc->dma_addr)) {
+			int order;
+
+			order = (PAGE_SIZE < PAGE_FRAG_CACHE_MAX_SIZE) ?
+				PAGE_FRAG_CACHE_MAX_ORDER : 0;
+			__free_pages(nc->page, order);
+			enic_page_frag_cache_drain(qp, nc);
+			nc->nc.va = NULL;
+			nc->page = NULL;
+			nc->dma_addr = 0;
+			nc->old_va = NULL;
+
+			return false;
+		}
+	}
+
+	buf->dma_addr = nc->dma_addr + nc->nc.offset;
+	buf->page = nc->page;
+	buf->offset = nc->nc.offset;
+	buf->len = nc->fragsz;
+
+	/* sync buffer to be used by device */
+	dma_sync_single_range_for_device(qp->dev, nc->dma_addr, buf->offset,
+					 nc->fragsz, DMA_FROM_DEVICE);
+	swap(buf->nc, buf->nc_reuse);
+	return true;
+}
+
 static inline int enic_rq_fill_bufs(struct enic_qp *qp)
 {
-	struct net_device *netdev = qp->netdev;
-	unsigned int len = netdev->mtu + VLAN_ETH_HLEN;
-	dma_addr_t dma_addr;
 	struct enic_rq_buf *buf;
 	int ret = 0;
 
@@ -499,29 +629,15 @@ static inline int enic_rq_fill_bufs(struct enic_qp *qp)
 
 	if (unlikely(!qp->rq.ctrl))
 		return 0;
+
 	while (buf->next != qp->rq.to_clean) {
-		buf->skb = netdev_alloc_skb_ip_align(netdev, len);
-		if (unlikely(!buf->skb)) {
-			ret = -ENOMEM;
-			break;
-		}
-		dma_addr = dma_map_single(qp->dev, buf->skb->data, len,
-					  DMA_FROM_DEVICE);
-		if (unlikely(dma_mapping_error(qp->dev, dma_addr))) {
-			net_warn_ratelimited("%s: DMA mapping failed for rq[%d], desc[%d]",
-					     qp->netdev->name, qp->index,
-					     buf->index);
-			qp->enic->gen_stats.dma_map_error++;
-			dev_kfree_skb(buf->skb);
-			buf->skb = NULL;
+		if (!enic_rq_get_page_frag(qp, buf)) {
 			ret = -ENOMEM;
 			break;
 		}
 		rq_enet_desc_enc(&qp->rq.rq_base[buf->index],
-				 (u64)dma_addr | VNIC_PADDR_TARGET,
-				 RQ_ENET_TYPE_ONLY_SOP, len);
-		buf->dma_addr = dma_addr;
-		buf->len = len;
+				 (u64)buf->dma_addr | VNIC_PADDR_TARGET,
+				 RQ_ENET_TYPE_ONLY_SOP, buf->len);
 		buf = buf->next;
 	}
 	qp->rq.to_use = buf;
@@ -819,18 +935,16 @@ next_cq_desc:
 	}
 next_buf:
 	buf = qp->rq.to_clean;
-	skb = buf->skb;
-	buf->skb = NULL;
 	qp->rq.to_clean = buf->next;
-	dma_unmap_single(qp->dev, buf->dma_addr, buf->len,
-			 DMA_FROM_DEVICE);
+	dma_sync_single_range_for_cpu(qp->dev, buf->dma_addr, 0, buf->len,
+				      DMA_FROM_DEVICE);
 	buf->dma_addr = 0;
 	if (unlikely(buf->index != CQ_DESC_INDEX(cq_desc))) {
-		napi_consume_skb(skb, budget);
+		page_frag_free(buf->va);
+		buf->va = NULL;
 		goto next_buf;
 	}
 	if (unlikely(CQ_DESC_PKT_ERR(cq_desc))) {
-		napi_consume_skb(skb, budget);
 		if (!CQ_DESC_FCS_OK(cq_desc)) {
 			if (CQ_DESC_PKT_LEN(cq_desc) > 0)
 				qp->enic->rq_bad_fcs++;
@@ -838,16 +952,26 @@ next_buf:
 				qp->enic->rq_truncated_pkts++;
 		}
 
+		page_frag_free(buf->va);
+		buf->va = NULL;
 		goto next_cq_desc;
 	}
+	pkt_len = CQ_DESC_PKT_LEN(cq_desc);
+	skb = napi_get_frags(&qp->napi);
+	if (unlikely(!skb)) {
+		/* Drop packet and continue cleaning up the queue.
+		 * We don't want to stall the queue.
+		 */
+		page_frag_free(buf->va);
+		buf->va = NULL;
+		goto next_cq_desc;
+	}
+	skb_add_rx_frag(skb, 0, buf->page, buf->offset, pkt_len, buf->len);
 	rss_hash = CQ_DESC_RSS_HASH(cq_desc);
 	rss_type = CQ_DESC_RSS_TYPE(cq_desc);
-	pkt_len = CQ_DESC_PKT_LEN(cq_desc);
 	type = CQ_DESC_TYPE(cq_desc);
 	work++;
-	prefetch(skb->data - NET_IP_ALIGN);
-	skb_put(skb, pkt_len);
-	skb->protocol = eth_type_trans(skb, netdev);
+	prefetch(buf->va - NET_IP_ALIGN);
 	skb_record_rx_queue(skb, qp->index);
 	if ((netdev->features & NETIF_F_RXHASH) && rss_hash && type == 3) {
 		switch (rss_type) {
@@ -892,11 +1016,9 @@ next_buf:
 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
 				       CQ_DESC_VLAN_TCI(cq_desc));
 	skb_mark_napi_id(skb, &qp->napi);
-	if (!(netdev->features & NETIF_F_GRO))
-		netif_receive_skb(skb);
-	else
-		napi_gro_receive(&qp->napi, skb);
+	napi_gro_frags(&qp->napi);
 	qp->rq.bytes += pkt_len;
+	buf->va = NULL;
 	if (work >= budget)
 		return work;
 	goto next_cq_desc;
