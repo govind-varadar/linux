@@ -327,7 +327,7 @@ int aac_send_shutdown(struct aac_dev * dev)
 
 	aac_wait_for_io_completion(dev);
 
-	fibctx = aac_fib_alloc(dev);
+	fibctx = aac_fib_alloc(dev, DMA_NONE);
 	if (!fibctx)
 		return -ENOMEM;
 	aac_fib_init(fibctx);
