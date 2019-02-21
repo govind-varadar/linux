@@ -1671,7 +1671,10 @@ static int aac_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	shost->use_cmd_list = 1;
 	shost->max_id = MAXIMUM_NUM_CONTAINERS;
 	shost->max_lun = AAC_MAX_LUN;
+	shost->nr_reserved_cmds = AAC_NUM_MGT_FIB;
+	shost->use_reserved_cmd_q = true;
 	shost->sg_tablesize = HBA_MAX_SG_SEPARATE;
+
 
 	if (aac_cfg_major == AAC_CHARDEV_NEEDS_REINIT)
 		aac_init_char();
