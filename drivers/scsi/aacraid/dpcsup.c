@@ -315,7 +315,7 @@ unsigned int aac_intr_normal(struct aac_dev *dev, u32 index, int isAif,
 		struct fib *fibctx;
 		struct aac_aifcmd *cmd;
 
-		fibctx = aac_fib_alloc(dev);
+		fibctx = aac_fib_alloc(dev, DMA_FROM_DEVICE);
 		if (!fibctx)
 			return 1;
 		aac_fib_init(fibctx);

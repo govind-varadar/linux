@@ -360,7 +360,7 @@ int aac_get_config_status(struct aac_dev *dev, int commit_flag)
 	int status = 0;
 	struct fib * fibptr;
 
-	if (!(fibptr = aac_fib_alloc(dev)))
+	if (!(fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE)))
 		return -ENOMEM;
 
 	aac_fib_init(fibptr);
@@ -457,7 +457,7 @@ int aac_get_containers(struct aac_dev *dev)
 	struct aac_get_container_count_resp *dresp;
 	int maximum_num_containers = MAXIMUM_NUM_CONTAINERS;
 
-	if (!(fibptr = aac_fib_alloc(dev)))
+	if (!(fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE)))
 		return -ENOMEM;
 
 	aac_fib_init(fibptr);
@@ -752,61 +752,56 @@ static void _aac_probe_container1(void * context, struct fib * fibptr)
 	}
 }
 
-static int _aac_probe_container(struct scsi_cmnd * scsicmd, int (*callback)(struct scsi_cmnd *))
+static int _aac_probe_container(struct fib * fibptr, int (*callback)(struct scsi_cmnd *))
 {
+	struct scsi_cmnd *scsicmd = fibptr->scmd;
 	struct aac_dev * dev;
-	struct fib * fibptr;
 	int status = -ENOMEM;
+	struct aac_query_mount *dinfo;
 	int cid = scmd_id(scsicmd);
 
 	dev = (struct aac_dev *)scsicmd->device->host->hostdata;
 	if (scsicmd->host_scribble) {
-		cid = *(int *)scsicmd->host_scribble;
-		if (cid > dev->maximum_num_containers) {
+		cid = *(unsigned int *)scsicmd->host_scribble;
+		if (cid >= dev->maximum_num_containers) {
 			status = -ENODEV;
 			goto out_status;
 		}
 	}
-	if ((fibptr = aac_fib_alloc(dev))) {
-		struct aac_query_mount *dinfo;
 
-		aac_fib_init(fibptr);
+	aac_fib_init(fibptr);
 
-		dinfo = (struct aac_query_mount *)fib_data(fibptr);
+	dinfo = (struct aac_query_mount *)fib_data(fibptr);
 
-		if (fibptr->dev->supplement_adapter_info.supported_options2 &
-		    AAC_OPTION_VARIABLE_BLOCK_SIZE)
-			dinfo->command = cpu_to_le32(VM_NameServeAllBlk);
-		else
-			dinfo->command = cpu_to_le32(VM_NameServe);
+	if (fibptr->dev->supplement_adapter_info.supported_options2 &
+	    AAC_OPTION_VARIABLE_BLOCK_SIZE)
+		dinfo->command = cpu_to_le32(VM_NameServeAllBlk);
+	else
+		dinfo->command = cpu_to_le32(VM_NameServe);
 
-		dinfo->count = cpu_to_le32(cid);
-		dinfo->type = cpu_to_le32(FT_FILESYS);
-		scsicmd->SCp.ptr = (char *)callback;
-		scsicmd->SCp.phase = AAC_OWNER_FIRMWARE;
+	dinfo->count = cpu_to_le32(cid);
+	dinfo->type = cpu_to_le32(FT_FILESYS);
+	scsicmd->SCp.ptr = (char *)callback;
+	scsicmd->SCp.phase = AAC_OWNER_FIRMWARE;
 
-		status = aac_fib_send(ContainerCommand,
+	status = aac_fib_send(ContainerCommand,
 			  fibptr,
 			  sizeof(struct aac_query_mount),
 			  FsaNormal,
 			  0, 1,
 			  _aac_probe_container1,
 			  (void *) scsicmd);
-		/*
-		 *	Check that the command queued to the controller
-		 */
-		if (status == -EINPROGRESS)
-			return 0;
-
-		if (status < 0) {
-			scsicmd->SCp.ptr = NULL;
-			aac_fib_complete(fibptr);
-			aac_fib_free(fibptr);
-		}
-	}
+	/*
+	 *	Check that the command queued to the controller
+	 */
+	if (status == -EINPROGRESS)
+		return 0;
 out_status:
 	if (status < 0) {
 		struct fsa_dev_info *fsa_dev_ptr = dev->fsa_dev;
+
+		scsicmd->SCp.ptr = NULL;
+		aac_fib_complete(fibptr);
 		if (fsa_dev_ptr && cid < dev->maximum_num_containers) {
 			fsa_dev_ptr += cid;
 			if ((fsa_dev_ptr->valid & 1) == 0) {
@@ -838,29 +833,23 @@ static void aac_probe_container_scsi_done(struct scsi_cmnd *scsi_cmnd)
 
 int aac_probe_container(struct aac_dev *dev, int cid)
 {
-	struct scsi_cmnd *scsicmd = kzalloc(sizeof(*scsicmd), GFP_KERNEL);
-	struct scsi_device *scsidev = kzalloc(sizeof(*scsidev), GFP_KERNEL);
+	struct fib *fibptr;
+	struct scsi_cmnd *scsicmd;
 	int status;
 
-	if (!scsicmd || !scsidev) {
-		kfree(scsicmd);
-		kfree(scsidev);
+	fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE);
+	if (!fibptr)
 		return -ENOMEM;
-	}
+
+	scsicmd = fibptr->scmd;
 	scsicmd->scsi_done = aac_probe_container_scsi_done;
 	scsicmd->host_scribble = (unsigned char *)&cid;
 
-	scsicmd->device = scsidev;
-	scsidev->sdev_state = 0;
-	scsidev->id = cid;
-	scsidev->host = dev->scsi_host_ptr;
-
-	if (_aac_probe_container(scsicmd, aac_probe_container_callback1) == 0)
+	if (_aac_probe_container(fibptr, aac_probe_container_callback1) == 0)
 		while (scsicmd->host_scribble == (unsigned char *)&cid)
 			schedule();
-	kfree(scsidev);
 	status = scsicmd->SCp.Status;
-	kfree(scsicmd);
+	aac_fib_free(fibptr);
 	return status;
 }
 
@@ -1705,7 +1694,7 @@ static int aac_send_safw_bmic_cmd(struct aac_dev *dev,
 		return 0;
 
 	/* allocate FIB */
-	fibptr = aac_fib_alloc(dev);
+	fibptr = aac_fib_alloc(dev, DMA_BIDIRECTIONAL);
 	if (!fibptr)
 		return -ENOMEM;
 
@@ -2065,7 +2054,7 @@ int aac_get_adapter_info(struct aac_dev* dev)
 	struct aac_bus_info *command;
 	struct aac_bus_info_response *bus_info;
 
-	if (!(fibptr = aac_fib_alloc(dev)))
+	if (!(fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE)))
 		return -ENOMEM;
 
 	aac_fib_init(fibptr);
@@ -2112,7 +2101,7 @@ int aac_get_adapter_info(struct aac_dev* dev)
 		if (rcode >= 0)
 			memcpy(&dev->supplement_adapter_info, sinfo, sizeof(*sinfo));
 		if (rcode == -ERESTARTSYS) {
-			fibptr = aac_fib_alloc(dev);
+			fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE);
 			if (!fibptr)
 				return -ENOMEM;
 		}
@@ -2822,6 +2811,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 			if (((fsa_dev_ptr[cid].valid & 1) == 0) ||
 			  (fsa_dev_ptr[cid].sense_data.sense_key ==
 			   NOT_READY)) {
+				struct fib * fibptr;
+
 				switch (scsicmd->cmnd[0]) {
 				case SERVICE_ACTION_IN_16:
 					if (!(dev->raw_io_interface) ||
@@ -2834,7 +2825,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				case TEST_UNIT_READY:
 					if (dev->in_reset)
 						return -1;
-					return _aac_probe_container(scsicmd,
+					fibptr = aac_fib_alloc_tag(dev, scsicmd);
+					return _aac_probe_container(fibptr,
 							aac_probe_container_callback2);
 				default:
 					break;
