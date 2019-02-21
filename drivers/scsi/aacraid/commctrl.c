@@ -55,7 +55,7 @@ static int ioctl_send_fib(struct aac_dev * dev, void __user *arg)
 	if (dev->in_reset) {
 		return -EBUSY;
 	}
-	fibptr = aac_fib_alloc(dev);
+	fibptr = aac_fib_alloc(dev, DMA_BIDIRECTIONAL);
 	if(fibptr == NULL) {
 		return -ENOMEM;
 	}
@@ -462,7 +462,7 @@ static int check_revision(struct aac_dev *dev, void __user *arg)
 
 static int aac_send_raw_srb(struct aac_dev* dev, void __user * arg)
 {
-	struct fib* srbfib;
+	struct fib* srbfib = NULL;
 	int status;
 	struct aac_srb *srbcmd = NULL;
 	struct aac_hba_cmd_req *hbacmd = NULL;
@@ -493,31 +493,10 @@ static int aac_send_raw_srb(struct aac_dev* dev, void __user * arg)
 		dprintk((KERN_DEBUG"aacraid: No permission to send raw srb\n"));
 		return -EPERM;
 	}
-	/*
-	 *	Allocate and initialize a Fib then setup a SRB command
-	 */
-	if (!(srbfib = aac_fib_alloc(dev))) {
-		return -ENOMEM;
-	}
-
-	memset(sg_list, 0, sizeof(sg_list)); /* cleanup may take issue */
-	if(copy_from_user(&fibsize, &user_srb->count,sizeof(u32))){
-		dprintk((KERN_DEBUG"aacraid: Could not copy data size from user\n"));
-		rcode = -EFAULT;
-		goto cleanup;
-	}
-
-	if ((fibsize < (sizeof(struct user_aac_srb) - sizeof(struct user_sgentry))) ||
-	    (fibsize > (dev->max_fib_size - sizeof(struct aac_fibhdr)))) {
-		rcode = -EINVAL;
-		goto cleanup;
-	}
-
 	user_srbcmd = kmalloc(fibsize, GFP_KERNEL);
 	if (!user_srbcmd) {
 		dprintk((KERN_DEBUG"aacraid: Could not make a copy of the srb\n"));
-		rcode = -ENOMEM;
-		goto cleanup;
+		return -ENOMEM;
 	}
 	if(copy_from_user(user_srbcmd, user_srb,fibsize)){
 		dprintk((KERN_DEBUG"aacraid: Could not copy srb from user\n"));
@@ -550,6 +529,28 @@ static int aac_send_raw_srb(struct aac_dev* dev, void __user * arg)
 		rcode = -EINVAL;
 		goto cleanup;
 	}
+
+	/*
+	 *	Allocate and initialize a Fib then setup a SRB command
+	 */
+	if (!(srbfib = aac_fib_alloc(dev, data_dir))) {
+		rcode = -ENOMEM;
+		goto cleanup;
+	}
+
+	memset(sg_list, 0, sizeof(sg_list)); /* cleanup may take issue */
+	if(copy_from_user(&fibsize, &user_srb->count,sizeof(u32))){
+		dprintk((KERN_DEBUG"aacraid: Could not copy data size from user\n"));
+		rcode = -EFAULT;
+		goto cleanup;
+	}
+
+	if ((fibsize < (sizeof(struct user_aac_srb) - sizeof(struct user_sgentry))) ||
+	    (fibsize > (dev->max_fib_size - sizeof(struct aac_fibhdr)))) {
+		rcode = -EINVAL;
+		goto cleanup;
+	}
+
 	actual_fibsize = sizeof(struct aac_srb) - sizeof(struct sgentry) +
 		((user_srbcmd->sg.count & 0xff) * sizeof(struct sgentry));
 	actual_fibsize64 = actual_fibsize + (user_srbcmd->sg.count & 0xff) *
@@ -971,13 +972,15 @@ static int aac_send_raw_srb(struct aac_dev* dev, void __user * arg)
 	}
 
 cleanup:
-	kfree(user_srbcmd);
 	if (rcode != -ERESTARTSYS) {
 		for (i = 0; i <= sg_indx; i++)
 			kfree(sg_list[i]);
-		aac_fib_complete(srbfib);
-		aac_fib_free(srbfib);
+		if (srbfib) {
+			aac_fib_complete(srbfib);
+			aac_fib_free(srbfib);
+		}
 	}
+	kfree(user_srbcmd);
 
 	return rcode;
 }

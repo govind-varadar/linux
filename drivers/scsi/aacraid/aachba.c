@@ -359,7 +359,7 @@ int aac_get_config_status(struct aac_dev *dev, int commit_flag)
 	int status = 0;
 	struct fib * fibptr;
 
-	if (!(fibptr = aac_fib_alloc(dev)))
+	if (!(fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE)))
 		return -ENOMEM;
 
 	aac_fib_init(fibptr);
@@ -456,7 +456,7 @@ int aac_get_containers(struct aac_dev *dev)
 	struct aac_get_container_count_resp *dresp;
 	int maximum_num_containers = MAXIMUM_NUM_CONTAINERS;
 
-	if (!(fibptr = aac_fib_alloc(dev)))
+	if (!(fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE)))
 		return -ENOMEM;
 
 	aac_fib_init(fibptr);
@@ -732,9 +732,11 @@ static void _aac_probe_container1(void * context, struct fib * fibptr)
 static int _aac_probe_container(struct scsi_cmnd * scsicmd, int (*callback)(struct scsi_cmnd *))
 {
 	struct fib * fibptr;
+	struct aac_dev * dev;
 	int status = -ENOMEM;
 
-	if ((fibptr = aac_fib_alloc((struct aac_dev *)scsicmd->device->host->hostdata))) {
+	dev = (struct aac_dev *)scsicmd->device->host->hostdata;
+	if ((fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE))) {
 		struct aac_query_mount *dinfo;
 
 		aac_fib_init(fibptr);
@@ -1673,7 +1675,7 @@ static int aac_send_safw_bmic_cmd(struct aac_dev *dev,
 		return 0;
 
 	/* allocate FIB */
-	fibptr = aac_fib_alloc(dev);
+	fibptr = aac_fib_alloc(dev, DMA_BIDIRECTIONAL);
 	if (!fibptr)
 		return -ENOMEM;
 
@@ -2040,7 +2042,7 @@ int aac_get_adapter_info(struct aac_dev* dev)
 	struct aac_bus_info *command;
 	struct aac_bus_info_response *bus_info;
 
-	if (!(fibptr = aac_fib_alloc(dev)))
+	if (!(fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE)))
 		return -ENOMEM;
 
 	aac_fib_init(fibptr);
@@ -2087,7 +2089,7 @@ int aac_get_adapter_info(struct aac_dev* dev)
 		if (rcode >= 0)
 			memcpy(&dev->supplement_adapter_info, sinfo, sizeof(*sinfo));
 		if (rcode == -ERESTARTSYS) {
-			fibptr = aac_fib_alloc(dev);
+			fibptr = aac_fib_alloc(dev, DMA_FROM_DEVICE);
 			if (!fibptr)
 				return -ENOMEM;
 		}

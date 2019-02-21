@@ -700,7 +700,7 @@ static int aac_eh_abort(struct scsi_cmnd* cmd)
 		 host->host_no, sdev_channel(dev), sdev_id(dev), (int)dev->lun);
 
 		found = 0;
-		for (count = 0; count < (host->can_queue + AAC_NUM_MGT_FIB); ++count) {
+		for (count = 0; count < host->can_queue; ++count) {
 			fib = &aac->fibs[count];
 			if (*(u8 *)fib->hw_fib_va != 0 &&
 				(fib->flags & FIB_CONTEXT_FLAG_NATIVE_HBA) &&
@@ -713,7 +713,7 @@ static int aac_eh_abort(struct scsi_cmnd* cmd)
 			return ret;
 
 		/* start a HBA_TMF_ABORT_TASK TMF request */
-		fib = aac_fib_alloc(aac);
+		fib = aac_fib_alloc(aac, DMA_NONE);
 		if (!fib)
 			return ret;
 
@@ -771,9 +771,7 @@ static int aac_eh_abort(struct scsi_cmnd* cmd)
 			 * Mark associated FIB to not complete,
 			 * eh handler does this
 			 */
-			for (count = 0;
-				count < (host->can_queue + AAC_NUM_MGT_FIB);
-				++count) {
+			for (count = 0; count < host->can_queue; ++count) {
 				struct fib *fib = &aac->fibs[count];
 
 				if (fib->hw_fib_va->header.XferState &&
@@ -792,9 +790,7 @@ static int aac_eh_abort(struct scsi_cmnd* cmd)
 			 * Mark associated FIB to not complete,
 			 * eh handler does this
 			 */
-			for (count = 0;
-				count < (host->can_queue + AAC_NUM_MGT_FIB);
-				++count) {
+			for (count = 0; count < host->can_queue; ++count) {
 				struct scsi_cmnd *command;
 				struct fib *fib = &aac->fibs[count];
 
@@ -924,7 +920,7 @@ static int aac_eh_dev_reset(struct scsi_cmnd *cmd)
 	pr_err("%s: Host device reset request. SCSI hang ?\n",
 	       AAC_DRIVERNAME);
 
-	fib = aac_fib_alloc(aac);
+	fib = aac_fib_alloc(aac, DMA_NONE);
 	if (!fib)
 		return ret;
 
@@ -987,7 +983,7 @@ static int aac_eh_target_reset(struct scsi_cmnd *cmd)
 	pr_err("%s: Host target reset request. SCSI hang ?\n",
 	       AAC_DRIVERNAME);
 
-	fib = aac_fib_alloc(aac);
+	fib = aac_fib_alloc(aac, DMA_NONE);
 	if (!fib)
 		return ret;
 
@@ -1037,7 +1033,7 @@ static int aac_eh_bus_reset(struct scsi_cmnd* cmd)
 
 	cmd_bus = aac_logical_to_phys(scmd_channel(cmd));
 	/* Mark the assoc. FIB to not complete, eh handler does this */
-	for (count = 0; count < (host->can_queue + AAC_NUM_MGT_FIB); ++count) {
+	for (count = 0; count < host->can_queue; ++count) {
 		struct fib *fib = &aac->fibs[count];
 
 		if (fib->hw_fib_va->header.XferState &&
@@ -1549,7 +1545,7 @@ static struct scsi_host_template aac_driver_template = {
 	.eh_target_reset_handler	= aac_eh_target_reset,
 	.eh_bus_reset_handler		= aac_eh_bus_reset,
 	.eh_host_reset_handler		= aac_eh_host_reset,
-	.can_queue			= AAC_NUM_IO_FIB,
+	.can_queue			= AAC_NUM_FIB,
 	.this_id			= MAXIMUM_NUM_CONTAINERS,
 	.sg_tablesize			= 16,
 	.max_sectors			= 128,
@@ -1573,7 +1569,7 @@ static void __aac_shutdown(struct aac_dev * aac)
 	if (aac->aif_thread) {
 		int i;
 		/* Clear out events first */
-		for (i = 0; i < (aac->scsi_host_ptr->can_queue + AAC_NUM_MGT_FIB); i++) {
+		for (i = 0; i < aac->scsi_host_ptr->can_queue; i++) {
 			struct fib *fib = &aac->fibs[i];
 			if (!(fib->hw_fib_va->header.XferState & cpu_to_le32(NoResponseExpected | Async)) &&
 			    (fib->hw_fib_va->header.XferState & cpu_to_le32(ResponseExpected)))
@@ -1695,6 +1691,10 @@ static int aac_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	shost->irq = pdev->irq;
 	shost->unique_id = unique_id;
 	shost->max_cmd_len = 16;
+	shost->max_id = MAXIMUM_NUM_CONTAINERS;
+	shost->max_lun = AAC_MAX_LUN;
+	shost->nr_reserved_cmds = AAC_NUM_MGT_FIB;
+	shost->sg_tablesize = HBA_MAX_SG_SEPARATE;
 
 	if (aac_cfg_major == AAC_CHARDEV_NEEDS_REINIT)
 		aac_init_char();
@@ -1711,7 +1711,7 @@ static int aac_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (aac_reset_devices || reset_devices)
 		aac->init_reset = true;
 
-	aac->fibs = kcalloc(shost->can_queue + AAC_NUM_MGT_FIB,
+	aac->fibs = kcalloc(shost->can_queue,
 			    sizeof(struct fib),
 			    GFP_KERNEL);
 	if (!aac->fibs)
@@ -1720,6 +1720,15 @@ static int aac_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	mutex_init(&aac->ioctl_mutex);
 	mutex_init(&aac->scan_mutex);
+
+	error = scsi_add_host(shost, &pdev->dev);
+	if (error)
+		goto out_free_fibs;
+
+	aac->scsi_host_dev = scsi_get_virtual_dev(shost,
+						  MAXIMUM_NUM_CONTAINERS, 0);
+	if (!aac->scsi_host_dev)
+		goto out_remove_host;
 
 	INIT_DELAYED_WORK(&aac->safw_rescan_work, aac_safw_rescan_worker);
 	INIT_DELAYED_WORK(&aac->src_reinit_aif_worker,
@@ -1817,17 +1826,7 @@ static int aac_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!aac->sa_firmware && aac_drivers[index].quirks & AAC_QUIRK_SRC)
 		aac_intr_normal(aac, 0, 2, 0, NULL);
 
-	/*
-	 * dmb - we may need to move the setting of these parms somewhere else once
-	 * we get a fib that can report the actual numbers
-	 */
-	shost->max_lun = AAC_MAX_LUN;
-
 	pci_set_drvdata(pdev, shost);
-
-	error = scsi_add_host(shost, &pdev->dev);
-	if (error)
-		goto out_deinit;
 
 	aac_scan_host(aac);
 
@@ -1845,8 +1844,11 @@ static int aac_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 				  aac->comm_addr, aac->comm_phys);
 	kfree(aac->queues);
 	aac_adapter_ioremap(aac, 0);
-	kfree(aac->fibs);
 	kfree(aac->fsa_dev);
+ out_remove_host:
+	scsi_remove_host(shost);
+ out_free_fibs:
+	kfree(aac->fibs);
  out_free_host:
 	scsi_host_put(shost);
  out_disable_pdev:
@@ -1975,9 +1977,9 @@ static void aac_remove_one(struct pci_dev *pdev)
 	struct aac_dev *aac = (struct aac_dev *)shost->hostdata;
 
 	aac_cancel_rescan_worker(aac);
-	scsi_remove_host(shost);
 
 	__aac_shutdown(aac);
+	scsi_remove_host(shost);
 	aac_fib_map_free(aac);
 	dma_free_coherent(&aac->pdev->dev, aac->comm_size, aac->comm_addr,
 			  aac->comm_phys);
