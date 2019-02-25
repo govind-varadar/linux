@@ -1916,7 +1916,9 @@ int scsi_mq_setup_tags(struct Scsi_Host *shost)
 	else
 		tag_set->ops = &scsi_mq_ops_no_commit;
 	tag_set->nr_hw_queues = shost->nr_hw_queues ? : 1;
-	tag_set->queue_depth = shost->can_queue;
+	tag_set->queue_depth =
+		shost->can_queue + shost->nr_reserved_cmds;
+	tag_set->reserved_tags = shost->nr_reserved_cmds;
 	tag_set->cmd_size = cmd_size;
 	tag_set->numa_node = NUMA_NO_NODE;
 	tag_set->flags = BLK_MQ_F_SHOULD_MERGE;
@@ -1941,6 +1943,9 @@ void scsi_mq_destroy_tags(struct Scsi_Host *shost)
  * @op_flags: request allocation flags
  *
  * Allocates a SCSI command for internal LLDD use.
+ * If 'nr_reserved_commands' is spectified by the host the
+ * command will be allocated from the reserved tag pool;
+ * otherwise the normal tag pool will be used.
  */
 struct scsi_cmnd *scsi_get_internal_cmd(struct scsi_device *sdev,
 	enum dma_data_direction data_direction, int op_flags)
@@ -1949,6 +1954,9 @@ struct scsi_cmnd *scsi_get_internal_cmd(struct scsi_device *sdev,
 	struct scsi_cmnd *scmd;
 	blk_mq_req_flags_t flags = 0;
 	unsigned int op = REQ_INTERNAL | op_flags;
+
+	if (sdev->host->nr_reserved_cmds)
+		flags = BLK_MQ_REQ_RESERVED;
 
 	op |= (data_direction == DMA_TO_DEVICE) ?
 		REQ_OP_SCSI_OUT : REQ_OP_SCSI_IN;
