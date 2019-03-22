@@ -59,7 +59,6 @@
  */
 #define SNIC_TAG_ABORT		BIT(30)		/* Tag indicating abort */
 #define SNIC_TAG_DEV_RST	BIT(29)		/* Tag for device reset */
-#define SNIC_TAG_IOCTL_DEV_RST	BIT(28)		/* Tag for User Device Reset */
 #define SNIC_TAG_MASK		(BIT(24) - 1)	/* Mask for lookup */
 #define SNIC_NO_TAG		-1
 
@@ -278,6 +277,7 @@ struct snic {
 
 	/* Scsi Host info */
 	struct Scsi_Host *shost;
+	struct scsi_device *shost_dev;
 
 	/* vnic related structures */
 	struct vnic_dev_bar bar0;
@@ -380,7 +380,7 @@ int snic_queuecommand(struct Scsi_Host *, struct scsi_cmnd *);
 int snic_abort_cmd(struct scsi_cmnd *);
 int snic_device_reset(struct scsi_cmnd *);
 int snic_host_reset(struct scsi_cmnd *);
-int snic_reset(struct Scsi_Host *, struct scsi_cmnd *);
+int snic_reset(struct Scsi_Host *);
 void snic_shutdown_scsi_cleanup(struct snic *);
 
 

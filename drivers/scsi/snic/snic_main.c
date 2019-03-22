@@ -303,6 +303,7 @@ static int
 snic_add_host(struct Scsi_Host *shost, struct pci_dev *pdev)
 {
 	int ret = 0;
+	struct snic *snic = shost_priv(shost);
 
 	ret = scsi_add_host(shost, &pdev->dev);
 	if (ret) {
@@ -313,6 +314,12 @@ snic_add_host(struct Scsi_Host *shost, struct pci_dev *pdev)
 		return ret;
 	}
 
+	snic->shost_dev = scsi_get_host_dev(shost);
+	if (!snic->shost_dev) {
+		SNIC_HOST_ERR(shost,
+			      "snic: scsi_get_virtual_dev failed\n");
+		return -ENOMEM;
+	}
 	SNIC_BUG_ON(shost->work_q != NULL);
 	snprintf(shost->work_q_name, sizeof(shost->work_q_name), "scsi_wq_%d",
 		 shost->host_no);
