@@ -56,6 +56,7 @@ struct enic_wq {
 
 struct enic_rx_page_frag {
 	struct page_frag_cache nc;
+	int numa_node;
 	u16 count;
 	u16 fragsz;
 	dma_addr_t dma_addr;
