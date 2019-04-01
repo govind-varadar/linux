@@ -545,6 +545,13 @@ static bool enic_rq_get_page_frag(struct enic_qp *qp, struct enic_rq_buf *buf)
 	struct enic_rx_page_frag *nc;
 
 	nc = buf->nc;
+	/* No other buffer in driver holds the page.
+	 * Good time to check if napi moved to different NUMA cpu.
+	 */
+	if (unlikely(nc->nc.offset - nc->fragsz < 0 &&
+		     nc->numa_node != numa_mem_id())) {
+		enic_page_frag_cache_drain(qp, nc);
+	}
 	buf->va = page_frag_alloc(&nc->nc, nc->fragsz, GFP_ATOMIC);
 
 	/* Stack still holds a reference to the page.
@@ -569,6 +576,7 @@ static bool enic_rq_get_page_frag(struct enic_qp *qp, struct enic_rq_buf *buf)
 skip_dma_unmap:
 		nc->page = virt_to_page(nc->nc.va);
 		nc->old_va = nc->nc.va;
+		nc->numa_node = page_to_nid(nc->page);
 		nc->dma_addr = dma_map_page_attrs(qp->dev, nc->page, 0,
 						  size, DMA_FROM_DEVICE,
 						  ENIC_RX_DMA_ATTR);
