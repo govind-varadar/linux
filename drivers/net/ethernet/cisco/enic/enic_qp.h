@@ -42,6 +42,21 @@ struct enic_wq_buf {
 	unsigned int  sop : 1;
 };
 
+struct enic_wq_stats {
+	u64 packets;
+	u64 stopped;
+	u64 tso;
+	u64 encap_tso;
+	u64 encap_csum;
+	u64 csum_partial;
+	u64 csum;
+	u64 bytes;
+	u64 delayed_doorbell;
+	u64 add_vlan;
+	u64 nop;
+	u64 dropped;
+	u64 dma_error;
+};
 struct enic_wq {
 	atomic_t desc_avail;
 	u16 cq_to_clean;
@@ -52,6 +67,7 @@ struct enic_wq {
 	struct enic_wq_buf *to_use;
 	struct enic_wq_buf *to_clean;
 	struct vnic_wq_ctrl __iomem *ctrl;
+	struct enic_wq_stats stats;
 };
 
 struct enic_rx_page_frag {
