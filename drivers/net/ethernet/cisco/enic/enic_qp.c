@@ -1210,8 +1210,10 @@ static inline void enic_post_xmit_skb(struct enic_qp *qp, struct sk_buff *skb)
 	backup = qp->wq.to_use;
 	buf = qp->wq.to_use;
 	mss = skb_shinfo(skb)->gso_size;
-	if (skb_vlan_tag_present(skb))
+	if (skb_vlan_tag_present(skb)) {
 		vlan_tag = skb_vlan_tag_get(skb);
+		qp->wq.stats.add_vlan++;
+	}
 
 	if (mss) {
 		offload_mode = WQ_ENET_OFFLOAD_MODE_TSO;
@@ -1223,10 +1225,12 @@ static inline void enic_post_xmit_skb(struct enic_qp *qp, struct sk_buff *skb)
 					skb->data;
 			header_length += inner_tcp_hdrlen(skb);
 			enic_preload_tcp_csum_encap(skb);
+			qp->wq.stats.encap_tso++;
 		} else {
 			header_length = skb_transport_offset(skb) +
 					tcp_hdrlen(skb);
 			enic_preload_tcp_csum(skb);
+			qp->wq.stats.tso++;
 		}
 	} else if (skb->encapsulation) {
 		/* Offload mode WQ_ENET_OFFLOAD_MODE_CSUM:
@@ -1236,6 +1240,7 @@ static inline void enic_post_xmit_skb(struct enic_qp *qp, struct sk_buff *skb)
 		 * For encap pkt, BIT(0), BIT(1) and BIT(2) should be set.
 		 */
 		mss = 7;
+		qp->wq.stats.encap_csum++;
 	} else if (skb->ip_summed == CHECKSUM_PARTIAL) {
 		/* For offload mode WQ_ENET_OFFLOAD_MODE_CSUM_L4:
 		 * mms is checksum field offset from beginning of packet.
@@ -1243,6 +1248,9 @@ static inline void enic_post_xmit_skb(struct enic_qp *qp, struct sk_buff *skb)
 		header_length = skb_checksum_start_offset(skb);
 		mss = header_length + skb->csum_offset;
 		offload_mode = WQ_ENET_OFFLOAD_MODE_CSUM_L4;
+		qp->wq.stats.csum_partial++;
+	} else {
+		qp->wq.stats.csum++;
 	}
 
 	skb_head_len = skb_headlen(skb);
@@ -1257,7 +1265,7 @@ static inline void enic_post_xmit_skb(struct enic_qp *qp, struct sk_buff *skb)
 	frag = &skb_shinfo(skb)->frags[0];
 again:
 	if (unlikely(dma_mapping_error(qp->dev, dma_addr))) {
-		qp->enic->gen_stats.dma_map_error++;
+		qp->wq.stats.dma_error++;
 		goto dma_error;
 	}
 	offset = 0;
@@ -1319,14 +1327,15 @@ netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	unsigned int txq_map;
 	struct netdev_queue *txq;
 
-	if (skb->len <= 0) {
-		dev_kfree_skb(skb);
-		return NETDEV_TX_OK;
-	}
-
 	txq_map = skb_get_queue_mapping(skb) % enic->wq_count;
 	qp = &enic->qp[txq_map];
 	txq = netdev_get_tx_queue(netdev, txq_map);
+
+	if (skb->len <= 0) {
+		dev_kfree_skb(skb);
+		qp->wq.stats.nop++;
+		return NETDEV_TX_OK;
+	}
 
 	/* Non-TSO sends must fit within ENIC_NON_TSO_MAX_DESC descs,
 	 * which is very likely.  In the off chance it's going to take
@@ -1337,6 +1346,7 @@ netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		     skb_shinfo(skb)->nr_frags + 1 > ENIC_NON_TSO_MAX_DESC &&
 		     skb_linearize(skb))) {
 		dev_kfree_skb(skb);
+		qp->wq.stats.dropped++;
 		return NETDEV_TX_OK;
 	}
 
@@ -1345,16 +1355,23 @@ netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 		netif_tx_stop_queue(txq);
 		/* This is a hard error, log it */
 		netdev_err(netdev, "BUG! Tx ring full when queue awake!\n");
+		qp->wq.stats.stopped++;
 		return NETDEV_TX_BUSY;
 	}
 
 	enic_post_xmit_skb(qp, skb);
 
-	if (enic_wq_desc_avail(qp) < MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS)
+	if (enic_wq_desc_avail(qp) < MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS) {
 		netif_tx_stop_queue(txq);
+		qp->wq.stats.stopped++;
+	}
 	skb_tx_timestamp(skb);
 	if (!netdev_xmit_more() || netif_xmit_stopped(txq))
 		enic_qp_doorbell(qp);
+	else
+		qp->wq.stats.delayed_doorbell++;
+	qp->wq.stats.packets++;
+	qp->wq.stats.bytes += skb->len;
 
 	return NETDEV_TX_OK;
 }
