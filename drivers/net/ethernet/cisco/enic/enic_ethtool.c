@@ -48,6 +48,32 @@ struct enic_stat {
 	.index = offsetof(struct vnic_gen_stats, stat) / sizeof(u64)\
 }
 
+#define ENIC_PER_RQ_STAT(stat) { \
+	.name = "rq[%d]_"#stat, \
+	.index = offsetof(struct enic_rq_stats, stat) / sizeof(u64) \
+}
+
+static const struct enic_stat enic_per_rq_stats[] = {
+	ENIC_PER_RQ_STAT(packets),
+	ENIC_PER_RQ_STAT(bytes),
+	ENIC_PER_RQ_STAT(l4_rss_hash),
+	ENIC_PER_RQ_STAT(l3_rss_hash),
+	ENIC_PER_RQ_STAT(csum_unnecessary),
+	ENIC_PER_RQ_STAT(csum_unnecessary_encap),
+	ENIC_PER_RQ_STAT(vlan_stripped),
+	ENIC_PER_RQ_STAT(napi_complete),
+	ENIC_PER_RQ_STAT(napi_repoll),
+	ENIC_PER_RQ_STAT(page_reuse),
+	ENIC_PER_RQ_STAT(new_page),
+	ENIC_PER_RQ_STAT(dma_error),
+	ENIC_PER_RQ_STAT(page_discard),
+	ENIC_PER_RQ_STAT(bad_fcs),
+	ENIC_PER_RQ_STAT(pkt_truncated),
+	ENIC_PER_RQ_STAT(no_skb),
+	ENIC_PER_RQ_STAT(desc_skip),
+};
+#define NUM_ENIC_PER_RQ_STATS	ARRAY_SIZE(enic_per_rq_stats)
+
 static const struct enic_stat enic_tx_stats[] = {
 	ENIC_TX_STAT(tx_frames_ok),
 	ENIC_TX_STAT(tx_unicast_frames_ok),
@@ -164,7 +190,9 @@ static void enic_get_drvinfo(struct net_device *netdev,
 static void enic_get_strings(struct net_device *netdev, u32 stringset,
 	u8 *data)
 {
+	struct enic *enic = netdev_priv(netdev);
 	unsigned int i;
+	unsigned int j;
 
 	switch (stringset) {
 	case ETH_SS_STATS:
@@ -179,6 +207,15 @@ static void enic_get_strings(struct net_device *netdev, u32 stringset,
 		for (i = 0; i < NUM_ENIC_GEN_STATS; i++) {
 			memcpy(data, enic_gen_stats[i].name, ETH_GSTRING_LEN);
 			data += ETH_GSTRING_LEN;
+		}
+		if (enic->qp) {
+			for (i = 0; i < enic->rq_count; i++) {
+				for (j = 0; j < NUM_ENIC_PER_RQ_STATS; j++) {
+					snprintf(data, ETH_GSTRING_LEN,
+						 enic_per_rq_stats[j].name, i);
+					data += ETH_GSTRING_LEN;
+				}
+			}
 		}
 		break;
 	}
@@ -252,10 +289,17 @@ err_out:
 
 static int enic_get_sset_count(struct net_device *netdev, int sset)
 {
+	struct enic *enic = netdev_priv(netdev);
+	unsigned int n_per_rq_stats;
+	unsigned int n_stats;
+
 	switch (sset) {
 	case ETH_SS_STATS:
-		return NUM_ENIC_TX_STATS + NUM_ENIC_RX_STATS +
-		       NUM_ENIC_GEN_STATS;
+		n_per_rq_stats = enic->qp ? NUM_ENIC_PER_RQ_STATS *
+					    enic->rq_count : 0;
+		n_stats = NUM_ENIC_TX_STATS + NUM_ENIC_RX_STATS +
+			  NUM_ENIC_GEN_STATS + n_per_rq_stats;
+		return n_stats;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -267,6 +311,7 @@ static void enic_get_ethtool_stats(struct net_device *netdev,
 	struct enic *enic = netdev_priv(netdev);
 	struct vnic_stats *vstats;
 	unsigned int i;
+	unsigned int j;
 	int err;
 
 	err = enic_dev_stats_dump(enic, &vstats);
@@ -283,6 +328,17 @@ static void enic_get_ethtool_stats(struct net_device *netdev,
 		*(data++) = ((u64 *)&vstats->rx)[enic_rx_stats[i].index];
 	for (i = 0; i < NUM_ENIC_GEN_STATS; i++)
 		*(data++) = ((u64 *)&enic->gen_stats)[enic_gen_stats[i].index];
+	if (enic->qp) {
+		for (i = 0; i < enic->rq_count; i++) {
+			struct enic_qp *qp = &enic->qp[i];
+			int index;
+
+			for (j = 0; j < NUM_ENIC_PER_RQ_STATS; j++) {
+				index = enic_per_rq_stats[j].index;
+				*(data++) = ((u64 *)&qp->rq.stats)[index];
+			}
+		}
+	}
 }
 
 static u32 enic_get_msglevel(struct net_device *netdev)
