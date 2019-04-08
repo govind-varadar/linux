@@ -77,6 +77,26 @@ struct enic_rq_buf {
 	u16 index;
 };
 
+struct enic_rq_stats {
+	u64 packets;
+	u64 bytes;
+	u64 l4_rss_hash;
+	u64 l3_rss_hash;
+	u64 csum_unnecessary;
+	u64 csum_unnecessary_encap;
+	u64 vlan_stripped;
+	u64 napi_complete;
+	u64 napi_repoll;
+	u64 page_reuse;
+	u64 new_page;
+	u64 dma_error;
+	u64 page_discard;
+	u64 bad_fcs;
+	u64 pkt_truncated;
+	u64 no_skb;
+	u64 desc_skip;
+};
+
 struct enic_rq {
 	u16 cq_to_clean;
 	u16 cq_desc_count;
@@ -95,6 +115,7 @@ struct enic_rq {
 	u32 coal_timer;
 	u16 timer_mul;
 	u16 timer_div;
+	struct enic_rq_stats stats;
 };
 
 struct enic_qp {

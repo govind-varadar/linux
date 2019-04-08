@@ -550,6 +550,7 @@ static bool enic_rq_get_page_frag(struct enic_qp *qp, struct enic_rq_buf *buf)
 	 */
 	if (unlikely(nc->nc.offset - nc->fragsz < 0 &&
 		     nc->numa_node != numa_mem_id())) {
+		qp->rq.stats.page_discard++;
 		enic_page_frag_cache_drain(qp, nc);
 	}
 	buf->va = page_frag_alloc(&nc->nc, nc->fragsz, GFP_ATOMIC);
@@ -561,6 +562,7 @@ static bool enic_rq_get_page_frag(struct enic_qp *qp, struct enic_rq_buf *buf)
 	if (unlikely(nc->nc.va != nc->old_va)) {
 		size_t size;
 
+		qp->rq.stats.new_page++;
 		if (!nc->old_va)
 			goto skip_dma_unmap;
 
@@ -591,9 +593,12 @@ skip_dma_unmap:
 			nc->page = NULL;
 			nc->dma_addr = 0;
 			nc->old_va = NULL;
+			qp->rq.stats.dma_error++;
 
 			return false;
 		}
+	} else {
+		qp->rq.stats.page_reuse++;
 	}
 
 	buf->dma_addr = nc->dma_addr + nc->nc.offset;
@@ -945,8 +950,11 @@ static inline int enic_rq_service(struct enic_qp *qp, u16 budget)
 next_cq_desc:
 	cq_desc = &qp->rq.cq_base[qp->rq.cq_to_clean];
 	if ((CQ_DESC_COLOR(cq_desc) == qp->rq.last_color) ||
-	    work >= budget)
+	    work >= budget) {
+		qp->rq.stats.packets += work;
+
 		return work;
+	}
 
 	qp->rq.cq_to_clean++;
 	if (qp->rq.cq_to_clean == qp->rq.cq_desc_count) {
@@ -963,14 +971,15 @@ next_buf:
 	if (unlikely(buf->index != CQ_DESC_INDEX(cq_desc))) {
 		page_frag_free(buf->va);
 		buf->va = NULL;
+		qp->rq.stats.desc_skip++;
 		goto next_buf;
 	}
 	if (unlikely(CQ_DESC_PKT_ERR(cq_desc))) {
 		if (!CQ_DESC_FCS_OK(cq_desc)) {
 			if (CQ_DESC_PKT_LEN(cq_desc) > 0)
-				qp->enic->rq_bad_fcs++;
+				qp->rq.stats.bad_fcs++;
 			else if (CQ_DESC_PKT_LEN(cq_desc) == 0)
-				qp->enic->rq_truncated_pkts++;
+				qp->rq.stats.pkt_truncated++;
 		}
 
 		page_frag_free(buf->va);
@@ -978,6 +987,7 @@ next_buf:
 		goto next_cq_desc;
 	}
 	pkt_len = CQ_DESC_PKT_LEN(cq_desc);
+	qp->rq.stats.bytes += pkt_len;
 	skb = napi_get_frags(&qp->napi);
 	if (unlikely(!skb)) {
 		/* Drop packet and continue cleaning up the queue.
@@ -985,6 +995,7 @@ next_buf:
 		 */
 		page_frag_free(buf->va);
 		buf->va = NULL;
+		qp->rq.stats.no_skb++;
 		goto next_cq_desc;
 	}
 	skb_add_rx_frag(skb, 0, buf->page, buf->offset, pkt_len, buf->len);
@@ -999,11 +1010,13 @@ next_buf:
 		case CQ_ENET_RQ_DESC_RSS_TYPE_TCP_IPv6:
 		case CQ_ENET_RQ_DESC_RSS_TYPE_TCP_IPv6_EX:
 			skb_set_hash(skb, rss_hash, PKT_HASH_TYPE_L4);
+			qp->rq.stats.l4_rss_hash++;
 			break;
 		case CQ_ENET_RQ_DESC_RSS_TYPE_IPv4:
 		case CQ_ENET_RQ_DESC_RSS_TYPE_IPv6:
 		case CQ_ENET_RQ_DESC_RSS_TYPE_IPv6_EX:
 			skb_set_hash(skb, rss_hash, PKT_HASH_TYPE_L3);
+			qp->rq.stats.l3_rss_hash++;
 			break;
 		}
 	}
@@ -1030,14 +1043,19 @@ next_buf:
 	    (CQ_DESC_IPV6(cq_desc) || CQ_DESC_IPV4_CSUM_OK(cq_desc)) &&
 	    outer_csum_ok) {
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
-		skb->csum_level = encap;
+		qp->rq.stats.csum_unnecessary++;
+		if (encap) {
+			skb->csum_level = encap;
+			qp->rq.stats.csum_unnecessary_encap++;
+		}
 	}
-	if (CQ_DESC_VLAN_STRIPPED(cq_desc))
+	if (CQ_DESC_VLAN_STRIPPED(cq_desc)) {
 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
 				       CQ_DESC_VLAN_TCI(cq_desc));
+		qp->rq.stats.vlan_stripped++;
+	}
 	skb_mark_napi_id(skb, &qp->napi);
 	napi_gro_frags(&qp->napi);
-	qp->rq.bytes += pkt_len;
 	buf->va = NULL;
 	goto next_cq_desc;
 }
@@ -1064,6 +1082,7 @@ int enic_napi_poll(struct napi_struct *napi, int budget)
 		enic_intr_return_credits(qp->ctrl, rq_work + wq_work,
 					 1, /* Unmask interrupt */
 					 0);/* Do not reset timer */
+		qp->rq.stats.napi_complete++;
 
 		return rq_work;
 	}
@@ -1071,6 +1090,7 @@ int enic_napi_poll(struct napi_struct *napi, int budget)
 				 0, /* Do not unmask interrupt */
 				 0);/* Do not reset timer */
 
+	qp->rq.stats.napi_repoll++;
 	return rq_work;
 }
 
