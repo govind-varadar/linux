@@ -45,6 +45,7 @@ struct enic_wq_buf {
 struct enic_wq_stats {
 	u64 packets;
 	u64 stopped;
+	u64 wake;
 	u64 tso;
 	u64 encap_tso;
 	u64 encap_csum;

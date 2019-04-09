@@ -53,6 +53,11 @@ struct enic_stat {
 	.index = offsetof(struct enic_rq_stats, stat) / sizeof(u64) \
 }
 
+#define ENIC_PER_WQ_STAT(stat) { \
+	.name = "wq[%d]_"#stat, \
+	.index = offsetof(struct enic_wq_stats, stat) / sizeof(u64) \
+}
+
 static const struct enic_stat enic_per_rq_stats[] = {
 	ENIC_PER_RQ_STAT(packets),
 	ENIC_PER_RQ_STAT(bytes),
@@ -73,6 +78,24 @@ static const struct enic_stat enic_per_rq_stats[] = {
 	ENIC_PER_RQ_STAT(desc_skip),
 };
 #define NUM_ENIC_PER_RQ_STATS	ARRAY_SIZE(enic_per_rq_stats)
+
+static const struct enic_stat enic_per_wq_stats[] = {
+	ENIC_PER_WQ_STAT(packets),
+	ENIC_PER_WQ_STAT(stopped),
+	ENIC_PER_WQ_STAT(wake),
+	ENIC_PER_WQ_STAT(tso),
+	ENIC_PER_WQ_STAT(encap_tso),
+	ENIC_PER_WQ_STAT(encap_csum),
+	ENIC_PER_WQ_STAT(csum_partial),
+	ENIC_PER_WQ_STAT(csum),
+	ENIC_PER_WQ_STAT(bytes),
+	ENIC_PER_WQ_STAT(delayed_doorbell),
+	ENIC_PER_WQ_STAT(add_vlan),
+	ENIC_PER_WQ_STAT(nop),
+	ENIC_PER_WQ_STAT(dropped),
+	ENIC_PER_WQ_STAT(dma_error),
+};
+#define NUM_ENIC_PER_WQ_STATS	ARRAY_SIZE(enic_per_wq_stats)
 
 static const struct enic_stat enic_tx_stats[] = {
 	ENIC_TX_STAT(tx_frames_ok),
@@ -216,6 +239,13 @@ static void enic_get_strings(struct net_device *netdev, u32 stringset,
 					data += ETH_GSTRING_LEN;
 				}
 			}
+			for (i = 0; i < enic->wq_count; i++) {
+				for (j = 0; j < NUM_ENIC_PER_WQ_STATS; j++) {
+					snprintf(data, ETH_GSTRING_LEN,
+						 enic_per_wq_stats[j].name, i);
+					data += ETH_GSTRING_LEN;
+				}
+			}
 		}
 		break;
 	}
@@ -291,14 +321,17 @@ static int enic_get_sset_count(struct net_device *netdev, int sset)
 {
 	struct enic *enic = netdev_priv(netdev);
 	unsigned int n_per_rq_stats;
+	unsigned int n_per_wq_stats;
 	unsigned int n_stats;
 
 	switch (sset) {
 	case ETH_SS_STATS:
 		n_per_rq_stats = enic->qp ? NUM_ENIC_PER_RQ_STATS *
 					    enic->rq_count : 0;
+		n_per_wq_stats = enic->qp ? NUM_ENIC_PER_WQ_STATS *
+					    enic->wq_count : 0;
 		n_stats = NUM_ENIC_TX_STATS + NUM_ENIC_RX_STATS +
-			  NUM_ENIC_GEN_STATS + n_per_rq_stats;
+			  NUM_ENIC_GEN_STATS + n_per_rq_stats + n_per_wq_stats;
 		return n_stats;
 	default:
 		return -EOPNOTSUPP;
@@ -336,6 +369,15 @@ static void enic_get_ethtool_stats(struct net_device *netdev,
 			for (j = 0; j < NUM_ENIC_PER_RQ_STATS; j++) {
 				index = enic_per_rq_stats[j].index;
 				*(data++) = ((u64 *)&qp->rq.stats)[index];
+			}
+		}
+		for (i = 0; i < enic->wq_count; i++) {
+			struct enic_qp *qp = &enic->qp[i];
+			int index;
+
+			for (j = 0; j < NUM_ENIC_PER_WQ_STATS; j++) {
+				index = enic_per_wq_stats[j].index;
+				*(data++) = ((u64 *)&qp->wq.stats)[index];
 			}
 		}
 	}

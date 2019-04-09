@@ -914,8 +914,10 @@ again:
 		txq = netdev_get_tx_queue(qp->enic->netdev, qp->index);
 		if (netif_tx_queue_stopped(txq) &&
 		    (enic_wq_desc_avail(qp) >=
-		     (MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS)))
+		     (MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS))) {
 			netif_tx_wake_queue(txq);
+			qp->wq.stats.wake++;
+		}
 	}
 }
 
