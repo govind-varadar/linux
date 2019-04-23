@@ -449,6 +449,10 @@ enum vnic_devcmd_cmd {
 	 * in: (u16) a2 = unsigned short int port information
 	 */
 	CMD_OVERLAY_OFFLOAD_CFG = _CMDC(_CMD_DIR_WRITE, _CMD_VTYPE_ENET, 73),
+
+	/* Set extended CQ field in MREGS of all RQs for given vNIC
+	 */
+	CMD_SET_EXT_CQ = _CMDC(_CMD_DIR_WRITE, _CMD_VTYPE_ENET, 85),
 };
 
 /* CMD_ENABLE2 flags */

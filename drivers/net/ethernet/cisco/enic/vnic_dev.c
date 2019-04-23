@@ -542,6 +542,20 @@ static int vnic_dev_capable(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd)
 	return !(err || a0);
 }
 
+int vnic_dev_ext_cq_enable(struct vnic_dev *vdev)
+{
+	int wait = 1000;
+	u64 a0 = 0;
+	u64 a1 = 0;
+	int err;
+
+	if (!vnic_dev_capable(vdev, CMD_SET_EXT_CQ))
+		return -EOPNOTSUPP;
+	err = vnic_dev_cmd(vdev, CMD_SET_EXT_CQ, &a0, &a1, wait);
+
+	return err;
+}
+
 int vnic_dev_fw_info(struct vnic_dev *vdev,
 	struct vnic_devcmd_fw_info **fw_info)
 {

@@ -1655,6 +1655,8 @@ static int enic_dev_init(struct enic *enic)
 		goto err_out_free_vnic_resources;
 	}
 
+	enic_get_ext_cq(enic);
+
 	return 0;
 
 err_out_free_vnic_resources:

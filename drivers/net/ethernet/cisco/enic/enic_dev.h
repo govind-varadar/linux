@@ -56,5 +56,6 @@ int enic_dev_enable(struct enic *enic);
 int enic_dev_disable(struct enic *enic);
 int enic_dev_intr_coal_timer_info(struct enic *enic);
 int enic_dev_status_to_errno(int devcmd_status);
+void enic_get_ext_cq(struct enic *enic);
 
 #endif /* _ENIC_DEV_H_ */

@@ -166,6 +166,18 @@ int enic_dev_disable(struct enic *enic)
 	return err;
 }
 
+void enic_get_ext_cq(struct enic *enic)
+{
+	int err;
+
+	spin_lock_bh(&enic->devcmd_lock);
+	err = vnic_dev_ext_cq_enable(enic->vdev);
+	spin_unlock_bh(&enic->devcmd_lock);
+
+	if (!err)
+		enic->ext_cq = true;
+}
+
 int enic_dev_intr_coal_timer_info(struct enic *enic)
 {
 	int err;

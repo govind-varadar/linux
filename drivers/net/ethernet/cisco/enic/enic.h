@@ -150,6 +150,7 @@ struct enic {
 	u32 msg_enable;
 	spinlock_t devcmd_lock;
 	u8 mac_addr[ETH_ALEN];
+	unsigned int ext_cq : 1;
 	unsigned int flags;
 	unsigned int priv_flags;
 	unsigned int mc_count;
