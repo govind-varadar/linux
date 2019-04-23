@@ -350,8 +350,7 @@ static int _vnic_dev_cmd2(struct vnic_dev *vdev, enum vnic_devcmd_cmd cmd,
 		if (result->color == color) {
 			if (result->error) {
 				err = result->error;
-				if (err != ERR_ECMDUNKNOWN ||
-				    cmd != CMD_CAPABILITY)
+				if (cmd != CMD_CAPABILITY)
 					vdev_neterr(vdev, "Error %d devcmd %d\n",
 						    err, _CMD_N(cmd));
 				return -err;
