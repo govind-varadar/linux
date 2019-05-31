@@ -200,15 +200,11 @@ static void hisi_sas_slot_index_set(struct hisi_hba *hisi_hba, int slot_idx)
 	set_bit(slot_idx, bitmap);
 }
 
-static int hisi_sas_slot_index_alloc(struct hisi_hba *hisi_hba,
-				     struct scsi_cmnd *scsi_cmnd)
+static int hisi_sas_slot_index_alloc(struct hisi_hba *hisi_hba)
 {
 	int index;
 	void *bitmap = hisi_hba->slot_index_tags;
 	unsigned long flags;
-
-	if (scsi_cmnd)
-		return scsi_cmnd->request->tag;
 
 	spin_lock_irqsave(&hisi_hba->lock, flags);
 	index = find_next_zero_bit(bitmap, hisi_hba->slot_index_count,
@@ -459,6 +455,8 @@ static int hisi_sas_task_prep(struct sas_task *task,
 	struct hisi_sas_dq *dq;
 	unsigned long flags;
 	int wr_q_index;
+	struct scsi_cmnd *scsi_cmnd = NULL;
+	u32 blk_tag = (u32)-1;
 
 	if (DEV_IS_GONE(sas_dev)) {
 		if (sas_dev)
@@ -471,10 +469,22 @@ static int hisi_sas_task_prep(struct sas_task *task,
 		return -ECOMM;
 	}
 
-	if (hisi_hba->reply_map) {
-		int cpu = raw_smp_processor_id();
-		unsigned int dq_index = hisi_hba->reply_map[cpu];
+	if (task->uldd_task) {
+		struct ata_queued_cmd *qc;
 
+		if (dev_is_sata(device)) {
+			qc = task->uldd_task;
+			scsi_cmnd = qc->scsicmd;
+		} else {
+			scsi_cmnd = task->uldd_task;
+		}
+		blk_tag = blk_mq_unique_tag(scsi_cmnd->request);
+	}
+
+	if (hisi_hba->core.shost->nr_hw_queues > 1 && blk_tag != (u32)-1) {
+		unsigned int dq_index;
+
+		dq_index = blk_mq_unique_tag_to_hwq(blk_tag);
 		*dq_pointer = dq = &hisi_hba->dq[dq_index];
 	} else {
 		*dq_pointer = dq = sas_dev->dq;
@@ -503,21 +513,10 @@ static int hisi_sas_task_prep(struct sas_task *task,
 
 	if (hisi_hba->hw->slot_index_alloc)
 		rc = hisi_hba->hw->slot_index_alloc(hisi_hba, device);
-	else {
-		struct scsi_cmnd *scsi_cmnd = NULL;
-
-		if (task->uldd_task) {
-			struct ata_queued_cmd *qc;
-
-			if (dev_is_sata(device)) {
-				qc = task->uldd_task;
-				scsi_cmnd = qc->scsicmd;
-			} else {
-				scsi_cmnd = task->uldd_task;
-			}
-		}
-		rc  = hisi_sas_slot_index_alloc(hisi_hba, scsi_cmnd);
-	}
+	else if (blk_tag != (u32)-1)
+		rc = blk_mq_unique_tag_to_tag(blk_tag);
+	else
+		rc  = hisi_sas_slot_index_alloc(hisi_hba);
 	if (rc < 0)
 		goto err_out_dif_dma_unmap;
 
