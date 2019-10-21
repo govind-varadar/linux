@@ -118,7 +118,7 @@ static int sd_zbc_do_report_zones(struct scsi_disk *sdkp, unsigned char *buf,
 		sd_print_result(sdkp, "REPORT ZONES", result);
 		if (scsi_sense_valid(&sshdr))
 			sd_print_sense_hdr(sdkp, &sshdr);
-		return -EIO;
+		return result < 0 ? result : -EIO;
 	}
 
 	rep_len = get_unaligned_be32(&buf[0]);

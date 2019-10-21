@@ -1657,7 +1657,7 @@ static unsigned int sd_check_events(struct gendisk *disk, unsigned int clearing)
 					      &sshdr);
 
 		/* failed to execute TUR, assume media not present */
-		if (host_byte(retval)) {
+		if (retval < 0 || host_byte(retval)) {
 			set_media_not_present(sdkp);
 			goto out;
 		}
@@ -1717,6 +1717,9 @@ static int sd_sync_cache(struct scsi_disk *sdkp, struct scsi_sense_hdr *sshdr)
 
 	if (res) {
 		sd_print_result(sdkp, "Synchronize Cache(10) failed", res);
+
+		if (res < 0)
+			return res;
 
 		if (scsi_sense_valid(sshdr))
 			sd_print_sense_hdr(sdkp, sshdr);
@@ -2300,8 +2303,7 @@ static int sd_read_protection_type(struct scsi_disk *sdkp, unsigned char *buffer
 }
 
 static void read_capacity_error(struct scsi_disk *sdkp, struct scsi_device *sdp,
-			struct scsi_sense_hdr *sshdr, int sense_valid,
-			int the_result)
+			struct scsi_sense_hdr *sshdr, int sense_valid)
 {
 	if (scsi_sense_valid(sshdr))
 		sd_print_sense_hdr(sdkp, sshdr);
@@ -2384,7 +2386,9 @@ static int read_capacity_16(struct scsi_disk *sdkp, struct scsi_device *sdp,
 
 	if (the_result) {
 		sd_print_result(sdkp, "Read Capacity(16) failed", the_result);
-		read_capacity_error(sdkp, sdp, &sshdr, sense_valid, the_result);
+		if (the_result < 0)
+			return the_result;
+		read_capacity_error(sdkp, sdp, &sshdr, sense_valid);
 		return -EINVAL;
 	}
 
@@ -2461,7 +2465,9 @@ static int read_capacity_10(struct scsi_disk *sdkp, struct scsi_device *sdp,
 
 	if (the_result) {
 		sd_print_result(sdkp, "Read Capacity(10) failed", the_result);
-		read_capacity_error(sdkp, sdp, &sshdr, sense_valid, the_result);
+		if (the_result < 0)
+			return the_result;
+		read_capacity_error(sdkp, sdp, &sshdr, sense_valid);
 		return -EINVAL;
 	}
 
@@ -3602,6 +3608,8 @@ static int sd_start_stop_device(struct scsi_disk *sdkp, int start)
 	}
 
 	/* SCSI error codes must not go to the generic layer */
+	if (res < 0)
+		return res;
 	if (res)
 		return -EIO;
 
@@ -3814,6 +3822,10 @@ void sd_print_result(const struct scsi_disk *sdkp, const char *msg, int result)
 	const char *hb_string = scsi_hostbyte_string(host_byte(result));
 	const char *db_string = scsi_driverbyte_string(driver_byte(result));
 
+	if (result < 0) {
+		db_string = scsi_driverbyte_string(DRIVER_ERROR);
+		hb_string = scsi_hostbyte_string(DID_ERROR);
+	}
 	if (hb_string || db_string)
 		sd_printk(KERN_INFO, sdkp,
 			  "%s: Result: hostbyte=%s driverbyte=%s\n", msg,

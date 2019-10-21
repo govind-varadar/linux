@@ -361,6 +361,10 @@ retry:
 			      CMD_BUFSIZE, NULL, &sshdr, to, CMD_RETRIES,
 			      0, 0, NULL);
 	down_read(&cfg->ioctl_rwsem);
+	if (result < 0) {
+		rc = result;
+		goto out;
+	}
 	rc = check_state(cfg);
 	if (rc) {
 		dev_err(dev, "%s: Failed state result=%08x\n",

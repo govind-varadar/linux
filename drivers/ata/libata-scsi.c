@@ -410,6 +410,10 @@ int ata_cmd_ioctl(struct scsi_device *scsidev, void __user *arg)
 	cmd_result = scsi_execute(scsidev, scsi_cmd, data_dir, argbuf, argsize,
 				  sensebuf, &sshdr, (10*HZ), 5, 0, 0, NULL);
 
+	if (cmd_result < 0) {
+		rc = cmd_result;
+		goto error;
+	}
 	if (scsi_sense_valid(&sshdr)) {/* sense data available */
 		u8 *desc = sensebuf + 8;
 
@@ -489,7 +493,10 @@ int ata_task_ioctl(struct scsi_device *scsidev, void __user *arg)
 	   from scsi_ioctl_send_command() for default case... */
 	cmd_result = scsi_execute(scsidev, scsi_cmd, DMA_NONE, NULL, 0,
 				sensebuf, &sshdr, (10*HZ), 5, 0, 0, NULL);
-
+	if (cmd_result < 0) {
+		rc = cmd_result;
+		goto error;
+	}
 	if (scsi_sense_valid(&sshdr)) {/* sense data available */
 		u8 *desc = sensebuf + 8;
 
