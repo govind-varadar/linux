@@ -1583,9 +1583,8 @@ mega_cmd_done(adapter_t *adapter, u8 completed[], int nstatus, int status)
 				memcpy(cmd->sense_buffer, pthru->reqsensearea,
 						14);
 
-				cmd->result = (DRIVER_SENSE << 24) |
-					(DID_OK << 16) |
-					(CHECK_CONDITION << 1);
+				cmd->result = (DID_OK << 16) |
+					SAM_STAT_CHECK_CONDITION;
 			}
 			else {
 				if (mbox->m_out.cmd == MEGA_MBOXCMD_EXTPTHRU) {
@@ -1593,9 +1592,8 @@ mega_cmd_done(adapter_t *adapter, u8 completed[], int nstatus, int status)
 					memcpy(cmd->sense_buffer,
 						epthru->reqsensearea, 14);
 
-					cmd->result = (DRIVER_SENSE << 24) |
-						(DID_OK << 16) |
-						(CHECK_CONDITION << 1);
+					cmd->result = (DID_OK << 16) |
+						SAM_STAT_CHECK_CONDITION;
 				} else
 					scsi_build_sense(cmd, 0,
 							 ABORTED_COMMAND, 0, 0);

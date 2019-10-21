@@ -131,6 +131,8 @@ struct compat_sg_io_hdr {
 #define SG_INFO_DIRECT_IO 0x2   /* direct IO requested and performed */
 #define SG_INFO_MIXED_IO 0x4    /* part direct, part indirect IO */
 
+/* Obsolete DRIVER_SENSE setting */
+#define DRIVER_SENSE 0x08
 
 typedef struct sg_scsi_id { /* used by SG_GET_SCSI_ID ioctl() */
     int host_no;        /* as in "scsi<n>" where 'n' is one of 0, 1, 2 etc */
