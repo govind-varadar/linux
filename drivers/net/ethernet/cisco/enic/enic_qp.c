@@ -1121,6 +1121,7 @@ void enic_adaptive_coal(struct enic_qp *qp)
 		timer_hw = timer * qp->rq.timer_mul;
 		do_div(timer_hw, qp->rq.timer_div);
 		qp->rq.coal_timer = timer;
+		qp->rq.stats.coalesce = timer;
 		iowrite32(timer_hw, &qp->ctrl->coalescing_timer);
 	}
 }

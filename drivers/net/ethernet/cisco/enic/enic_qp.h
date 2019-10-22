@@ -112,6 +112,7 @@ struct enic_rq_stats {
 	u64 pkt_truncated;
 	u64 no_skb;
 	u64 desc_skip;
+	u64 coalesce;
 };
 
 struct enic_rq {
