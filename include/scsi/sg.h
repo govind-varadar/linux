@@ -133,6 +133,8 @@ struct compat_sg_io_hdr {
 
 /* Obsolete DRIVER_SENSE setting */
 #define DRIVER_SENSE 0x08
+/* Obsolete driver_byte() declaration */
+#define driver_byte(result) (((result) >> 24) & 0xff)
 
 typedef struct sg_scsi_id { /* used by SG_GET_SCSI_ID ioctl() */
     int host_no;        /* as in "scsi<n>" where 'n' is one of 0, 1, 2 etc */
