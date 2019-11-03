@@ -986,7 +986,7 @@ static int twa_fill_sense(TW_Device_Extension *tw_dev, int request_id, int copy_
 {
 	TW_Command_Full *full_command_packet;
 	unsigned short error;
-	int retval = 1;
+	int retval = 0;
 	char *error_str;
 
 	full_command_packet = tw_dev->command_packet_virt[request_id];
@@ -1020,10 +1020,7 @@ static int twa_fill_sense(TW_Device_Extension *tw_dev, int request_id, int copy_
 		memcpy(tw_dev->srb[request_id]->sense_buffer, full_command_packet->header.sense_data, TW_SENSE_DATA_LENGTH);
 		tw_dev->srb[request_id]->result = (full_command_packet->command.newcommand.status << 1);
 		retval = TW_ISR_DONT_RESULT;
-		goto out;
 	}
-	retval = 0;
-out:
 	return retval;
 } /* End twa_fill_sense() */
 
@@ -1335,15 +1332,11 @@ static irqreturn_t twa_interrupt(int irq, void *dev_instance)
 
 				twa_scsiop_execute_scsi_complete(tw_dev, request_id);
 				/* If no error command was a success */
-				if (error == 0) {
-					cmd->result = (DID_OK << 16);
-				}
+				cmd->result = (DID_OK << 16);
 
 				/* If error, command failed */
-				if (error == 1) {
-					/* Ask for a host reset */
-					cmd->result = (DID_OK << 16) | (CHECK_CONDITION << 1);
-				}
+				if (error == TW_ISR_DONT_RESULT)
+					cmd->result |= SAM_STAT_CHECK_CONDITION;
 
 				/* Report residual bytes for single sgl */
 				if ((scsi_sg_count(cmd) <= 1) && (full_command_packet->command.newcommand.status == 0)) {
