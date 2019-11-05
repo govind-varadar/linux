@@ -499,16 +499,16 @@ int	ahd_linux_show_info(struct seq_file *,struct Scsi_Host *);
 /*********************** Transaction Access Wrappers **************************/
 
 static inline
-void ahd_cmd_set_transaction_status(struct scsi_cmnd *cmd, uint32_t status)
+void ahd_cmd_set_transaction_status(struct scsi_cmnd *cmd, uint8_t status)
 {
-	cmd->result &= ~(CAM_STATUS_MASK << 16);
-	cmd->result |= status << 16;
+	cmd->SCp.Status &= ~CAM_STATUS_MASK;
+	cmd->SCp.Status |= status;
 }
 
 static inline
-void ahd_set_transaction_status(struct scb *scb, uint32_t status)
+void ahd_set_transaction_status(struct scb *scb, uint8_t status)
 {
-	ahd_cmd_set_transaction_status(scb->io_ctx,status);
+	ahd_cmd_set_transaction_status(scb->io_ctx, status);
 }
 
 static inline
@@ -525,13 +525,13 @@ void ahd_set_scsi_status(struct scb *scb, uint32_t status)
 }
 
 static inline
-uint32_t ahd_cmd_get_transaction_status(struct scsi_cmnd *cmd)
+uint8_t ahd_cmd_get_transaction_status(struct scsi_cmnd *cmd)
 {
-	return ((cmd->result >> 16) & CAM_STATUS_MASK);
+	return (cmd->SCp.Status & CAM_STATUS_MASK);
 }
 
 static inline
-uint32_t ahd_get_transaction_status(struct scb *scb)
+uint8_t ahd_get_transaction_status(struct scb *scb)
 {
 	return (ahd_cmd_get_transaction_status(scb->io_ctx));
 }
@@ -631,8 +631,8 @@ void	ahd_platform_freeze_devq(struct ahd_softc *ahd, struct scb *scb);
 static inline void
 ahd_freeze_scb(struct scb *scb)
 {
-	if ((scb->io_ctx->result & (CAM_DEV_QFRZN << 16)) == 0) {
-		scb->io_ctx->result |= CAM_DEV_QFRZN << 16;
+	if ((scb->io_ctx->SCp.Status & CAM_DEV_QFRZN) == 0) {
+		scb->io_ctx->SCp.Status |= CAM_DEV_QFRZN;
 		scb->platform_data->dev->qfrozen++;
 	}
 }

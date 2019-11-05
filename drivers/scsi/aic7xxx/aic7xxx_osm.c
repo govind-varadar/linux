@@ -531,7 +531,7 @@ ahc_linux_queue_lck(struct scsi_cmnd * cmd, void (*scsi_done) (struct scsi_cmnd 
 	ahc_lock(ahc, &flags);
 	if (ahc->platform_data->qfrozen == 0) {
 		cmd->scsi_done = scsi_done;
-		cmd->result = CAM_REQ_INPROG << 16;
+		ahc_cmd_set_transaction_status(cmd, CAM_REQ_INPROG);
 		rtn = ahc_linux_run_command(ahc, dev, cmd);
 	}
 	ahc_unlock(ahc, &flags);
@@ -1673,7 +1673,7 @@ void
 ahc_done(struct ahc_softc *ahc, struct scb *scb)
 {
 	struct scsi_cmnd *cmd;
-	struct	   ahc_linux_device *dev;
+	struct ahc_linux_device *dev;
 
 	LIST_REMOVE(scb, pending_links);
 	if ((scb->flags & SCB_UNTAGGEDQ) != 0) {
@@ -1698,8 +1698,8 @@ ahc_done(struct ahc_softc *ahc, struct scb *scb)
 	dev = scb->platform_data->dev;
 	dev->active--;
 	dev->openings++;
-	if ((cmd->result & (CAM_DEV_QFRZN << 16)) != 0) {
-		cmd->result &= ~(CAM_DEV_QFRZN << 16);
+	if (cmd->SCp.Status & CAM_DEV_QFRZN) {
+		cmd->SCp.Status &= ~CAM_DEV_QFRZN;
 		dev->qfrozen--;
 	}
 	ahc_linux_unmap_scb(ahc, scb);
