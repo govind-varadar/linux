@@ -582,7 +582,7 @@ ahd_linux_queue_lck(struct scsi_cmnd * cmd, void (*scsi_done) (struct scsi_cmnd 
 	ahd = *(struct ahd_softc **)cmd->device->host->hostdata;
 
 	cmd->scsi_done = scsi_done;
-	cmd->result = CAM_REQ_INPROG << 16;
+	ahd_cmd_set_transaction_status(cmd, CAM_REQ_INPROG);
 	rtn = ahd_linux_run_command(ahd, dev, cmd);
 
 	return rtn;
@@ -1760,7 +1760,7 @@ void
 ahd_done(struct ahd_softc *ahd, struct scb *scb)
 {
 	struct scsi_cmnd *cmd;
-	struct	  ahd_linux_device *dev;
+	struct ahd_linux_device *dev;
 
 	if ((scb->flags & SCB_ACTIVE) == 0) {
 		printk("SCB %d done'd twice\n", SCB_GET_TAG(scb));
@@ -1772,8 +1772,8 @@ ahd_done(struct ahd_softc *ahd, struct scb *scb)
 	dev = scb->platform_data->dev;
 	dev->active--;
 	dev->openings++;
-	if ((cmd->result & (CAM_DEV_QFRZN << 16)) != 0) {
-		cmd->result &= ~(CAM_DEV_QFRZN << 16);
+	if (cmd->SCp.Status & CAM_DEV_QFRZN) {
+		cmd->SCp.Status &= ~CAM_DEV_QFRZN;
 		dev->qfrozen--;
 	}
 	ahd_linux_unmap_scb(ahd, scb);
