@@ -87,6 +87,8 @@ static const struct enic_stat enic_per_wq_stats[] = {
 	ENIC_PER_WQ_STAT(bytes),
 	ENIC_PER_WQ_STAT(delayed_doorbell),
 	ENIC_PER_WQ_STAT(add_vlan),
+	ENIC_PER_WQ_STAT(cq_work),
+	ENIC_PER_WQ_STAT(cq_bytes),
 	ENIC_PER_WQ_STAT(nop),
 	ENIC_PER_WQ_STAT(dropped),
 	ENIC_PER_WQ_STAT(dma_error),
@@ -378,6 +380,7 @@ static int enic_get_coalesce(struct net_device *netdev,
 	struct enic *enic = netdev_priv(netdev);
 
 	ecmd->rx_coalesce_usecs = enic->rx_coalesce_usecs;
+	ecmd->use_adaptive_rx_coalesce = enic->qp[0].rq.adaptive_coal;
 
 	return 0;
 }
@@ -401,13 +404,20 @@ static int enic_set_coalesce(struct net_device *netdev,
 {
 	struct enic *enic = netdev_priv(netdev);
 	int ret;
+	int i;
 
 	ret = enic_coalesce_valid(enic, ecmd);
 	if (ret)
 		return ret;
 
 	enic->rx_coalesce_usecs = ecmd->rx_coalesce_usecs;
-	enic_intr_coal_set(enic, enic->rx_coalesce_usecs);
+	if (!ecmd->use_adaptive_rx_coalesce)
+		enic_intr_coal_set(enic, enic->rx_coalesce_usecs);
+	for (i = 0; i < enic->qp_count; i++) {
+		struct enic_qp *qp = &enic->qp[i];
+
+		qp->rq.adaptive_coal = ecmd->use_adaptive_rx_coalesce;
+	}
 
 	return 0;
 }
@@ -636,7 +646,8 @@ static int enic_get_ts_info(struct net_device *netdev,
 }
 
 static const struct ethtool_ops enic_ethtool_ops = {
-	.supported_coalesce_params = ETHTOOL_COALESCE_RX_USECS,
+	.supported_coalesce_params = ETHTOOL_COALESCE_RX_USECS |
+				     ETHTOOL_COALESCE_USE_ADAPTIVE_RX,
 	.get_drvinfo = enic_get_drvinfo,
 	.get_msglevel = enic_get_msglevel,
 	.set_msglevel = enic_set_msglevel,

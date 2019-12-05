@@ -783,6 +783,7 @@ int enic_alloc_qp(struct enic *enic)
 		qp->netdev = enic->netdev;
 		qp->enic = enic;
 		qp->index = i;
+		qp->rq.adaptive_coal = true;
 	}
 
 out:
@@ -791,6 +792,21 @@ free_qp:
 	kfree(enic->qp);
 	enic->qp = NULL;
 	return ret;
+}
+
+static void enic_dim_work(struct work_struct *work)
+{
+	struct dim *dim = container_of(work, struct dim, work);
+	struct enic_qp *qp = container_of(dim, struct enic_qp, dim);
+	struct dim_cq_moder cq_mod;
+	u32 coal_timer;
+
+	cq_mod = net_dim_get_rx_moderation(dim->mode, dim->profile_ix);
+	coal_timer = cq_mod.usec * qp->rq.timer_mul;
+	do_div(coal_timer, qp->rq.timer_div);
+	iowrite32(coal_timer, &qp->ctrl->coalescing_timer);
+
+	dim->state = DIM_START_MEASURE;
 }
 
 int enic_init_qp(struct enic *enic)
@@ -811,6 +827,7 @@ int enic_init_qp(struct enic *enic)
 		qp->rq.cq_to_clean = 0;
 		qp->wq.last_color = 0;
 		qp->wq.cq_to_clean = 0;
+		INIT_WORK(&qp->dim.work, enic_dim_work);
 		enic_qp_ctrl_init(qp);
 	}
 	switch (vnic_dev_get_intr_mode(enic->vdev)) {
@@ -913,6 +930,7 @@ again:
 				dma_unmap_page(qp->dev, buf->dma_addr, buf->len,
 					       DMA_TO_DEVICE);
 
+			qp->wq.stats.cq_bytes += buf->len;
 			napi_consume_skb(buf->skb, budget);
 			buf->skb = NULL;
 			buf->dma_addr = 0;
@@ -929,6 +947,7 @@ again:
 			qp->wq.stats.wake++;
 		}
 	}
+	qp->wq.stats.cq_work += work;
 	return work;
 }
 
@@ -1062,6 +1081,24 @@ next_buf:
 	goto next_cq_desc;
 }
 
+static inline void enic_dim_update(struct enic_qp *qp)
+{
+	struct dim_sample s;
+	u64 packets;
+	u16 events;
+	u64 bytes;
+
+	if (!qp->rq.adaptive_coal)
+		return;
+
+	events = qp->rq.stats.napi_complete + qp->rq.stats.napi_repoll;
+	packets = qp->rq.stats.packets + qp->wq.stats.cq_work;
+	bytes = qp->rq.stats.bytes + qp->wq.stats.cq_bytes;
+
+	dim_update_sample(events, packets, bytes, &s);
+	net_dim(&qp->dim, s);
+}
+
 int enic_napi_poll(struct napi_struct *napi, int budget)
 {
 	struct enic_qp *qp = container_of(napi, struct enic_qp, napi);
@@ -1081,10 +1118,11 @@ int enic_napi_poll(struct napi_struct *napi, int budget)
 	 */
 	if (rq_work < budget && napi_complete_done(napi, rq_work) &&
 	    !(ret && !rq_work)) {
+		qp->rq.stats.napi_complete++;
+		enic_dim_update(qp);
 		enic_intr_return_credits(qp->ctrl, rq_work + wq_work,
 					 1, /* Unmask interrupt */
 					 0);/* Do not reset timer */
-		qp->rq.stats.napi_complete++;
 
 		return rq_work;
 	}

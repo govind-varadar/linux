@@ -23,6 +23,7 @@
 
 #include <linux/netdevice.h>
 #include <linux/pci.h>
+#include <linux/dim.h>
 
 #include "wq_enet_desc.h"
 #include "vnic_wq.h"
@@ -54,6 +55,8 @@ struct enic_wq_stats {
 	u64 bytes;
 	u64 delayed_doorbell;
 	u64 add_vlan;
+	u64 cq_work;
+	u64 cq_bytes;
 	u64 nop;
 	u64 dropped;
 	u64 dma_error;
@@ -129,7 +132,6 @@ struct enic_rq {
 	ktime_t prev_ts;
 	u64 bytes;
 	u64 bytes_delta;
-	u32 coal_timer;
 	u16 timer_mul;
 	u16 timer_div;
 	struct enic_rq_stats stats;
@@ -141,6 +143,7 @@ struct enic_qp {
 	struct enic_wq wq;
 	struct enic_rq rq;
 	struct vnic_intr_ctrl __iomem *ctrl;
+	struct dim dim;
 	u16 index;
 	struct enic *enic;
 	struct napi_struct napi;
