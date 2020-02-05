@@ -166,6 +166,14 @@ struct lpfc_nvmet_tgtport {
 	atomic_t defer_ctx;
 	atomic_t defer_fod;
 	atomic_t defer_wqfull;
+
+	/* Stats counters - ls_reqs, ls_aborts, host_invalidate */
+	atomic_t xmt_ls_reqs;
+	atomic_t xmt_ls_cmpls;
+	atomic_t xmt_ls_err;
+	atomic_t cmpl_ls_err;
+	atomic_t cmpl_ls_xb;
+	atomic_t cmpl_ls_reqs;
 };
 
 struct lpfc_nvmet_ctx_info {
