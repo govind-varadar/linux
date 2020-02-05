@@ -227,7 +227,7 @@ struct fcloop_lsreq {
 	struct fcloop_tport		*tport;
 	struct nvmefc_ls_req		*lsreq;
 	struct work_struct		work;
-	struct nvmefc_tgt_ls_req	tgt_ls_req;
+	struct nvmefc_ls_rsp		ls_rsp;
 	int				status;
 };
 
@@ -265,9 +265,9 @@ struct fcloop_ini_fcpreq {
 };
 
 static inline struct fcloop_lsreq *
-tgt_ls_req_to_lsreq(struct nvmefc_tgt_ls_req *tgt_lsreq)
+ls_rsp_to_lsreq(struct nvmefc_ls_rsp *lsrsp)
 {
-	return container_of(tgt_lsreq, struct fcloop_lsreq, tgt_ls_req);
+	return container_of(lsrsp, struct fcloop_lsreq, ls_rsp);
 }
 
 static inline struct fcloop_fcpreq *
@@ -330,7 +330,7 @@ fcloop_ls_req(struct nvme_fc_local_port *localport,
 
 	tls_req->status = 0;
 	tls_req->tport = rport->targetport->private;
-	ret = nvmet_fc_rcv_ls_req(rport->targetport, &tls_req->tgt_ls_req,
+	ret = nvmet_fc_rcv_ls_req(rport->targetport, NULL, &tls_req->ls_rsp,
 				 lsreq->rqstaddr, lsreq->rqstlen);
 
 	return ret;
@@ -338,15 +338,15 @@ fcloop_ls_req(struct nvme_fc_local_port *localport,
 
 static int
 fcloop_xmt_ls_rsp(struct nvmet_fc_target_port *tport,
-			struct nvmefc_tgt_ls_req *tgt_lsreq)
+			struct nvmefc_ls_rsp *lsrsp)
 {
-	struct fcloop_lsreq *tls_req = tgt_ls_req_to_lsreq(tgt_lsreq);
+	struct fcloop_lsreq *tls_req = ls_rsp_to_lsreq(lsrsp);
 	struct nvmefc_ls_req *lsreq = tls_req->lsreq;
 
-	memcpy(lsreq->rspaddr, tgt_lsreq->rspbuf,
-		((lsreq->rsplen < tgt_lsreq->rsplen) ?
-				lsreq->rsplen : tgt_lsreq->rsplen));
-	tgt_lsreq->done(tgt_lsreq);
+	memcpy(lsreq->rspaddr, lsrsp->rspbuf,
+		((lsreq->rsplen < lsrsp->rsplen) ?
+				lsreq->rsplen : lsrsp->rsplen));
+	lsrsp->done(lsrsp);
 
 	schedule_work(&tls_req->work);
 
