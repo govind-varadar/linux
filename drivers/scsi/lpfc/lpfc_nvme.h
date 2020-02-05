@@ -67,6 +67,15 @@ struct lpfc_nvme_lport {
 	atomic_t cmpl_fcp_err;
 	atomic_t cmpl_ls_xb;
 	atomic_t cmpl_ls_err;
+	atomic_t xmt_ls_rsp;
+	atomic_t xmt_ls_drop;
+	atomic_t xmt_ls_rsp_cmpl;
+	atomic_t xmt_ls_rsp_error;
+	atomic_t xmt_ls_rsp_aborted;
+	atomic_t xmt_ls_rsp_xb_set;
+	atomic_t rcv_ls_req_in;
+	atomic_t rcv_ls_req_out;
+	atomic_t rcv_ls_req_drop;
 };
 
 struct lpfc_nvme_rport {

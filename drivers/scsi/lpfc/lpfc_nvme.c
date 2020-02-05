@@ -400,6 +400,10 @@ lpfc_nvme_remoteport_delete(struct nvme_fc_remote_port *remoteport)
  * request. Any remaining validation is done and the LS is then forwarded
  * to the nvme-fc transport via nvme_fc_rcv_ls_req().
  *
+ * The calling sequence should be: nvme_fc_rcv_ls_req() -> (processing)
+ * -> lpfc_nvme_xmt_ls_rsp/cmp -> req->done.
+ * lpfc_nvme_xmt_ls_rsp_cmp should free the allocated axchg.
+ *
  * Returns 0 if LS was handled and delivered to the transport
  * Returns 1 if LS failed to be handled and should be dropped
  */
@@ -407,6 +411,46 @@ int
 lpfc_nvme_handle_lsreq(struct lpfc_hba *phba,
 			struct lpfc_async_xchg_ctx *axchg)
 {
+#if (IS_ENABLED(CONFIG_NVME_FC))
+	struct lpfc_vport *vport;
+	struct lpfc_nvme_rport *lpfc_rport;
+	struct nvme_fc_remote_port *remoteport;
+	struct lpfc_nvme_lport *lport;
+	uint32_t *payload = axchg->payload;
+	int rc;
+
+	vport = axchg->ndlp->vport;
+	lpfc_rport = axchg->ndlp->nrport;
+	if (!lpfc_rport)
+		return -EINVAL;
+
+	remoteport = lpfc_rport->remoteport;
+	if (!vport->localport)
+		return -EINVAL;
+
+	lport = vport->localport->private;
+	if (!lport)
+		return -EINVAL;
+
+	atomic_inc(&lport->rcv_ls_req_in);
+
+	rc = nvme_fc_rcv_ls_req(remoteport, &axchg->ls_rsp, axchg->payload,
+				axchg->size);
+
+	lpfc_printf_log(phba, KERN_INFO, LOG_NVME_DISC,
+			"6205 NVME Unsol rcv: sz %d rc %d: %08x %08x %08x "
+			"%08x %08x %08x\n",
+			axchg->size, rc,
+			*payload, *(payload+1), *(payload+2),
+			*(payload+3), *(payload+4), *(payload+5));
+
+	if (!rc) {
+		atomic_inc(&lport->rcv_ls_req_out);
+		return 0;
+	}
+
+	atomic_inc(&lport->rcv_ls_req_drop);
+#endif
 	return 1;
 }
 
@@ -856,6 +900,81 @@ __lpfc_nvme_ls_abort(struct lpfc_vport *vport, struct lpfc_nodelist *ndlp,
 			 "6213 NVMEx LS REQ Abort: Unable to locate req x%p\n",
 			 pnvme_lsreq);
 	return 1;
+}
+
+/**
+ * lpfc_nvme_xmt_ls_rsp_cmp - Completion handler for LS Response
+ * @phba: Pointer to HBA context object.
+ * @cmdwqe: Pointer to driver command WQE object.
+ * @wcqe: Pointer to driver response CQE object.
+ *
+ * The function is called from SLI ring event handler with no
+ * lock held. This function is the completion handler for NVME LS commands
+ * The function updates any states and statistics, then calls the
+ * generic completion handler to free resources.
+ **/
+static void
+lpfc_nvme_xmt_ls_rsp_cmp(struct lpfc_hba *phba, struct lpfc_iocbq *cmdwqe,
+			  struct lpfc_wcqe_complete *wcqe)
+{
+	struct lpfc_vport *vport = cmdwqe->vport;
+	struct lpfc_nvme_lport *lport;
+	uint32_t status, result;
+
+	status = bf_get(lpfc_wcqe_c_status, wcqe) & LPFC_IOCB_STATUS_MASK;
+	result = wcqe->parameter;
+
+	if (!vport->localport)
+		goto finish;
+
+	lport = (struct lpfc_nvme_lport *)vport->localport->private;
+	if (lport) {
+		if (status) {
+			atomic_inc(&lport->xmt_ls_rsp_error);
+			if (result == IOERR_ABORT_REQUESTED)
+				atomic_inc(&lport->xmt_ls_rsp_aborted);
+			if (bf_get(lpfc_wcqe_c_xb, wcqe))
+				atomic_inc(&lport->xmt_ls_rsp_xb_set);
+		} else {
+			atomic_inc(&lport->xmt_ls_rsp_cmpl);
+		}
+	}
+
+finish:
+	__lpfc_nvme_xmt_ls_rsp_cmp(phba, cmdwqe, wcqe);
+}
+
+static int
+lpfc_nvme_xmt_ls_rsp(struct nvme_fc_local_port *localport,
+		     struct nvme_fc_remote_port *remoteport,
+		     struct nvmefc_ls_rsp *ls_rsp)
+{
+	struct lpfc_async_xchg_ctx *axchg =
+		container_of(ls_rsp, struct lpfc_async_xchg_ctx, ls_rsp);
+	struct lpfc_nvme_lport *lport;
+	int rc;
+
+	if (axchg->phba->pport->load_flag & FC_UNLOADING)
+		return -ENODEV;
+
+	lport = (struct lpfc_nvme_lport *)localport->private;
+
+	rc = __lpfc_nvme_xmt_ls_rsp(axchg, ls_rsp, lpfc_nvme_xmt_ls_rsp_cmp);
+
+	if (rc) {
+		atomic_inc(&lport->xmt_ls_drop);
+		/*
+		 * unless the failure is due to having already sent
+		 * the response, an abort will be generated for the
+		 * exchange if the rsp can't be sent.
+		 */
+		if (rc != -EALREADY)
+			atomic_inc(&lport->xmt_ls_abort);
+		return rc;
+	}
+
+	atomic_inc(&lport->xmt_ls_rsp);
+	return 0;
 }
 
 /**
@@ -2090,6 +2209,7 @@ static struct nvme_fc_port_template lpfc_nvme_template = {
 	.fcp_io       = lpfc_nvme_fcp_io_submit,
 	.ls_abort     = lpfc_nvme_ls_abort,
 	.fcp_abort    = lpfc_nvme_fcp_abort,
+	.xmt_ls_rsp   = lpfc_nvme_xmt_ls_rsp,
 
 	.max_hw_queues = 1,
 	.max_sgl_segments = LPFC_NVME_DEFAULT_SEGS,
@@ -2285,6 +2405,16 @@ lpfc_nvme_create_localport(struct lpfc_vport *vport)
 		atomic_set(&lport->cmpl_fcp_err, 0);
 		atomic_set(&lport->cmpl_ls_xb, 0);
 		atomic_set(&lport->cmpl_ls_err, 0);
+		atomic_set(&lport->xmt_ls_rsp, 0);
+		atomic_set(&lport->xmt_ls_drop, 0);
+		atomic_set(&lport->xmt_ls_rsp_cmpl, 0);
+		atomic_set(&lport->xmt_ls_rsp_error, 0);
+		atomic_set(&lport->xmt_ls_rsp_aborted, 0);
+		atomic_set(&lport->xmt_ls_rsp_xb_set, 0);
+		atomic_set(&lport->rcv_ls_req_in, 0);
+		atomic_set(&lport->rcv_ls_req_out, 0);
+		atomic_set(&lport->rcv_ls_req_drop, 0);
+
 		atomic_set(&lport->fc4NvmeLsRequests, 0);
 		atomic_set(&lport->fc4NvmeLsCmpls, 0);
 	}
