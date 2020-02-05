@@ -131,6 +131,11 @@ enum nvme_fcctrl_flags {
 	FCCTRL_TERMIO		= (1 << 0),
 };
 
+enum {
+	ASSOC_INACTIVE		= 0,
+	ASSOC_ACTIVE		= 1,
+};
+
 struct nvme_fc_ctrl {
 	spinlock_t		lock;
 	struct nvme_fc_queue	*queues;
@@ -140,7 +145,7 @@ struct nvme_fc_ctrl {
 	u32			cnum;
 
 	bool			ioq_live;
-	bool			assoc_active;
+	atomic_t		assoc_active;
 	atomic_t		err_work_active;
 	u64			association_id;
 
@@ -2584,12 +2589,14 @@ static int
 nvme_fc_ctlr_active_on_rport(struct nvme_fc_ctrl *ctrl)
 {
 	struct nvme_fc_rport *rport = ctrl->rport;
+	int priorstate;
 	u32 cnt;
 
-	if (ctrl->assoc_active)
+	priorstate = atomic_cmpxchg(&ctrl->assoc_active,
+					ASSOC_INACTIVE, ASSOC_ACTIVE);
+	if (priorstate != ASSOC_INACTIVE)
 		return 1;
 
-	ctrl->assoc_active = true;
 	cnt = atomic_inc_return(&rport->act_ctrl_cnt);
 	if (cnt == 1)
 		nvme_fc_rport_active_on_lport(rport);
@@ -2746,7 +2753,7 @@ out_delete_hw_queue:
 	__nvme_fc_delete_hw_queue(ctrl, &ctrl->queues[0], 0);
 out_free_queue:
 	nvme_fc_free_queue(&ctrl->queues[0]);
-	ctrl->assoc_active = false;
+	atomic_set(&ctrl->assoc_active, ASSOC_INACTIVE);
 	nvme_fc_ctlr_inactive_on_rport(ctrl);
 
 	return ret;
@@ -2762,10 +2769,12 @@ static void
 nvme_fc_delete_association(struct nvme_fc_ctrl *ctrl)
 {
 	unsigned long flags;
+	int priorstate;
 
-	if (!ctrl->assoc_active)
+	priorstate = atomic_cmpxchg(&ctrl->assoc_active,
+					ASSOC_ACTIVE, ASSOC_INACTIVE);
+	if (priorstate != ASSOC_ACTIVE)
 		return;
-	ctrl->assoc_active = false;
 
 	spin_lock_irqsave(&ctrl->lock, flags);
 	ctrl->flags |= FCCTRL_TERMIO;
@@ -3096,7 +3105,7 @@ nvme_fc_init_ctrl(struct device *dev, struct nvmf_ctrl_options *opts,
 	ctrl->dev = lport->dev;
 	ctrl->cnum = idx;
 	ctrl->ioq_live = false;
-	ctrl->assoc_active = false;
+	atomic_set(&ctrl->assoc_active, ASSOC_INACTIVE);
 	atomic_set(&ctrl->err_work_active, 0);
 	init_waitqueue_head(&ctrl->ioabort_wait);
 
