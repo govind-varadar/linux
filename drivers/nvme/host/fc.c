@@ -32,10 +32,7 @@ struct nvme_fc_queue {
 	struct device		*dev;
 	struct blk_mq_hw_ctx	*hctx;
 	void			*lldd_handle;
-	size_t			cmnd_capsule_len;
 	u32			qnum;
-	u32			rqcnt;
-	u32			seqno;
 
 	u64			connection_id;
 	atomic_t		csn;
@@ -98,7 +95,6 @@ struct nvme_fc_fcp_op {
 
 	atomic_t		state;
 	u32			flags;
-	u32			rqno;
 	u32			nents;
 
 	struct nvme_fc_cmd_iu	cmd_iu;
@@ -2050,7 +2046,7 @@ check_error:
 static int
 __nvme_fc_init_request(struct nvme_fc_ctrl *ctrl,
 		struct nvme_fc_queue *queue, struct nvme_fc_fcp_op *op,
-		struct request *rq, u32 rqno)
+		struct request *rq)
 {
 	struct nvme_fcp_op_w_sgl *op_w_sgl =
 		container_of(op, typeof(*op_w_sgl), op);
@@ -2066,7 +2062,6 @@ __nvme_fc_init_request(struct nvme_fc_ctrl *ctrl,
 	op->ctrl = ctrl;
 	op->queue = queue;
 	op->rq = rq;
-	op->rqno = rqno;
 
 	cmdiu->format_id = NVME_CMD_FORMAT_ID;
 	cmdiu->fc_id = NVME_CMD_FC_ID;
@@ -2110,7 +2105,7 @@ nvme_fc_init_request(struct blk_mq_tag_set *set, struct request *rq,
 	struct nvme_fc_queue *queue = &ctrl->queues[queue_idx];
 	int res;
 
-	res = __nvme_fc_init_request(ctrl, queue, &op->op, rq, queue->rqcnt++);
+	res = __nvme_fc_init_request(ctrl, queue, &op->op, rq);
 	if (res)
 		return res;
 	op->op.fcp_req.first_sgl = &op->sgl[0];
@@ -2140,8 +2135,7 @@ nvme_fc_init_aen_ops(struct nvme_fc_ctrl *ctrl)
 		cmdiu = &aen_op->cmd_iu;
 		sqe = &cmdiu->sqe;
 		ret = __nvme_fc_init_request(ctrl, &ctrl->queues[0],
-				aen_op, (struct request *)NULL,
-				(NVME_AQ_BLK_MQ_DEPTH + i));
+				aen_op, (struct request *)NULL);
 		if (ret) {
 			kfree(private);
 			return ret;
@@ -2216,11 +2210,6 @@ nvme_fc_init_queue(struct nvme_fc_ctrl *ctrl, int idx)
 	queue->qnum = idx;
 	atomic_set(&queue->csn, 0);
 	queue->dev = ctrl->dev;
-
-	if (idx > 0)
-		queue->cmnd_capsule_len = ctrl->ctrl.ioccsz * 16;
-	else
-		queue->cmnd_capsule_len = sizeof(struct nvme_command);
 
 	/*
 	 * Considered whether we should allocate buffers for all SQEs
