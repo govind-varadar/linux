@@ -358,6 +358,7 @@ __nvmet_fc_finish_ls_req(struct nvmet_fc_ls_req_op *lsop)
 
 	if (!lsop->req_queued) {
 		spin_unlock_irqrestore(&tgtport->lock, flags);
+		nvmet_fc_tgtport_put(tgtport);
 		return;
 	}
 
@@ -386,9 +387,6 @@ __nvmet_fc_send_ls_req(struct nvmet_fc_tgtport *tgtport,
 	if (!tgtport->ops->ls_req)
 		return -EOPNOTSUPP;
 
-	if (!nvmet_fc_tgtport_get(tgtport))
-		return -ESHUTDOWN;
-
 	lsreq->done = done;
 	lsop->req_queued = false;
 	INIT_LIST_HEAD(&lsop->lsreq_list);
@@ -396,10 +394,9 @@ __nvmet_fc_send_ls_req(struct nvmet_fc_tgtport *tgtport,
 	lsreq->rqstdma = fc_dma_map_single(tgtport->dev, lsreq->rqstaddr,
 				  lsreq->rqstlen + lsreq->rsplen,
 				  DMA_BIDIRECTIONAL);
-	if (fc_dma_mapping_error(tgtport->dev, lsreq->rqstdma)) {
-		ret = -EFAULT;
-		goto out_puttgtport;
-	}
+	if (fc_dma_mapping_error(tgtport->dev, lsreq->rqstdma))
+		return -EFAULT;
+
 	lsreq->rspdma = lsreq->rqstdma + lsreq->rqstlen;
 
 	spin_lock_irqsave(&tgtport->lock, flags);
@@ -426,9 +423,6 @@ out_unlink:
 	fc_dma_unmap_single(tgtport->dev, lsreq->rqstdma,
 				  (lsreq->rqstlen + lsreq->rsplen),
 				  DMA_BIDIRECTIONAL);
-out_puttgtport:
-	nvmet_fc_tgtport_put(tgtport);
-
 	return ret;
 }
 
@@ -482,6 +476,9 @@ nvmet_fc_xmt_disconnect_assoc(struct nvmet_fc_tgt_assoc *assoc)
 	struct nvmefc_ls_req *lsreq;
 	int ret;
 
+	if (!nvmet_fc_tgtport_get(tgtport))
+		return;
+
 	/*
 	 * If ls_req is NULL or no hosthandle, it's an older lldd and no
 	 * message is normal. Otherwise, send unless the hostport has
@@ -489,7 +486,7 @@ nvmet_fc_xmt_disconnect_assoc(struct nvmet_fc_tgt_assoc *assoc)
 	 */
 	if (!tgtport->ops->ls_req || !assoc->hostport ||
 	    assoc->hostport->invalid)
-		return;
+		goto out_put;
 
 	lsop = kzalloc((sizeof(*lsop) +
 			sizeof(*discon_rqst) + sizeof(*discon_acc) +
@@ -498,7 +495,7 @@ nvmet_fc_xmt_disconnect_assoc(struct nvmet_fc_tgt_assoc *assoc)
 		dev_info(tgtport->dev,
 			"{%d:%d} send Disconnect Association failed: ENOMEM\n",
 			tgtport->fc_target_port.port_num, assoc->a_id);
-		return;
+		goto out_put;
 	}
 
 	discon_rqst = (struct fcnvme_ls_disconnect_assoc_rqst *)&lsop[1];
@@ -517,12 +514,15 @@ nvmet_fc_xmt_disconnect_assoc(struct nvmet_fc_tgt_assoc *assoc)
 
 	ret = nvmet_fc_send_ls_req_async(tgtport, lsop,
 				nvmet_fc_disconnect_assoc_done);
-	if (ret) {
-		dev_info(tgtport->dev,
-			"{%d:%d} XMT Disconnect Association failed: %d\n",
-			tgtport->fc_target_port.port_num, assoc->a_id, ret);
-		kfree(lsop);
-	}
+	if (!ret)
+		return;
+
+	dev_info(tgtport->dev,
+		 "{%d:%d} XMT Disconnect Association failed: %d\n",
+		 tgtport->fc_target_port.port_num, assoc->a_id, ret);
+	kfree(lsop);
+out_put:
+	nvmet_fc_tgtport_put(tgtport);
 }
 
 
