@@ -961,7 +961,6 @@ fcloop_remoteport_delete(struct nvme_fc_remote_port *remoteport)
 {
 	struct fcloop_rport *rport = remoteport->private;
 
-	flush_work(&rport->ls_work);
 	fcloop_nport_put(rport->nport);
 }
 
@@ -1296,6 +1295,7 @@ __remoteport_unreg(struct fcloop_nport *nport, struct fcloop_rport *rport)
 	if (!rport)
 		return -EALREADY;
 
+	flush_work(&rport->ls_work);
 	return nvme_fc_unregister_remoteport(rport->remoteport);
 }
 
