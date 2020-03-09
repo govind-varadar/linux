@@ -62,8 +62,8 @@ struct nvmefc_ls_req_op {
 struct nvmefc_ls_rcv_op {
 	struct nvme_fc_rport		*rport;
 	struct nvmefc_ls_rsp		*lsrsp;
-	union nvmefc_ls_requests	*rqstbuf;
-	union nvmefc_ls_responses	*rspbuf;
+	union fcnvme_ls_rqst		*rqstbuf;
+	union fcnvme_ls_rsp		*rspbuf;
 	u16				rqstdatalen;
 	bool				handled;
 	dma_addr_t			rspdma;
@@ -1738,7 +1738,7 @@ nvme_fc_rcv_ls_req(struct nvme_fc_remote_port *portptr,
 		goto out_put;
 	}
 
-	if (lsreqbuf_len > sizeof(union nvmefc_ls_requests)) {
+	if (lsreqbuf_len > sizeof(union fcnvme_ls_rqst)) {
 		dev_info(lport->dev,
 			"RCV %s LS failed: payload too large\n",
 			(w0->ls_cmd <= NVME_FC_LAST_LS_CMD_VALUE) ?
@@ -1748,8 +1748,8 @@ nvme_fc_rcv_ls_req(struct nvme_fc_remote_port *portptr,
 	}
 
 	lsop = kzalloc(sizeof(*lsop) +
-			sizeof(union nvmefc_ls_requests) +
-			sizeof(union nvmefc_ls_responses),
+			sizeof(union fcnvme_ls_rqst) +
+			sizeof(union fcnvme_ls_rsp),
 			GFP_KERNEL);
 	if (!lsop) {
 		dev_info(lport->dev,
@@ -1759,8 +1759,8 @@ nvme_fc_rcv_ls_req(struct nvme_fc_remote_port *portptr,
 		ret = -ENOMEM;
 		goto out_put;
 	}
-	lsop->rqstbuf = (union nvmefc_ls_requests *)&lsop[1];
-	lsop->rspbuf = (union nvmefc_ls_responses *)&lsop->rqstbuf[1];
+	lsop->rqstbuf = (union fcnvme_ls_rqst *)&lsop[1];
+	lsop->rspbuf = (union fcnvme_ls_rsp *)&lsop->rqstbuf[1];
 
 	lsop->rspdma = fc_dma_map_single(lport->dev, lsop->rspbuf,
 					sizeof(*lsop->rspbuf),

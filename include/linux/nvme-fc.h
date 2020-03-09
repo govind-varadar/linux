@@ -405,6 +405,21 @@ struct fcnvme_ls_disconnect_conn_acc {
 	struct fcnvme_ls_acc_hdr		hdr;
 };
 
+union fcnvme_ls_rqst {
+	struct fcnvme_ls_rqst_w0		w0;
+	struct fcnvme_ls_cr_assoc_rqst		rq_cr_assoc;
+	struct fcnvme_ls_cr_conn_rqst		rq_cr_conn;
+	struct fcnvme_ls_disconnect_assoc_rqst	rq_dis_assoc;
+	struct fcnvme_ls_disconnect_conn_rqst	rq_dis_conn;
+} __aligned(128);	/* alignment for other things alloc'd with */
+
+union fcnvme_ls_rsp {
+	struct fcnvme_ls_rjt			rsp_rjt;
+	struct fcnvme_ls_cr_assoc_acc		rsp_cr_assoc;
+	struct fcnvme_ls_cr_conn_acc		rsp_cr_conn;
+	struct fcnvme_ls_disconnect_assoc_acc	rsp_dis_assoc;
+	struct fcnvme_ls_disconnect_conn_acc	rsp_dis_conn;
+} __aligned(128);	/* alignment for other things alloc'd with */
 
 /*
  * Default R_A_TOV is pulled in from fc_fs.h but needs conversion
