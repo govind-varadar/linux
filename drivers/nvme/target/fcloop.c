@@ -415,7 +415,14 @@ fcloop_t2h_ls_req(struct nvmet_fc_target_port *targetport, void *hosthandle,
 {
 	struct fcloop_lsreq *tls_req = lsreq->private;
 	struct fcloop_tport *tport = targetport->private;
-	int ret = 0;
+
+	/*
+	 * If the remoteport is removed we are disconnecting,
+	 * so we must return an error directly to avoid a deadlock
+	 * with fcloop_targetport_delete().
+	 */
+	if (!tport->remoteport)
+		return -ECONNREFUSED;
 
 	/*
 	 * hosthandle should be the dst.rport value.
@@ -425,20 +432,9 @@ fcloop_t2h_ls_req(struct nvmet_fc_target_port *targetport, void *hosthandle,
 	tls_req->lsreq = lsreq;
 	INIT_LIST_HEAD(&tls_req->ls_list);
 
-	if (!tport->remoteport) {
-		tls_req->status = -ECONNREFUSED;
-		spin_lock(&tport->lock);
-		list_add_tail(&tport->ls_list, &tls_req->ls_list);
-		spin_unlock(&tport->lock);
-		schedule_work(&tport->ls_work);
-		return ret;
-	}
-
 	tls_req->status = 0;
-	ret = nvme_fc_rcv_ls_req(tport->remoteport, &tls_req->ls_rsp,
-				 lsreq->rqstaddr, lsreq->rqstlen);
-
-	return ret;
+	return nvme_fc_rcv_ls_req(tport->remoteport, &tls_req->ls_rsp,
+				  lsreq->rqstaddr, lsreq->rqstlen);
 }
 
 static int
