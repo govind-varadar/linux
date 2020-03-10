@@ -267,8 +267,7 @@ static int hpsa_compat_ioctl(struct scsi_device *dev, unsigned int cmd,
 static void cmd_free(struct ctlr_info *h, struct CommandList *c);
 static struct CommandList *cmd_alloc(struct ctlr_info *h);
 static void cmd_tagged_free(struct ctlr_info *h, struct CommandList *c);
-static struct CommandList *cmd_tagged_alloc(struct ctlr_info *h,
-					    struct scsi_cmnd *scmd);
+static struct CommandList *cmd_tagged_alloc(struct ctlr_info *h, int idx);
 static int fill_cmd(struct CommandList *c, u8 cmd, struct ctlr_info *h,
 	void *buff, size_t size, u16 page_code, unsigned char *scsi3addr,
 	int cmd_type);
@@ -988,6 +987,7 @@ static struct scsi_host_template hpsa_driver_template = {
 	.shost_groups = hpsa_shost_groups,
 	.max_sectors = 2048,
 	.no_write_same = 1,
+	.admin_queue = 1,
 };
 
 static inline u32 next_command(struct ctlr_info *h, u8 q)
@@ -5714,7 +5714,7 @@ static int hpsa_scsi_queue_command(struct Scsi_Host *sh, struct scsi_cmnd *cmd)
 	if (dev->in_reset)
 		return SCSI_MLQUEUE_DEVICE_BUSY;
 
-	c = cmd_tagged_alloc(h, cmd);
+	c = cmd_tagged_alloc(h, scsi_cmd_to_rq(cmd)->tag);
 	if (c == NULL)
 		return SCSI_MLQUEUE_DEVICE_BUSY;
 
@@ -5860,12 +5860,12 @@ static int hpsa_scsi_host_alloc(struct ctlr_info *h)
 
 	sh->io_port = 0;
 	sh->n_io_port = 0;
-	sh->this_id = -1;
 	sh->max_channel = 3;
 	sh->max_cmd_len = MAX_COMMAND_SIZE;
 	sh->max_lun = HPSA_MAX_LUN;
 	sh->max_id = HPSA_MAX_LUN;
 	sh->can_queue = h->nr_cmds - HPSA_NRESERVED_CMDS;
+	sh->nr_reserved_cmds = HPSA_NRESERVED_CMDS;
 	sh->cmd_per_lun = sh->can_queue;
 	sh->sg_tablesize = h->maxsgentries;
 	sh->transportt = hpsa_sas_transport_template;
@@ -5907,23 +5907,6 @@ static int hpsa_scsi_add_host(struct ctlr_info *h)
 
 	scsi_scan_host(h->scsi_host);
 	return 0;
-}
-
-/*
- * The block layer has already gone to the trouble of picking out a unique,
- * small-integer tag for this request.  We use an offset from that value as
- * an index to select our command block.  (The offset allows us to reserve the
- * low-numbered entries for our own uses.)
- */
-static int hpsa_get_cmd_index(struct scsi_cmnd *scmd)
-{
-	int idx = scsi_cmd_to_rq(scmd)->tag;
-
-	if (idx < 0)
-		return idx;
-
-	/* Offset to leave space for internal cmds. */
-	return idx += HPSA_NRESERVED_CMDS;
 }
 
 /*
@@ -6082,7 +6065,7 @@ static int hpsa_eh_device_reset_handler(struct scsi_cmnd *scsicmd)
 	if (lockup_detected(h)) {
 		snprintf(msg, sizeof(msg),
 			 "cmd %d RESET FAILED, lockup detected",
-			 hpsa_get_cmd_index(scsicmd));
+			 scsi_cmd_to_rq(scsicmd)->tag);
 		hpsa_show_dev_msg(KERN_WARNING, h, dev, msg);
 		rc = FAILED;
 		goto return_reset_status;
@@ -6092,7 +6075,7 @@ static int hpsa_eh_device_reset_handler(struct scsi_cmnd *scsicmd)
 	if (detect_controller_lockup(h)) {
 		snprintf(msg, sizeof(msg),
 			 "cmd %d RESET FAILED, new lockup detected",
-			 hpsa_get_cmd_index(scsicmd));
+			 scsi_cmd_to_rq(scsicmd)->tag);
 		hpsa_show_dev_msg(KERN_WARNING, h, dev, msg);
 		rc = FAILED;
 		goto return_reset_status;
@@ -6152,15 +6135,13 @@ return_reset_status:
  * the complement, although cmd_free() may be called instead.
  * This function is only called for new requests from queue_command.
  */
-static struct CommandList *cmd_tagged_alloc(struct ctlr_info *h,
-					    struct scsi_cmnd *scmd)
+static struct CommandList *cmd_tagged_alloc(struct ctlr_info *h, int idx)
 {
-	int idx = hpsa_get_cmd_index(scmd);
 	struct CommandList *c = h->cmd_pool + idx;
 
-	if (idx < HPSA_NRESERVED_CMDS || idx >= h->nr_cmds) {
+	if (idx < 0 || idx >= h->nr_cmds) {
 		dev_err(&h->pdev->dev, "Bad block tag: %d not in [%d..%d]\n",
-			idx, HPSA_NRESERVED_CMDS, h->nr_cmds - 1);
+			idx, 0, h->nr_cmds - 1);
 		/* The index value comes from the block layer, so if it's out of
 		 * bounds, it's probably not our bug.
 		 */
@@ -6177,8 +6158,6 @@ static struct CommandList *cmd_tagged_alloc(struct ctlr_info *h,
 		if (idx != h->last_collision_tag) { /* Print once per tag */
 			dev_warn(&h->pdev->dev,
 				"%s: tag collision (tag=%d)\n", __func__, idx);
-			if (scmd)
-				scsi_print_command(scmd);
 			h->last_collision_tag = idx;
 		}
 		return NULL;
@@ -6205,60 +6184,23 @@ static void cmd_tagged_free(struct ctlr_info *h, struct CommandList *c)
 	(void)atomic_dec(&c->refcount);
 }
 
-/*
- * For operations that cannot sleep, a command block is allocated at init,
- * and managed by cmd_alloc() and cmd_free() using a simple bitmap to track
- * which ones are free or in use.  Lock must be held when calling this.
- * cmd_free() is the complement.
- * This function never gives up and returns NULL.  If it hangs,
- * another thread must call cmd_free() to free some tags.
- */
-
 static struct CommandList *cmd_alloc(struct ctlr_info *h)
 {
 	struct CommandList *c;
-	int refcount, i;
-	int offset = 0;
+	u32 idx;
 
-	/*
-	 * There is some *extremely* small but non-zero chance that that
-	 * multiple threads could get in here, and one thread could
-	 * be scanning through the list of bits looking for a free
-	 * one, but the free ones are always behind him, and other
-	 * threads sneak in behind him and eat them before he can
-	 * get to them, so that while there is always a free one, a
-	 * very unlucky thread might be starved anyway, never able to
-	 * beat the other threads.  In reality, this happens so
-	 * infrequently as to be indistinguishable from never.
-	 *
-	 * Note that we start allocating commands before the SCSI host structure
-	 * is initialized.  Since the search starts at bit zero, this
-	 * all works, since we have at least one command structure available;
-	 * however, it means that the structures with the low indexes have to be
-	 * reserved for driver-initiated requests, while requests from the block
-	 * layer will use the higher indexes.
-	 */
-
-	for (;;) {
-		i = find_next_zero_bit(h->cmd_pool_bits,
-					HPSA_NRESERVED_CMDS,
-					offset);
-		if (unlikely(i >= HPSA_NRESERVED_CMDS)) {
-			offset = 0;
-			continue;
-		}
-		c = h->cmd_pool + i;
-		refcount = atomic_inc_return(&c->refcount);
-		if (unlikely(refcount > 1)) {
-			cmd_free(h, c); /* already in use */
-			offset = (i + 1) % HPSA_NRESERVED_CMDS;
-			continue;
-		}
-		set_bit(i & (BITS_PER_LONG - 1),
-			h->cmd_pool_bits + (i / BITS_PER_LONG));
-		break; /* it's ours now. */
+	idx = scsi_host_get_internal_tag(h->scsi_host, REQ_NOWAIT);
+	if (idx == BLK_MQ_NO_TAG) {
+		dev_warn(&h->pdev->dev, "failed to allocate reserved cmd\n");
+		return NULL;
 	}
-	hpsa_cmd_partial_init(h, i, c);
+	c = cmd_tagged_alloc(h, idx);
+	if (!c) {
+		dev_warn(&h->pdev->dev, "failed to allocate reserved cmd %u\n",
+			 idx);
+		scsi_host_put_internal_tag(h->scsi_host, idx);
+		return NULL;
+	}
 	c->device = NULL;
 
 	/*
@@ -6267,23 +6209,22 @@ static struct CommandList *cmd_alloc(struct ctlr_info *h)
 	 */
 	c->retry_pending = false;
 
+	dev_dbg(&h->pdev->dev, "using reserved cmd %u\n", idx);
 	return c;
 }
 
-/*
- * This is the complementary operation to cmd_alloc().  Note, however, in some
- * corner cases it may also be used to free blocks allocated by
- * cmd_tagged_alloc() in which case the ref-count decrement does the trick and
- * the clear-bit is harmless.
- */
 static void cmd_free(struct ctlr_info *h, struct CommandList *c)
 {
-	if (atomic_dec_and_test(&c->refcount)) {
-		int i;
-
-		i = c - h->cmd_pool;
-		clear_bit(i & (BITS_PER_LONG - 1),
-			  h->cmd_pool_bits + (i / BITS_PER_LONG));
+	if (c->scsi_cmd == SCSI_CMD_IDLE) {
+		dev_warn(&h->pdev->dev, "freeing idle cmd\n");
+		return;
+	}
+	c->scsi_cmd = SCSI_CMD_IDLE;
+	cmd_tagged_free(h, c);
+	if (c->cmd_type == CMD_IOCTL_PEND) {
+		dev_dbg(&h->pdev->dev, "returning reserved tag %u\n",
+			(u32)c->cmdindex);
+		scsi_host_put_internal_tag(h->scsi_host, c->cmdindex);
 	}
 }
 
@@ -8035,8 +7976,6 @@ out_disable:
 
 static void hpsa_free_cmd_pool(struct ctlr_info *h)
 {
-	kfree(h->cmd_pool_bits);
-	h->cmd_pool_bits = NULL;
 	if (h->cmd_pool) {
 		dma_free_coherent(&h->pdev->dev,
 				h->nr_cmds * sizeof(struct CommandList),
@@ -8057,17 +7996,13 @@ static void hpsa_free_cmd_pool(struct ctlr_info *h)
 
 static int hpsa_alloc_cmd_pool(struct ctlr_info *h)
 {
-	h->cmd_pool_bits = kcalloc(DIV_ROUND_UP(h->nr_cmds, BITS_PER_LONG),
-				   sizeof(unsigned long),
-				   GFP_KERNEL);
 	h->cmd_pool = dma_alloc_coherent(&h->pdev->dev,
 		    h->nr_cmds * sizeof(*h->cmd_pool),
 		    &h->cmd_pool_dhandle, GFP_KERNEL);
 	h->errinfo_pool = dma_alloc_coherent(&h->pdev->dev,
 		    h->nr_cmds * sizeof(*h->errinfo_pool),
 		    &h->errinfo_pool_dhandle, GFP_KERNEL);
-	if ((h->cmd_pool_bits == NULL)
-	    || (h->cmd_pool == NULL)
+	if ((h->cmd_pool == NULL)
 	    || (h->errinfo_pool == NULL)) {
 		dev_err(&h->pdev->dev, "out of memory in %s", __func__);
 		goto clean_up;
