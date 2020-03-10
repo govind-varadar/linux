@@ -206,7 +206,6 @@ struct ctlr_info {
 	dma_addr_t		ioaccel2_cmd_pool_dhandle;
 	struct ErrorInfo 	*errinfo_pool;
 	dma_addr_t		errinfo_pool_dhandle;
-	unsigned long  		*cmd_pool_bits;
 	int			scan_finished;
 	u8			scan_waiting : 1;
 	spinlock_t		scan_lock;
@@ -216,6 +215,8 @@ struct ctlr_info {
 	spinlock_t devlock; /* to protect hba[ctlr]->dev[];  */
 	int ndevices; /* number of used elements in .dev[] array. */
 	struct hpsa_scsi_dev_t *dev[HPSA_MAX_DEVICES];
+	struct scsi_device *raid_ctrl_sdev;
+
 	/*
 	 * Performant mode tables.
 	 */
