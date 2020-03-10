@@ -454,17 +454,7 @@ struct CommandList {
 
 	bool retry_pending;
 	struct hpsa_scsi_dev_t *device;
-	atomic_t refcount; /* Must be last to avoid memset in hpsa_cmd_init() */
 } __aligned(COMMANDLIST_ALIGNMENT);
-
-/*
- * Make sure our embedded atomic variable is aligned. Otherwise we break atomic
- * operations on architectures that don't support unaligned atomics like IA64.
- *
- * The assert guards against reintroductin against unwanted __packed to
- * the struct CommandList.
- */
-static_assert(offsetof(struct CommandList, refcount) % __alignof__(atomic_t) == 0);
 
 /* Max S/G elements in I/O accelerator command */
 #define IOACCEL1_MAXSGENTRIES           24

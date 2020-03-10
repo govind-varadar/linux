@@ -266,7 +266,6 @@ static int hpsa_compat_ioctl(struct scsi_device *dev, unsigned int cmd,
 
 static void cmd_free(struct ctlr_info *h, struct CommandList *c);
 static struct CommandList *cmd_alloc(struct ctlr_info *h);
-static void cmd_tagged_free(struct ctlr_info *h, struct CommandList *c);
 static struct CommandList *cmd_tagged_alloc(struct ctlr_info *h, int idx);
 static int fill_cmd(struct CommandList *c, u8 cmd, struct ctlr_info *h,
 	void *buff, size_t size, u16 page_code, unsigned char *scsi3addr,
@@ -2482,7 +2481,6 @@ static void hpsa_cmd_resolve_and_free(struct ctlr_info *h,
 				      struct CommandList *c)
 {
 	hpsa_cmd_resolve_events(h, c);
-	cmd_tagged_free(h, c);
 }
 
 static void hpsa_cmd_free_and_done(struct ctlr_info *h,
@@ -5535,8 +5533,8 @@ static void hpsa_cmd_init(struct ctlr_info *h, int index,
 {
 	dma_addr_t cmd_dma_handle, err_dma_handle;
 
-	/* Zero out all of commandlist except the last field, refcount */
-	memset(c, 0, offsetof(struct CommandList, refcount));
+	/* Zero out all of commandlist */
+	memset(c, 0, sizeof(struct CommandList));
 	c->Header.tag = cpu_to_le64((u64) (index << DIRECT_LOOKUP_SHIFT));
 	cmd_dma_handle = h->cmd_pool_dhandle + index * sizeof(*c);
 	c->err_info = h->errinfo_pool + index;
@@ -5559,7 +5557,6 @@ static void hpsa_preinitialize_commands(struct ctlr_info *h)
 		struct CommandList *c = h->cmd_pool + i;
 
 		hpsa_cmd_init(h, i, c);
-		atomic_set(&c->refcount, 0);
 	}
 }
 
@@ -6133,9 +6130,8 @@ return_reset_status:
 
 /*
  * For operations with an associated SCSI command, a command block is allocated
- * at init, and managed by cmd_tagged_alloc() and cmd_tagged_free() using the
- * block request tag as an index into a table of entries.  cmd_tagged_free() is
- * the complement, although cmd_free() may be called instead.
+ * at init, and managed by cmd_tagged_alloc() and using the
+ * block request tag as an index into a table of entries.
  * This function is only called for new requests from queue_command.
  */
 static struct CommandList *cmd_tagged_alloc(struct ctlr_info *h, int idx)
@@ -6166,7 +6162,6 @@ static struct CommandList *cmd_tagged_alloc(struct ctlr_info *h, int idx)
 		return NULL;
 	}
 
-	atomic_inc(&c->refcount);
 	hpsa_cmd_partial_init(h, idx, c);
 
 	/*
@@ -6176,15 +6171,6 @@ static struct CommandList *cmd_tagged_alloc(struct ctlr_info *h, int idx)
 	c->retry_pending = false;
 
 	return c;
-}
-
-static void cmd_tagged_free(struct ctlr_info *h, struct CommandList *c)
-{
-	/*
-	 * Release our reference to the block.  We don't need to do anything
-	 * else to free it, because it is accessed by index.
-	 */
-	(void)atomic_dec(&c->refcount);
 }
 
 static struct CommandList *cmd_alloc(struct ctlr_info *h)
@@ -6223,7 +6209,6 @@ static void cmd_free(struct ctlr_info *h, struct CommandList *c)
 		return;
 	}
 	c->scsi_cmd = SCSI_CMD_IDLE;
-	cmd_tagged_free(h, c);
 	if (c->cmd_type == CMD_IOCTL_PEND) {
 		dev_dbg(&h->pdev->dev, "returning reserved tag %u\n",
 			(u32)c->cmdindex);
