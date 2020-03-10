@@ -349,7 +349,7 @@ struct asd_sas_phy {
 
 struct scsi_core {
 	struct Scsi_Host *shost;
-
+	struct scsi_device *shost_dev;
 };
 
 enum sas_ha_state {
@@ -609,6 +609,7 @@ struct sas_task_slow {
 	struct timer_list     timer;
 	struct completion     completion;
 	struct sas_task       *task;
+	struct scsi_cmnd      *scmd;
 };
 
 #define SAS_TASK_STATE_PENDING      1
@@ -618,7 +619,10 @@ struct sas_task_slow {
 #define SAS_TASK_AT_INITIATOR       16
 
 extern struct sas_task *sas_alloc_task(gfp_t flags);
-extern struct sas_task *sas_alloc_slow_task(gfp_t flags);
+extern struct sas_task *sas_alloc_slow_task(struct sas_ha_struct *ha,
+					    struct domain_device *dev,
+					    struct scsi_lun *lun,
+					    gfp_t flags);
 extern void sas_free_task(struct sas_task *task);
 
 struct sas_domain_function_template {

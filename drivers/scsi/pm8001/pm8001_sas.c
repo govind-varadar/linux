@@ -720,7 +720,9 @@ static int pm8001_exec_internal_tmf_task(struct domain_device *dev,
 		return TMF_RESP_FUNC_ESUPP;
 
 	for (retry = 0; retry < 3; retry++) {
-		task = sas_alloc_slow_task(GFP_KERNEL);
+		task = sas_alloc_slow_task(pm8001_ha->sas,
+					   pm8001_dev->sas_device,
+					   (struct scsi_lun *)lun, GFP_KERNEL);
 		if (!task)
 			return -ENOMEM;
 
@@ -798,7 +800,7 @@ ex_err:
 
 static int
 pm8001_exec_internal_task_abort(struct pm8001_hba_info *pm8001_ha,
-	struct pm8001_device *pm8001_dev, u32 flag,
+	struct pm8001_device *pm8001_dev, u8 *lun, u32 flag,
 	u32 task_tag)
 {
 	struct domain_device *dev = pm8001_dev->sas_device;
@@ -808,7 +810,8 @@ pm8001_exec_internal_task_abort(struct pm8001_hba_info *pm8001_ha,
 	struct sas_task *task = NULL;
 
 	for (retry = 0; retry < 3; retry++) {
-		task = sas_alloc_slow_task(GFP_KERNEL);
+		task = sas_alloc_slow_task(pm8001_ha->sas, dev,
+					   (struct scsi_lun *)lun, GFP_KERNEL);
 		if (!task)
 			return -ENOMEM;
 
@@ -885,14 +888,16 @@ static void pm8001_dev_gone_notify(struct domain_device *dev)
 	spin_lock_irqsave(&pm8001_ha->lock, flags);
 	if (pm8001_dev) {
 		u32 device_id = pm8001_dev->device_id;
+		struct scsi_lun lun;
 
+		int_to_scsilun(0, &lun);
 		PM8001_DISC_DBG(pm8001_ha,
 			pm8001_printk("found dev[%d:%x] is gone.\n",
 			pm8001_dev->device_id, pm8001_dev->dev_type));
 		if (pm8001_dev->running_req) {
 			spin_unlock_irqrestore(&pm8001_ha->lock, flags);
 			pm8001_exec_internal_task_abort(pm8001_ha,
-				pm8001_dev, 1, 0);
+				pm8001_dev, lun.scsi_lun, 1, 0);
 			while (pm8001_dev->running_req)
 				msleep(20);
 			spin_lock_irqsave(&pm8001_ha->lock, flags);
@@ -1002,6 +1007,9 @@ int pm8001_I_T_nexus_reset(struct domain_device *dev)
 	phy = sas_get_local_phy(dev);
 
 	if (dev_is_sata(dev)) {
+		struct scsi_lun lun;
+
+		int_to_scsilun(0, &lun);
 		if (scsi_is_sas_phy_local(phy)) {
 			rc = 0;
 			goto out;
@@ -1016,7 +1024,7 @@ int pm8001_I_T_nexus_reset(struct domain_device *dev)
 		}
 		msleep(2000);
 		rc = pm8001_exec_internal_task_abort(pm8001_ha,
-			pm8001_dev, 1, 0);
+			pm8001_dev, lun.scsi_lun, 1, 0);
 		if (rc) {
 			PM8001_EH_DBG(pm8001_ha,
 			pm8001_printk("task abort failed %x\n"
@@ -1044,7 +1052,9 @@ int pm8001_I_T_nexus_event_handler(struct domain_device *dev)
 	struct pm8001_device *pm8001_dev;
 	struct pm8001_hba_info *pm8001_ha;
 	struct sas_phy *phy;
+	struct scsi_lun lun;
 
+	int_to_scsilun(0, &lun);
 	if (!dev || !dev->lldd_dev)
 		return -1;
 
@@ -1064,7 +1074,7 @@ int pm8001_I_T_nexus_event_handler(struct domain_device *dev)
 		}
 		/* send internal ssp/sata/smp abort command to FW */
 		rc = pm8001_exec_internal_task_abort(pm8001_ha, pm8001_dev,
-						     1, 0);
+						     lun.scsi_lun, 1, 0);
 		msleep(100);
 
 		/* deregister the target device */
@@ -1080,7 +1090,7 @@ int pm8001_I_T_nexus_event_handler(struct domain_device *dev)
 	} else {
 		/* send internal ssp/sata/smp abort command to FW */
 		rc = pm8001_exec_internal_task_abort(pm8001_ha, pm8001_dev,
-						     1, 0);
+						     lun.scsi_lun, 1, 0);
 		msleep(100);
 
 		/* deregister the target device */
@@ -1108,8 +1118,8 @@ int pm8001_lu_reset(struct domain_device *dev, u8 *lun)
 	DECLARE_COMPLETION_ONSTACK(completion_setstate);
 	if (dev_is_sata(dev)) {
 		struct sas_phy *phy = sas_get_local_phy(dev);
-		rc = pm8001_exec_internal_task_abort(pm8001_ha, pm8001_dev,
-			1, 0);
+		rc = pm8001_exec_internal_task_abort(pm8001_ha, pm8001_dev ,
+			lun, 1, 0);
 		rc = sas_phy_reset(phy, 1);
 		sas_put_local_phy(phy);
 		pm8001_dev->setds_completion = &completion_setstate;
@@ -1220,9 +1230,10 @@ int pm8001_abort_task(struct sas_task *task)
 						   &tmf_task);
 		if (rc == TMF_RESP_FUNC_SUCC)
 			pm8001_exec_internal_task_abort(pm8001_ha, pm8001_dev,
-				0, tag);
+				lun.scsi_lun, 0, tag);
 	} else if (task->task_proto & SAS_PROTOCOL_SATA ||
 		task->task_proto & SAS_PROTOCOL_STP) {
+		memset(lun.scsi_lun, 0, sizeof(lun.scsi_lun));
 		if (pm8001_ha->chip_id == chip_8006) {
 			DECLARE_COMPLETION_ONSTACK(completion_reset);
 			DECLARE_COMPLETION_ONSTACK(completion);
@@ -1289,7 +1300,7 @@ int pm8001_abort_task(struct sas_task *task)
 			 * going to free the task.
 			 */
 			ret = pm8001_exec_internal_task_abort(pm8001_ha,
-				pm8001_dev, 1, tag);
+				pm8001_dev, lun.scsi_lun, 1, tag);
 			if (ret)
 				goto out;
 			ret = wait_for_completion_timeout(
@@ -1306,13 +1317,15 @@ int pm8001_abort_task(struct sas_task *task)
 			wait_for_completion(&completion);
 		} else {
 			rc = pm8001_exec_internal_task_abort(pm8001_ha,
-				pm8001_dev, 0, tag);
+				pm8001_dev, lun.scsi_lun, 0, tag);
 		}
 		rc = TMF_RESP_FUNC_COMPLETE;
 	} else if (task->task_proto & SAS_PROTOCOL_SMP) {
 		/* SMP */
+
+		int_to_scsilun(0, &lun);
 		rc = pm8001_exec_internal_task_abort(pm8001_ha, pm8001_dev,
-			0, tag);
+			lun.scsi_lun, 0, tag);
 
 	}
 out:
