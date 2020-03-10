@@ -186,6 +186,7 @@ out_free_options:
 static DEFINE_SPINLOCK(fcloop_lock);
 static LIST_HEAD(fcloop_lports);
 static LIST_HEAD(fcloop_nports);
+static DEFINE_IDA(fcloop_portid_ida);
 
 struct fcloop_lport {
 	struct nvme_fc_local_port *localport;
@@ -1026,7 +1027,7 @@ fcloop_create_local_port(struct device *dev, struct device_attribute *attr,
 	struct fcloop_lport *lport;
 	struct fcloop_lport_priv *lport_priv;
 	unsigned long flags;
-	int ret = -ENOMEM;
+	int ret = -ENOMEM, port_id;
 
 	lport = kzalloc(sizeof(*lport), GFP_KERNEL);
 	if (!lport)
@@ -1046,11 +1047,17 @@ fcloop_create_local_port(struct device *dev, struct device_attribute *attr,
 		goto out_free_opts;
 	}
 
+	port_id = ida_alloc_min(&fcloop_portid_ida, opts->fcaddr, GFP_KERNEL);
+	if (port_id < 0) {
+		ret = port_id;
+		goto out_free_opts;
+	}
+
 	memset(&pinfo, 0, sizeof(pinfo));
 	pinfo.node_name = opts->wwnn;
 	pinfo.port_name = opts->wwpn;
 	pinfo.port_role = opts->roles;
-	pinfo.port_id = opts->fcaddr;
+	pinfo.port_id = port_id;
 
 	ret = nvme_fc_register_localport(&pinfo, &fctemplate, NULL, &localport);
 	if (!ret) {
@@ -1065,7 +1072,7 @@ fcloop_create_local_port(struct device *dev, struct device_attribute *attr,
 		list_add_tail(&lport->lport_list, &fcloop_lports);
 		spin_unlock_irqrestore(&fcloop_lock, flags);
 	}
-
+	ida_free(&fcloop_portid_ida, port_id);
 out_free_opts:
 	kfree(opts);
 out_free_lport:
@@ -1141,7 +1148,7 @@ fcloop_alloc_nport(const char *buf, size_t count, bool remoteport)
 	struct fcloop_ctrl_options *opts;
 	unsigned long flags;
 	u32 opts_mask = (remoteport) ? RPORT_OPTS : TGTPORT_OPTS;
-	int ret;
+	int ret, port_id = 0;
 
 	opts = kzalloc(sizeof(*opts), GFP_KERNEL);
 	if (!opts)
@@ -1161,13 +1168,17 @@ fcloop_alloc_nport(const char *buf, size_t count, bool remoteport)
 	if (!newnport)
 		goto out_free_opts;
 
+	port_id = ida_alloc_min(&fcloop_portid_ida, opts->fcaddr, GFP_KERNEL);
+	if (port_id < 0)
+		goto out_free_newnport;
+
 	INIT_LIST_HEAD(&newnport->nport_list);
 	newnport->node_name = opts->wwnn;
 	newnport->port_name = opts->wwpn;
+	newnport->port_id = port_id;
 	if (opts->mask & NVMF_OPT_ROLES)
 		newnport->port_role = opts->roles;
-	if (opts->mask & NVMF_OPT_FCADDR)
-		newnport->port_id = opts->fcaddr;
+
 	kref_init(&newnport->ref);
 
 	spin_lock_irqsave(&fcloop_lock, flags);
@@ -1205,8 +1216,6 @@ fcloop_alloc_nport(const char *buf, size_t count, bool remoteport)
 				nport->lport = lport;
 			if (opts->mask & NVMF_OPT_ROLES)
 				nport->port_role = opts->roles;
-			if (opts->mask & NVMF_OPT_FCADDR)
-				nport->port_id = opts->fcaddr;
 			goto out_free_newnport;
 		}
 	}
@@ -1220,6 +1229,7 @@ fcloop_alloc_nport(const char *buf, size_t count, bool remoteport)
 
 out_invalid_opts:
 	spin_unlock_irqrestore(&fcloop_lock, flags);
+	ida_free(&fcloop_portid_ida, port_id);
 out_free_newnport:
 	kfree(newnport);
 out_free_opts:
