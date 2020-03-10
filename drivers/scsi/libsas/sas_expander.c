@@ -56,9 +56,12 @@ static int smp_execute_task_sg(struct domain_device *dev,
 {
 	int res, retry;
 	struct sas_task *task = NULL;
+	struct sas_ha_struct *ha = dev->port->ha;
 	struct sas_internal *i =
-		to_sas_internal(dev->port->ha->core.shost->transportt);
+		to_sas_internal(ha->core.shost->transportt);
+	struct scsi_lun lun;
 
+	int_to_scsilun(0, &lun);
 	mutex_lock(&dev->ex_dev.cmd_mutex);
 	for (retry = 0; retry < 3; retry++) {
 		if (test_bit(SAS_DEV_GONE, &dev->state)) {
@@ -66,7 +69,7 @@ static int smp_execute_task_sg(struct domain_device *dev,
 			break;
 		}
 
-		task = sas_alloc_slow_task(GFP_KERNEL);
+		task = sas_alloc_slow_task(ha, dev, &lun, GFP_KERNEL);
 		if (!task) {
 			res = -ENOMEM;
 			break;

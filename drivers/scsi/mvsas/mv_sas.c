@@ -1278,13 +1278,16 @@ static int mvs_exec_internal_tmf_task(struct domain_device *dev,
 				      u8 *lun, struct mvs_tmf_task *tmf)
 {
 	int res, retry;
+	struct sas_ha_struct *ha = dev->port->ha;
 	struct sas_task *task = NULL;
+	struct scsi_lun scsilun;
 
 	if (!(dev->tproto & SAS_PROTOCOL_SSP))
 		return TMF_RESP_FUNC_ESUPP;
 
+	memcpy(scsilun.scsi_lun, lun, 8);
 	for (retry = 0; retry < 3; retry++) {
-		task = sas_alloc_slow_task(GFP_KERNEL);
+		task = sas_alloc_slow_task(ha, dev, &scsilun, GFP_KERNEL);
 		if (!task)
 			return -ENOMEM;
 

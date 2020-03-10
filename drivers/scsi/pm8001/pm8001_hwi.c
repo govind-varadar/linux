@@ -1701,6 +1701,7 @@ static void pm8001_send_abort_all(struct pm8001_hba_info *pm8001_ha,
 	struct task_abort_req task_abort;
 	struct inbound_queue_table *circularQ;
 	u32 opc = OPC_INB_SATA_ABORT;
+	struct scsi_lun lun;
 	int ret;
 
 	if (!pm8001_ha_dev) {
@@ -1708,7 +1709,9 @@ static void pm8001_send_abort_all(struct pm8001_hba_info *pm8001_ha,
 		return;
 	}
 
-	task = sas_alloc_slow_task(GFP_ATOMIC);
+	int_to_scsilun(0, &lun);
+	task = sas_alloc_slow_task(pm8001_ha->sas, pm8001_ha_dev->sas_device,
+				   &lun, GFP_ATOMIC);
 
 	if (!task) {
 		pm8001_dbg(pm8001_ha, FAIL, "cannot allocate task\n");
@@ -1752,8 +1755,10 @@ static void pm8001_send_read_log(struct pm8001_hba_info *pm8001_ha,
 	struct domain_device *dev = pm8001_ha_dev->sas_device;
 	struct inbound_queue_table *circularQ;
 	u32 opc = OPC_INB_SATA_HOST_OPSTART;
+	struct scsi_lun lun;;
 
-	task = sas_alloc_slow_task(GFP_ATOMIC);
+	int_to_scsilun(0, &lun);
+	task = sas_alloc_slow_task(pm8001_ha->sas, dev, &lun, GFP_ATOMIC);
 
 	if (!task) {
 		pm8001_dbg(pm8001_ha, FAIL, "cannot allocate task !!!\n");

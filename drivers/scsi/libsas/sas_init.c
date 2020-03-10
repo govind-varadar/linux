@@ -14,6 +14,7 @@
 #include <scsi/sas_ata.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_device.h>
+#include <scsi/scsi_tcq.h>
 #include <scsi/scsi_transport.h>
 #include <scsi/scsi_transport_sas.h>
 
@@ -37,16 +38,36 @@ struct sas_task *sas_alloc_task(gfp_t flags)
 }
 EXPORT_SYMBOL_GPL(sas_alloc_task);
 
-struct sas_task *sas_alloc_slow_task(gfp_t flags)
+struct sas_task *sas_alloc_slow_task(struct sas_ha_struct *ha,
+				     struct domain_device *dev,
+				     struct scsi_lun *lun, gfp_t flags)
 {
 	struct sas_task *task = sas_alloc_task(flags);
-	struct sas_task_slow *slow = kmalloc(sizeof(*slow), flags);
+	struct Scsi_Host *shost = ha->core.shost;
+	struct sas_task_slow *slow;
 
-	if (!task || !slow) {
-		if (task)
-			kmem_cache_free(sas_task_cache, task);
-		kfree(slow);
+	if (!task)
 		return NULL;
+
+	slow = kzalloc(sizeof(*slow), flags);
+	if (!slow)
+		goto out_err_slow;
+
+	if (shost->nr_reserved_cmds) {
+		struct scsi_device *sdev;
+
+		if (dev && dev->starget) {
+			sdev = scsi_device_lookup_by_target(dev->starget,
+						    scsilun_to_int(lun));
+			if (!sdev)
+				goto out_err_scmd;
+		} else
+			sdev = ha->core.shost_dev;
+		slow->scmd = scsi_get_internal_cmd(sdev, DMA_BIDIRECTIONAL,
+						   REQ_NOWAIT);
+		if (!slow->scmd)
+			goto out_err_scmd;
+		ASSIGN_SAS_TASK(slow->scmd, task);
 	}
 
 	task->slow_task = slow;
@@ -55,13 +76,31 @@ struct sas_task *sas_alloc_slow_task(gfp_t flags)
 	init_completion(&slow->completion);
 
 	return task;
+
+out_err_scmd:
+	kfree(slow);
+out_err_slow:
+	kmem_cache_free(sas_task_cache, task);
+	return NULL;
 }
 EXPORT_SYMBOL_GPL(sas_alloc_slow_task);
 
 void sas_free_task(struct sas_task *task)
 {
 	if (task) {
-		kfree(task->slow_task);
+		/*
+		 * It could be good to just introduce separate sas_free_slow_task() to
+		 * avoid the following in the fastpath.
+		 */
+		if (task->slow_task) {
+			struct scsi_cmnd *scmd = task->slow_task->scmd;
+
+			if (scmd) {
+				ASSIGN_SAS_TASK(scmd, NULL);
+				scsi_put_internal_cmd(scmd);
+			}
+			kfree(task->slow_task);
+		}
 		kmem_cache_free(sas_task_cache, task);
 	}
 }
@@ -95,6 +134,7 @@ void sas_hash_addr(u8 *hashed, const u8 *sas_addr)
 
 int sas_register_ha(struct sas_ha_struct *sas_ha)
 {
+	struct Scsi_Host *shost = sas_ha->core.shost;
 	char name[64];
 	int error = 0;
 
@@ -111,6 +151,13 @@ int sas_register_ha(struct sas_ha_struct *sas_ha)
 
 	sas_ha->event_thres = SAS_PHY_SHUTDOWN_THRES;
 
+	if (shost->nr_reserved_cmds) {
+		sas_ha->core.shost_dev = scsi_get_host_dev(shost);
+		if (!sas_ha->core.shost_dev) {
+			pr_notice("couldn't register sas host device\n");
+			return -ENOMEM;
+		}
+	}
 	error = sas_register_phys(sas_ha);
 	if (error) {
 		pr_notice("couldn't register sas phys:%d\n", error);
