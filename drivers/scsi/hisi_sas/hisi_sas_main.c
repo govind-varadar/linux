@@ -179,14 +179,10 @@ static void hisi_sas_slot_index_set(struct hisi_hba *hisi_hba, int slot_idx)
 	set_bit(slot_idx, bitmap);
 }
 
-static int hisi_sas_slot_index_alloc(struct hisi_hba *hisi_hba,
-				     struct scsi_cmnd *scsi_cmnd)
+static int hisi_sas_slot_index_alloc(struct hisi_hba *hisi_hba)
 {
 	int index;
 	void *bitmap = hisi_hba->slot_index_tags;
-
-	if (scsi_cmnd)
-		return scsi_cmnd->request->tag;
 
 	spin_lock(&hisi_hba->lock);
 	index = find_next_zero_bit(bitmap, hisi_hba->slot_index_count,
@@ -444,6 +440,8 @@ static int hisi_sas_task_prep(struct sas_task *task,
 		} else {
 			scmd = task->uldd_task;
 		}
+	} else {
+		scmd = task->slow_task->scmd;
 	}
 
 	if (scmd) {
@@ -484,8 +482,10 @@ static int hisi_sas_task_prep(struct sas_task *task,
 
 	if (hisi_hba->hw->slot_index_alloc)
 		rc = hisi_hba->hw->slot_index_alloc(hisi_hba, device);
+	else if (scmd)
+		rc = scmd->request->tag;
 	else
-		rc = hisi_sas_slot_index_alloc(hisi_hba, scmd);
+		rc = hisi_sas_slot_index_alloc(hisi_hba);
 
 	if (rc < 0)
 		goto err_out_dif_dma_unmap;
@@ -1975,7 +1975,9 @@ hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba, int device_id,
 	port = to_hisi_sas_port(sas_port);
 
 	/* simply get a slot and send abort command */
-	rc = hisi_sas_slot_index_alloc(hisi_hba, NULL);
+	rc = = task->tag;
+	if (rc < 0)
+		rc = hisi_sas_slot_index_alloc(hisi_hba);
 	if (rc < 0)
 		goto err_out;
 
@@ -2683,6 +2685,7 @@ int hisi_sas_probe(struct platform_device *pdev,
 	} else {
 		shost->can_queue = HISI_SAS_UNRESERVED_IPTT;
 		shost->cmd_per_lun = HISI_SAS_UNRESERVED_IPTT;
+		shost->nr_reserved_cmds = HISI_SAS_RESERVED_IPTT;
 	}
 
 	sha->sas_ha_name = DRV_NAME;
