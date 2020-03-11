@@ -1892,39 +1892,36 @@ nvme_fc_update_sq_head(struct nvme_fc_queue *queue,
 {
 	struct nvme_completion *cqe = &rsp_iu->cqe;
 	u32 sq_size = queue->ctrl->ctrl.sqsize;
-	u32 rsn = be32_to_cpu(rsp_iu->rsn);
-	u32 sq_head, cur_sq_head, phase;
+	u32 rsn = be32_to_cpu(rsp_iu->rsn) & 0xFF;
+	u32 sq_head, cur_sq_head;
 
 	/*
 	 * Skip any out-of-order SQ head updates; as the underlying driver
 	 * operates on multiple queues we cannot guarantee that all cqes
 	 * are delivered in-order.
+	 * To avoid having to do two updates shift the rsn and the sqhd
+	 * pointer onto the same variable.
 	 */
-	phase = rsn / sq_size;
-	sq_head = (u32)cpu_to_le16(cqe->sq_head) + phase * sq_size;
+	sq_head = (u32)cpu_to_le16(cqe->sq_head) | (rsn << 16);
 	cur_sq_head = READ_ONCE(queue->sq_head);
 	while (cur_sq_head != sq_head) {
-		u32 cur_phase = cur_sq_head / sq_size;
+		u32 cur_rsn = cur_sq_head >> 16, tmp_sq_head;
 		trace_nvme_sqhead_update(queue->ctrl->ctrl.instance,
 					 queue->qnum, sq_size,
-					 cur_sq_head, cur_phase,
-					 sq_head, phase);
-		if (cur_sq_head > sq_head) {
+					 cur_sq_head & 0xFFFF, cur_rsn,
+					 sq_head & 0xFFFF, rsn);
+		if ((cur_sq_head & 0xFFFF) > (sq_head & 0xFFFF)) {
 			/*
 			 * Possible out-or-order completion.
 			 */
-			if (cur_phase == phase)
-				/* Same phase, drop. */
-				return;
-			if (phase != 0 && cur_phase > phase)
-				/*
-				 * Phase has not wrapped, but is
-				 * larger than the received one.
-				 * Drop.
-				 */
+			if (cur_rsn > rsn && rsn > sq_size / 2)
+				/* Out-of-order completion, drop */
 				return;
 		}
-		cur_sq_head = cmpxchg(&queue->sq_head, cur_sq_head, sq_head);
+		tmp_sq_head = cmpxchg(&queue->sq_head, cur_sq_head, sq_head);
+		if (tmp_sq_head == cur_sq_head)
+			break;
+		cur_sq_head = tmp_sq_head;
 	}
 }
 
@@ -2563,7 +2560,7 @@ nvme_fc_unmap_data(struct nvme_fc_ctrl *ctrl, struct request *rq,
 
 static int nvme_fc_update_sq_tail(struct nvme_fc_queue *queue, int incr)
 {
-	u32 old_sqtl, new_sqtl, tmp_sqtl;
+	u32 old_sqtl, new_sqtl, tmp_sqtl, sqhd, sq_window;
 	u32 sqsize = queue->ctrl->ctrl.sqsize;
 
 	old_sqtl = READ_ONCE(queue->sq_tail);
@@ -2575,10 +2572,15 @@ static int nvme_fc_update_sq_tail(struct nvme_fc_queue *queue, int incr)
 		new_sqtl = (old_sqtl + sqsize + incr) % sqsize;
 		tmp_sqtl = cmpxchg(&queue->sq_tail, old_sqtl, new_sqtl);
 	} while (tmp_sqtl != old_sqtl);
+	sqhd = (READ_ONCE(queue->sq_head) & 0xFFFF);
+	if (new_sqtl > sqhd)
+		sq_window = sqsize - new_sqtl + sqhd;
+	else
+		sq_window = sqhd - new_sqtl;
 	trace_nvme_sqtail_update(queue->ctrl->ctrl.instance,
 				 queue->qnum, sqsize,
-				 old_sqtl, new_sqtl);
-	return new_sqtl;
+				 new_sqtl, sq_window);
+	return sq_window;
 }
 
 /*
