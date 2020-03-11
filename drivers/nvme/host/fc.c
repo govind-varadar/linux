@@ -12,6 +12,7 @@
 
 #include "nvme.h"
 #include "fabrics.h"
+#include "trace.h"
 #include <linux/nvme-fc-driver.h>
 #include <linux/nvme-fc.h>
 #include "fc.h"
@@ -33,6 +34,8 @@ struct nvme_fc_queue {
 	struct blk_mq_hw_ctx	*hctx;
 	void			*lldd_handle;
 	u32			qnum;
+	u32			sq_head;
+	u32			sq_tail;
 
 	u64			connection_id;
 	atomic_t		csn;
@@ -1884,6 +1887,44 @@ __nvme_fc_fcpop_chk_teardowns(struct nvme_fc_ctrl *ctrl,
 }
 
 static void
+nvme_fc_update_sq_head(struct nvme_fc_queue *queue,
+		       struct nvme_fc_ersp_iu *rsp_iu)
+{
+	struct nvme_completion *cqe = &rsp_iu->cqe;
+	u32 sq_size = queue->ctrl->ctrl.sqsize;
+	u32 rsn = be32_to_cpu(rsp_iu->rsn);
+	u32 sq_head, cur_sq_head, phase;
+
+	/*
+	 * Skip any out-of-order SQ head updates; as the underlying driver
+	 * operates on multiple queues we cannot guarantee that all cqes
+	 * are delivered in-order.
+	 */
+	phase = rsn / sq_size;
+	sq_head = (u32)cpu_to_le16(cqe->sq_head) + phase * sq_size;
+	cur_sq_head = READ_ONCE(queue->sq_head);
+	while (cur_sq_head != sq_head) {
+		u32 cur_phase = cur_sq_head / sq_size;
+		if (cur_sq_head > sq_head) {
+			/*
+			 * Possible out-or-order completion.
+			 */
+			if (cur_phase == phase)
+				/* Same phase, drop. */
+				return;
+			if (phase != 0 && cur_phase > phase)
+				/*
+				 * Phase has not wrapped, but is
+				 * larger than the received one.
+				 * Drop.
+				 */
+				return;
+		}
+		cur_sq_head = cmpxchg(&queue->sq_head, cur_sq_head, sq_head);
+	}
+}
+
+static void
 nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
 {
 	struct nvme_fc_fcp_op *op = fcp_req_to_fcp_op(req);
@@ -2010,6 +2051,12 @@ nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
 				cqe->command_id);
 			goto done;
 		}
+		if (!ctrl->ctrl.opts->disable_sqflow) {
+			nvme_fc_update_sq_head(queue, &op->rsp_iu);
+			trace_nvme_sq(rq, cqe->sq_head,
+				      READ_ONCE(queue->sq_head));
+		}
+
 		result = cqe->result;
 		status = cqe->status;
 		break;
@@ -2510,6 +2557,23 @@ nvme_fc_unmap_data(struct nvme_fc_ctrl *ctrl, struct request *rq,
 	freq->sg_cnt = 0;
 }
 
+static int nvme_fc_update_sq_tail(struct nvme_fc_queue *queue, int incr)
+{
+	u32 old_sqtl, new_sqtl, tmp_sqtl;
+	u32 sqsize = queue->ctrl->ctrl.sqsize;
+
+	old_sqtl = READ_ONCE(queue->sq_tail);
+	do {
+		/*
+		 * Shift the value by sqsize to avoid the
+		 * operand getting negative when decreasing
+		 */
+		new_sqtl = (old_sqtl + sqsize + incr) % sqsize;
+		tmp_sqtl = cmpxchg(&queue->sq_tail, old_sqtl, new_sqtl);
+	} while (tmp_sqtl != old_sqtl);
+	return new_sqtl;
+}
+
 /*
  * In FC, the queue is a logical thing. At transport connect, the target
  * creates its "queue" and returns a handle that is to be given to the
@@ -2551,6 +2615,9 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 
 	if (!nvme_fc_ctrl_get(ctrl))
 		return BLK_STS_IOERR;
+
+	if (!ctrl->ctrl.opts->disable_sqflow)
+		nvme_fc_update_sq_tail(queue, 1);
 
 	/* format the FC-NVME CMD IU and fcp_req */
 	cmdiu->connection_id = cpu_to_be64(queue->connection_id);
@@ -2617,6 +2684,9 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 					queue->lldd_handle, &op->fcp_req);
 
 	if (ret) {
+		if (!ctrl->ctrl.opts->disable_sqflow)
+			nvme_fc_update_sq_tail(queue, -1);
+
 		/*
 		 * If the lld fails to send the command is there an issue with
 		 * the csn value?  If the command that fails is the Connect,
