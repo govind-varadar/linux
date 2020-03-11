@@ -398,7 +398,7 @@ struct fcnvme_ls_disconnect_conn_rqst {
 	struct fcnvme_ls_rqst_w0		w0;
 	__be32					desc_list_len;
 	struct fcnvme_lsdesc_assoc_id		associd;
-	struct fcnvme_lsdesc_disconn_cmd	connectid;
+	struct fcnvme_lsdesc_conn_id		connectid;
 };
 
 struct fcnvme_ls_disconnect_conn_acc {
