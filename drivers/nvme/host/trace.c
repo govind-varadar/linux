@@ -254,3 +254,5 @@ const char *nvme_trace_disk_name(struct trace_seq *p, char *name)
 }
 
 EXPORT_TRACEPOINT_SYMBOL_GPL(nvme_sq);
+EXPORT_TRACEPOINT_SYMBOL_GPL(nvme_sqhead_update);
+EXPORT_TRACEPOINT_SYMBOL_GPL(nvme_sqtail_update);

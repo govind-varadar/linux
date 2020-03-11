@@ -164,6 +164,59 @@ TRACE_EVENT(nvme_sq,
 	)
 );
 
+TRACE_EVENT(nvme_sqhead_update,
+	TP_PROTO(int ctrl_id, int qid, int sqsize,
+		u32 cur_sq_head, int cur_phase,
+		u32 sq_head, int phase),
+	TP_ARGS(ctrl_id, qid, sqsize, cur_sq_head, cur_phase, sq_head, phase),
+	TP_STRUCT__entry(
+		__field(int, ctrl_id)
+		__field(int, qid)
+		__field(int, sqsize)
+		__field(u32, cur_sq_head)
+		__field(int, cur_phase)
+		__field(u32, sq_head)
+		__field(int, phase)
+	),
+	TP_fast_assign(
+		__entry->ctrl_id = ctrl_id;
+		__entry->qid = qid;
+		__entry->sqsize = sqsize;
+		__entry->cur_sq_head = cur_sq_head;
+		__entry->cur_phase = cur_phase;
+		__entry->sq_head = sq_head;
+		__entry->phase = phase;
+	),
+	TP_printk("nvme%d: sqid=%d, sqsize=%d, head=%u(%d) -> %u(%d)",
+		__entry->ctrl_id, __entry->qid, __entry->sqsize,
+		__entry->cur_sq_head, __entry->cur_phase,
+		__entry->sq_head, __entry->phase
+	)
+);
+
+TRACE_EVENT(nvme_sqtail_update,
+	TP_PROTO(int ctrl_id, int qid, int sqsize,
+		u32 cur_sq_tail, u32 sq_tail),
+	TP_ARGS(ctrl_id, qid, sqsize, cur_sq_tail, sq_tail),
+	TP_STRUCT__entry(
+		__field(int, ctrl_id)
+		__field(int, qid)
+		__field(int, sqsize)
+		__field(u32, cur_sq_tail)
+		__field(u32, sq_tail)
+	),
+	TP_fast_assign(
+		__entry->ctrl_id = ctrl_id;
+		__entry->qid = qid;
+		__entry->sqsize = sqsize;
+		__entry->cur_sq_tail = cur_sq_tail;
+		__entry->sq_tail = sq_tail;
+	),
+	TP_printk("nvme%d: sqid=%d, sqsize=%d, tail=%u -> %u",
+		__entry->ctrl_id, __entry->qid, __entry->sqsize,
+		__entry->cur_sq_tail, __entry->sq_tail
+	)
+);
 #endif /* _TRACE_NVME_H */
 
 #undef TRACE_INCLUDE_PATH
