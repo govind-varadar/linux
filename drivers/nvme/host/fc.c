@@ -2052,10 +2052,11 @@ nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
 				cqe->command_id);
 			goto done;
 		}
-		if (!ctrl->ctrl.opts->disable_sqflow) {
+		if (!ctrl->ctrl.opts->disable_sqflow && queue->qnum > 0) {
 			nvme_fc_update_sq_head(queue, &op->rsp_iu);
 			trace_nvme_sq(rq, cqe->sq_head,
 				      READ_ONCE(queue->sq_head));
+			blk_mq_start_stopped_hw_queue(queue->hctx, true);
 		}
 
 		result = cqe->result;
@@ -2625,8 +2626,12 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 	if (!nvme_fc_ctrl_get(ctrl))
 		return BLK_STS_IOERR;
 
-	if (!ctrl->ctrl.opts->disable_sqflow)
-		nvme_fc_update_sq_tail(queue, 1);
+	if (!ctrl->ctrl.opts->disable_sqflow && queue->qnum > 0)
+		if (nvme_fc_update_sq_tail(queue, 1) < 2) {
+			blk_mq_stop_hw_queue(queue->hctx);
+			nvme_fc_update_sq_tail(queue, -1);
+			return BLK_STS_DEV_RESOURCE;
+		}
 
 	/* format the FC-NVME CMD IU and fcp_req */
 	cmdiu->connection_id = cpu_to_be64(queue->connection_id);
@@ -2693,7 +2698,7 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 					queue->lldd_handle, &op->fcp_req);
 
 	if (ret) {
-		if (!ctrl->ctrl.opts->disable_sqflow)
+		if (!ctrl->ctrl.opts->disable_sqflow && queue->qnum > 0)
 			nvme_fc_update_sq_tail(queue, -1);
 
 		/*
