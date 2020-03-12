@@ -1939,6 +1939,7 @@ nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
 	union nvme_result result;
 	bool terminate_assoc = true;
 	int opstate;
+	u32 sq_head;
 
 	/*
 	 * WARNING:
@@ -2025,6 +2026,11 @@ nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
 				be32_to_cpu(op->cmd_iu.data_len));
 			goto done;
 		}
+		sq_head = READ_ONCE(queue->sq_head);
+		trace_nvme_sqhead_update(ctrl->ctrl.instance,
+					 queue->qnum, ctrl->ctrl.sqsize,
+					 sq_head & 0xFFFF, sq_head >> 16,
+					 sq_head & 0xFFFF, sq_head >> 16);
 		result.u64 = 0;
 		break;
 
