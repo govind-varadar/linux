@@ -217,6 +217,30 @@ TRACE_EVENT(nvme_sqtail_update,
 		__entry->cur_sq_tail, __entry->sq_tail
 	)
 );
+
+TRACE_EVENT(nvme_sqfree_update,
+	TP_PROTO(int ctrl_id, int qid, int sqsize,
+		 int old_sq_free, int sq_free),
+	TP_ARGS(ctrl_id, qid, sqsize, old_sq_free, sq_free),
+	TP_STRUCT__entry(
+		__field(int, ctrl_id)
+		__field(int, qid)
+		__field(int, sqsize)
+		__field(u32, old_sq_free)
+		__field(u32, sq_free)
+	),
+	TP_fast_assign(
+		__entry->ctrl_id = ctrl_id;
+		__entry->qid = qid;
+		__entry->sqsize = sqsize;
+		__entry->old_sq_free = old_sq_free;
+		__entry->sq_free = sq_free;
+	),
+	TP_printk("nvme%d: sqid=%d, sqsize=%d, sqfree=%d -> %d",
+		__entry->ctrl_id, __entry->qid, __entry->sqsize,
+		__entry->old_sq_free, __entry->sq_free
+	)
+);
 #endif /* _TRACE_NVME_H */
 
 #undef TRACE_INCLUDE_PATH

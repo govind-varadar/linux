@@ -35,10 +35,10 @@ struct nvme_fc_queue {
 	void			*lldd_handle;
 	u32			qnum;
 	u32			sq_head;
-	u32			sq_tail;
 
 	u64			connection_id;
 	atomic_t		csn;
+	atomic_t		sq_free;
 
 	unsigned long		flags;
 } __aligned(sizeof(u64));	/* alignment for other things alloc'd with */
@@ -1886,14 +1886,15 @@ __nvme_fc_fcpop_chk_teardowns(struct nvme_fc_ctrl *ctrl,
 	}
 }
 
-static void
+static int
 nvme_fc_update_sq_head(struct nvme_fc_queue *queue,
 		       struct nvme_fc_ersp_iu *rsp_iu)
 {
 	struct nvme_completion *cqe = &rsp_iu->cqe;
 	u32 sq_size = queue->ctrl->ctrl.sqsize;
 	u32 rsn = be32_to_cpu(rsp_iu->rsn) & 0xFF;
-	u32 sq_head, cur_sq_head;
+	u32 sq_head, cur_sq_head, old_sq_head;
+	int sq_free, old_sq_free;
 
 	/*
 	 * Skip any out-of-order SQ head updates; as the underlying driver
@@ -1903,7 +1904,8 @@ nvme_fc_update_sq_head(struct nvme_fc_queue *queue,
 	 * pointer onto the same variable.
 	 */
 	sq_head = (u32)cpu_to_le16(cqe->sq_head) | (rsn << 16);
-	cur_sq_head = READ_ONCE(queue->sq_head);
+	old_sq_head = cur_sq_head = READ_ONCE(queue->sq_head);
+	old_sq_free = atomic_read(&queue->sq_free);
 	while (cur_sq_head != sq_head) {
 		u32 cur_rsn = cur_sq_head >> 16, tmp_sq_head;
 		trace_nvme_sqhead_update(queue->ctrl->ctrl.instance,
@@ -1916,13 +1918,22 @@ nvme_fc_update_sq_head(struct nvme_fc_queue *queue,
 			 */
 			if (cur_rsn > rsn && rsn > sq_size / 2)
 				/* Out-of-order completion, drop */
-				return;
+				return atomic_read(&queue->sq_free);
 		}
 		tmp_sq_head = cmpxchg(&queue->sq_head, cur_sq_head, sq_head);
 		if (tmp_sq_head == cur_sq_head)
 			break;
 		cur_sq_head = tmp_sq_head;
 	}
+	old_sq_head &= 0xFFFF;
+	sq_head &= 0xFFFF;
+	if (old_sq_head > sq_head)
+		sq_head += sq_size;
+	sq_free = atomic_add_return(sq_head - old_sq_head,
+				    &queue->sq_free);
+	trace_nvme_sqfree_update(queue->ctrl->ctrl.instance,
+				 queue->qnum, sq_size, old_sq_free, sq_free);
+	return sq_free;
 }
 
 static void
@@ -1939,7 +1950,7 @@ nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
 	union nvme_result result;
 	bool terminate_assoc = true;
 	int opstate;
-	u32 sq_head;
+	u32 num_free;
 
 	/*
 	 * WARNING:
@@ -2026,11 +2037,6 @@ nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
 				be32_to_cpu(op->cmd_iu.data_len));
 			goto done;
 		}
-		sq_head = READ_ONCE(queue->sq_head);
-		trace_nvme_sqhead_update(ctrl->ctrl.instance,
-					 queue->qnum, ctrl->ctrl.sqsize,
-					 sq_head & 0xFFFF, sq_head >> 16,
-					 sq_head & 0xFFFF, sq_head >> 16);
 		result.u64 = 0;
 		break;
 
@@ -2059,10 +2065,16 @@ nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
 			goto done;
 		}
 		if (!ctrl->ctrl.opts->disable_sqflow && queue->qnum > 0) {
-			nvme_fc_update_sq_head(queue, &op->rsp_iu);
+			num_free = nvme_fc_update_sq_head(queue, &op->rsp_iu);
 			trace_nvme_sq(rq, cqe->sq_head,
 				      READ_ONCE(queue->sq_head));
-			blk_mq_start_stopped_hw_queue(queue->hctx, true);
+			if (num_free > 1 &&
+			    test_and_clear_bit(BLK_MQ_S_STOPPED,
+					       &queue->hctx->state)) {
+				dev_info(queue->ctrl->ctrl.device,
+					 "qid %d restart queue\n", queue->qnum);
+				blk_mq_run_hw_queue(queue->hctx, false);
+			}
 		}
 
 		result = cqe->result;
@@ -2264,6 +2276,7 @@ nvme_fc_init_queue(struct nvme_fc_ctrl *ctrl, int idx)
 	queue->ctrl = ctrl;
 	queue->qnum = idx;
 	atomic_set(&queue->csn, 0);
+	atomic_set(&queue->sq_free, ctrl->ctrl.sqsize);
 	queue->dev = ctrl->dev;
 
 	/*
@@ -2301,6 +2314,7 @@ nvme_fc_free_queue(struct nvme_fc_queue *queue)
 
 	queue->connection_id = 0;
 	atomic_set(&queue->csn, 0);
+	atomic_set(&queue->sq_free, queue->ctrl->ctrl.sqsize);
 }
 
 static void
@@ -2565,29 +2579,18 @@ nvme_fc_unmap_data(struct nvme_fc_ctrl *ctrl, struct request *rq,
 	freq->sg_cnt = 0;
 }
 
-static int nvme_fc_update_sq_tail(struct nvme_fc_queue *queue, int incr)
+static void nvme_fc_reset_sq_tail(struct nvme_fc_queue *queue)
 {
-	u32 old_sqtl, new_sqtl, tmp_sqtl, sqhd, sq_window;
-	u32 sqsize = queue->ctrl->ctrl.sqsize;
+	int sqfree, new_sqfree;
 
-	old_sqtl = READ_ONCE(queue->sq_tail);
-	do {
-		/*
-		 * Shift the value by sqsize to avoid the
-		 * operand getting negative when decreasing
-		 */
-		new_sqtl = (old_sqtl + sqsize + incr) % sqsize;
-		tmp_sqtl = cmpxchg(&queue->sq_tail, old_sqtl, new_sqtl);
-	} while (tmp_sqtl != old_sqtl);
-	sqhd = (READ_ONCE(queue->sq_head) & 0xFFFF);
-	if (new_sqtl > sqhd)
-		sq_window = sqsize - new_sqtl + sqhd;
-	else
-		sq_window = sqhd - new_sqtl;
-	trace_nvme_sqtail_update(queue->ctrl->ctrl.instance,
-				 queue->qnum, sqsize,
-				 new_sqtl, sq_window);
-	return sq_window;
+	if (queue->qnum == 0)
+		return;
+
+	sqfree = atomic_read(&queue->sq_free);
+	new_sqfree = atomic_inc_return(&queue->sq_free);
+	trace_nvme_sqfree_update(queue->ctrl->ctrl.instance,
+				 queue->qnum, queue->ctrl->ctrl.sqsize,
+				 sqfree, new_sqfree);
 }
 
 /*
@@ -2620,7 +2623,7 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 {
 	struct nvme_fc_cmd_iu *cmdiu = &op->cmd_iu;
 	struct nvme_command *sqe = &cmdiu->sqe;
-	int ret, opstate;
+	int ret, opstate, sq_free = 0;
 
 	/*
 	 * before attempting to send the io, check to see if we believe
@@ -2632,13 +2635,24 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 	if (!nvme_fc_ctrl_get(ctrl))
 		return BLK_STS_IOERR;
 
-	if (!ctrl->ctrl.opts->disable_sqflow && queue->qnum > 0)
-		if (nvme_fc_update_sq_tail(queue, 1) < 2) {
-			blk_mq_stop_hw_queue(queue->hctx);
-			nvme_fc_update_sq_tail(queue, -1);
-			return BLK_STS_DEV_RESOURCE;
+	if (!ctrl->ctrl.opts->disable_sqflow && queue->qnum > 0) {
+		sq_free = atomic_read(&queue->sq_free);
+		if (atomic_dec_and_test(&queue->sq_free)) {
+			dev_info(ctrl->ctrl.device, "qid %d sq dec\n",
+				 queue->qnum);
+			if (atomic_inc_return(&queue->sq_free) == 1) {
+				blk_mq_stop_hw_queue(queue->hctx);
+				dev_info(ctrl->ctrl.device, "qid %d stop\n",
+					 queue->qnum);
+				return BLK_STS_DEV_RESOURCE;
+			}
+			atomic_dec(&queue->sq_free);
+			smp_mb__after_atomic();
 		}
-
+		trace_nvme_sqfree_update(queue->ctrl->ctrl.instance,
+					 queue->qnum, queue->ctrl->ctrl.sqsize,
+					 sq_free, atomic_read(&queue->sq_free));
+	}
 	/* format the FC-NVME CMD IU and fcp_req */
 	cmdiu->connection_id = cpu_to_be64(queue->connection_id);
 	cmdiu->data_len = cpu_to_be32(data_len);
@@ -2684,6 +2698,8 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 		if (ret < 0) {
 			nvme_cleanup_cmd(op->rq);
 			nvme_fc_ctrl_put(ctrl);
+			if (!ctrl->ctrl.opts->disable_sqflow)
+				nvme_fc_reset_sq_tail(queue);
 			if (ret == -ENOMEM || ret == -EAGAIN)
 				return BLK_STS_RESOURCE;
 			return BLK_STS_IOERR;
@@ -2704,9 +2720,8 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 					queue->lldd_handle, &op->fcp_req);
 
 	if (ret) {
-		if (!ctrl->ctrl.opts->disable_sqflow && queue->qnum > 0)
-			nvme_fc_update_sq_tail(queue, -1);
-
+		if (!ctrl->ctrl.opts->disable_sqflow)
+			nvme_fc_reset_sq_tail(queue);
 		/*
 		 * If the lld fails to send the command is there an issue with
 		 * the csn value?  If the command that fails is the Connect,
@@ -2734,7 +2749,6 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 
 		return BLK_STS_RESOURCE;
 	}
-
 	return BLK_STS_OK;
 }
 
