@@ -1213,7 +1213,7 @@ nvme_fc_connect_admin_queue(struct nvme_fc_ctrl *ctrl,
 				sizeof(struct fcnvme_lsdesc_cr_assoc_cmd));
 
 	assoc_rqst->assoc_cmd.ersp_ratio = cpu_to_be16(ersp_ratio);
-	assoc_rqst->assoc_cmd.sqsize = cpu_to_be16(qsize - 1);
+	assoc_rqst->assoc_cmd.sqsize = cpu_to_be16(qsize);
 	/* Linux supports only Dynamic controllers */
 	assoc_rqst->assoc_cmd.cntlid = cpu_to_be16(0xffff);
 	uuid_copy(&assoc_rqst->assoc_cmd.hostid, &ctrl->ctrl.opts->host->id);
@@ -1335,7 +1335,7 @@ nvme_fc_connect_queue(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 				sizeof(struct fcnvme_lsdesc_cr_conn_cmd));
 	conn_rqst->connect_cmd.ersp_ratio = cpu_to_be16(ersp_ratio);
 	conn_rqst->connect_cmd.qid  = cpu_to_be16(queue->qnum);
-	conn_rqst->connect_cmd.sqsize = cpu_to_be16(qsize - 1);
+	conn_rqst->connect_cmd.sqsize = cpu_to_be16(qsize);
 
 	lsop->queue = queue;
 	lsreq->rqstaddr = conn_rqst;
@@ -2917,11 +2917,11 @@ nvme_fc_create_io_queues(struct nvme_fc_ctrl *ctrl)
 		goto out_free_tag_set;
 	}
 
-	ret = nvme_fc_create_hw_io_queues(ctrl, ctrl->ctrl.sqsize + 1);
+	ret = nvme_fc_create_hw_io_queues(ctrl, ctrl->ctrl.sqsize);
 	if (ret)
 		goto out_cleanup_blk_queue;
 
-	ret = nvme_fc_connect_io_queues(ctrl, ctrl->ctrl.sqsize + 1);
+	ret = nvme_fc_connect_io_queues(ctrl, ctrl->ctrl.sqsize);
 	if (ret)
 		goto out_delete_hw_queues;
 
@@ -2972,11 +2972,11 @@ nvme_fc_recreate_io_queues(struct nvme_fc_ctrl *ctrl)
 	if (ctrl->ctrl.queue_count == 1)
 		return 0;
 
-	ret = nvme_fc_create_hw_io_queues(ctrl, ctrl->ctrl.sqsize + 1);
+	ret = nvme_fc_create_hw_io_queues(ctrl, ctrl->ctrl.sqsize);
 	if (ret)
 		goto out_free_io_queues;
 
-	ret = nvme_fc_connect_io_queues(ctrl, ctrl->ctrl.sqsize + 1);
+	ret = nvme_fc_connect_io_queues(ctrl, ctrl->ctrl.sqsize);
 	if (ret)
 		goto out_delete_hw_queues;
 
