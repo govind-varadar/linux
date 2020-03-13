@@ -664,16 +664,18 @@ struct nvmet_ns *nvmet_ns_alloc(struct nvmet_subsys *subsys, u32 nsid)
 
 static void nvmet_update_sq_head(struct nvmet_req *req)
 {
-	if (req->sq->size) {
-		u32 old_sqhd, new_sqhd;
+	u32 old_sqhd, new_sqhd;
 
-		do {
-			old_sqhd = req->sq->sqhd;
-			new_sqhd = (old_sqhd + 1) % req->sq->size;
-		} while (cmpxchg(&req->sq->sqhd, old_sqhd, new_sqhd) !=
-					old_sqhd);
-	}
-	req->cqe->sq_head = cpu_to_le16(req->sq->sqhd & 0x0000FFFF);
+	if (WARN_ON(!req->sq->size))
+		return;
+
+	do {
+		old_sqhd = READ_ONCE(req->sq->sqhd);
+		new_sqhd = (old_sqhd + 1) % req->sq->size;
+	} while (cmpxchg(&req->sq->sqhd, old_sqhd, new_sqhd) !=
+		 old_sqhd);
+
+	req->cqe->sq_head = cpu_to_le16(new_sqhd & 0x0000FFFF);
 }
 
 static void nvmet_set_error(struct nvmet_req *req, u16 status)
