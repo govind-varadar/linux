@@ -2894,7 +2894,7 @@ nvme_fc_create_io_queues(struct nvme_fc_ctrl *ctrl)
 
 	memset(&ctrl->tag_set, 0, sizeof(ctrl->tag_set));
 	ctrl->tag_set.ops = &nvme_fc_mq_ops;
-	ctrl->tag_set.queue_depth = ctrl->ctrl.opts->queue_size;
+	ctrl->tag_set.queue_depth = ctrl->ctrl.opts->queue_size - 1;
 	ctrl->tag_set.reserved_tags = 1; /* fabric connect */
 	ctrl->tag_set.numa_node = ctrl->ctrl.numa_node;
 	ctrl->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
@@ -3139,13 +3139,13 @@ nvme_fc_create_association(struct nvme_fc_ctrl *ctrl)
 		opts->queue_size = ctrl->ctrl.maxcmd;
 	}
 
-	if (opts->queue_size > ctrl->ctrl.sqsize + 1) {
+	if (opts->queue_size > ctrl->ctrl.sqsize) {
 		/* warn if sqsize is lower than queue_size */
 		dev_warn(ctrl->ctrl.device,
 			"queue_size %zu > ctrl sqsize %u, reducing "
 			"to sqsize\n",
-			opts->queue_size, ctrl->ctrl.sqsize + 1);
-		opts->queue_size = ctrl->ctrl.sqsize + 1;
+			opts->queue_size, ctrl->ctrl.sqsize);
+		opts->queue_size = ctrl->ctrl.sqsize;
 	}
 
 	ret = nvme_fc_init_aen_ops(ctrl);
@@ -3571,7 +3571,7 @@ nvme_fc_init_ctrl(struct device *dev, struct nvmf_ctrl_options *opts,
 				lport->ops->max_hw_queues);
 	ctrl->ctrl.queue_count++;	/* +1 for admin queue */
 
-	ctrl->ctrl.sqsize = opts->queue_size - 1;
+	ctrl->ctrl.sqsize = opts->queue_size;
 	ctrl->ctrl.kato = opts->kato;
 	ctrl->ctrl.cntlid = 0xffff;
 

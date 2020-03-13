@@ -702,7 +702,7 @@ static int nvme_rdma_alloc_io_queues(struct nvme_rdma_ctrl *ctrl)
 
 	for (i = 1; i < ctrl->ctrl.queue_count; i++) {
 		ret = nvme_rdma_alloc_queue(ctrl, i,
-				ctrl->ctrl.sqsize + 1);
+				ctrl->ctrl.sqsize);
 		if (ret)
 			goto out_free_queues;
 	}
@@ -740,7 +740,7 @@ static struct blk_mq_tag_set *nvme_rdma_alloc_tagset(struct nvme_ctrl *nctrl,
 		set = &ctrl->tag_set;
 		memset(set, 0, sizeof(*set));
 		set->ops = &nvme_rdma_mq_ops;
-		set->queue_depth = nctrl->sqsize + 1;
+		set->queue_depth = nctrl->sqsize - 1;
 		set->reserved_tags = 1; /* fabric connect */
 		set->numa_node = nctrl->numa_node;
 		set->flags = BLK_MQ_F_SHOULD_MERGE;
@@ -998,17 +998,17 @@ static int nvme_rdma_setup_ctrl(struct nvme_rdma_ctrl *ctrl, bool new)
 		goto destroy_admin;
 	}
 
-	if (ctrl->ctrl.opts->queue_size > ctrl->ctrl.sqsize + 1) {
+	if (ctrl->ctrl.opts->queue_size > ctrl->ctrl.sqsize) {
 		dev_warn(ctrl->ctrl.device,
 			"queue_size %zu > ctrl sqsize %u, clamping down\n",
-			ctrl->ctrl.opts->queue_size, ctrl->ctrl.sqsize + 1);
+			ctrl->ctrl.opts->queue_size, ctrl->ctrl.sqsize);
 	}
 
-	if (ctrl->ctrl.sqsize + 1 > ctrl->ctrl.maxcmd) {
+	if (ctrl->ctrl.sqsize > ctrl->ctrl.maxcmd) {
 		dev_warn(ctrl->ctrl.device,
 			"sqsize %u > ctrl maxcmd %u, clamping down\n",
-			ctrl->ctrl.sqsize + 1, ctrl->ctrl.maxcmd);
-		ctrl->ctrl.sqsize = ctrl->ctrl.maxcmd - 1;
+			ctrl->ctrl.sqsize, ctrl->ctrl.maxcmd);
+		ctrl->ctrl.sqsize = ctrl->ctrl.maxcmd;
 	}
 
 	if (ctrl->ctrl.sgls & (1 << 20))
@@ -1603,13 +1603,8 @@ static int nvme_rdma_route_resolved(struct nvme_rdma_queue *queue)
 	 */
 	if (priv.qid == 0) {
 		priv.hrqsize = cpu_to_le16(NVME_AQ_DEPTH);
-		priv.hsqsize = cpu_to_le16(NVME_AQ_DEPTH - 1);
+		priv.hsqsize = cpu_to_le16(NVME_AQ_DEPTH);
 	} else {
-		/*
-		 * current interpretation of the fabrics spec
-		 * is at minimum you make hrqsize sqsize+1, or a
-		 * 1's based representation of sqsize.
-		 */
 		priv.hrqsize = cpu_to_le16(queue->queue_size);
 		priv.hsqsize = cpu_to_le16(queue->ctrl->ctrl.sqsize);
 	}
@@ -2019,7 +2014,7 @@ static struct nvme_ctrl *nvme_rdma_create_ctrl(struct device *dev,
 
 	ctrl->ctrl.queue_count = opts->nr_io_queues + opts->nr_write_queues +
 				opts->nr_poll_queues + 1;
-	ctrl->ctrl.sqsize = opts->queue_size - 1;
+	ctrl->ctrl.sqsize = opts->queue_size;
 	ctrl->ctrl.kato = opts->kato;
 
 	ret = -ENOMEM;

@@ -1554,7 +1554,7 @@ static struct blk_mq_tag_set *nvme_tcp_alloc_tagset(struct nvme_ctrl *nctrl,
 		set = &ctrl->tag_set;
 		memset(set, 0, sizeof(*set));
 		set->ops = &nvme_tcp_mq_ops;
-		set->queue_depth = nctrl->sqsize + 1;
+		set->queue_depth = nctrl->sqsize - 1;
 		set->reserved_tags = 1; /* fabric connect */
 		set->numa_node = NUMA_NO_NODE;
 		set->flags = BLK_MQ_F_SHOULD_MERGE;
@@ -1641,7 +1641,7 @@ static int __nvme_tcp_alloc_io_queues(struct nvme_ctrl *ctrl)
 
 	for (i = 1; i < ctrl->queue_count; i++) {
 		ret = nvme_tcp_alloc_queue(ctrl, i,
-				ctrl->sqsize + 1);
+				ctrl->sqsize);
 		if (ret)
 			goto out_free_queues;
 	}
@@ -1912,16 +1912,16 @@ static int nvme_tcp_setup_ctrl(struct nvme_ctrl *ctrl, bool new)
 		goto destroy_admin;
 	}
 
-	if (opts->queue_size > ctrl->sqsize + 1)
+	if (opts->queue_size > ctrl->sqsize)
 		dev_warn(ctrl->device,
 			"queue_size %zu > ctrl sqsize %u, clamping down\n",
-			opts->queue_size, ctrl->sqsize + 1);
+			opts->queue_size, ctrl->sqsize);
 
-	if (ctrl->sqsize + 1 > ctrl->maxcmd) {
+	if (ctrl->sqsize > ctrl->maxcmd) {
 		dev_warn(ctrl->device,
 			"sqsize %u > ctrl maxcmd %u, clamping down\n",
-			ctrl->sqsize + 1, ctrl->maxcmd);
-		ctrl->sqsize = ctrl->maxcmd - 1;
+			ctrl->sqsize, ctrl->maxcmd);
+		ctrl->sqsize = ctrl->maxcmd;
 	}
 
 	if (ctrl->queue_count > 1) {
@@ -2364,7 +2364,7 @@ static struct nvme_ctrl *nvme_tcp_create_ctrl(struct device *dev,
 	ctrl->ctrl.opts = opts;
 	ctrl->ctrl.queue_count = opts->nr_io_queues + opts->nr_write_queues +
 				opts->nr_poll_queues + 1;
-	ctrl->ctrl.sqsize = opts->queue_size - 1;
+	ctrl->ctrl.sqsize = opts->queue_size;
 	ctrl->ctrl.kato = opts->kato;
 
 	INIT_DELAYED_WORK(&ctrl->connect_work,
