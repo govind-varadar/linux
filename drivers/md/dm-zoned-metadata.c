@@ -1902,7 +1902,13 @@ again:
 		zone = NULL;
 		goto again;
 	}
+	if (dmz_is_meta(zone)) {
+		struct dmz_dev *dev = dmz_zone_to_dev(zmd, zone);
 
+		dmz_dev_warn(dev, "Zone %u has metadata", dmz_id(zmd, zone));
+		zone = NULL;
+		goto again;
+	}
 	return zone;
 }
 
