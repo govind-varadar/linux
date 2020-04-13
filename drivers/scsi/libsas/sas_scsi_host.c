@@ -830,6 +830,7 @@ int sas_target_alloc(struct scsi_target *starget)
 
 	kref_get(&found_dev->kref);
 	starget->hostdata = found_dev;
+	found_dev->starget = starget;
 	return 0;
 }
 
@@ -919,6 +920,7 @@ void sas_target_destroy(struct scsi_target *starget)
 		return;
 
 	starget->hostdata = NULL;
+	found_dev->starget = NULL;
 	sas_put_device(found_dev);
 }
 
