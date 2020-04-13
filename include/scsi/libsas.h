@@ -175,6 +175,7 @@ struct domain_device {
 
 	struct domain_device *parent;
 	struct list_head siblings; /* devices on the same level */
+	struct scsi_target *starget; /* Corresponding SCSI target device */
 	struct asd_sas_port *port;        /* shortcut to root of the tree */
 	struct sas_phy *phy;
 
