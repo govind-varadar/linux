@@ -472,7 +472,6 @@ struct pm8001_hba_info {
 	struct list_head	list;
 	unsigned long		flags;
 	spinlock_t		lock;/* host-wide lock */
-	spinlock_t		bitmap_lock;
 	struct pci_dev		*pdev;/* our device */
 	struct device		*dev;
 	struct pm8001_hba_memspace io_mem[6];
@@ -504,11 +503,11 @@ struct pm8001_hba_info {
 	u8			sas_addr[SAS_ADDR_SIZE];
 	struct sas_ha_struct	*sas;/* SCSI/SAS glue */
 	struct Scsi_Host	*shost;
+	struct scsi_device	*host_dev;
 	u32			chip_id;
 	const struct pm8001_chip_info	*chip;
 	struct completion	*nvmd_completion;
 	int			tags_num;
-	unsigned long		*tags;
 	struct pm8001_phy	phy[PM8001_MAX_PHYS];
 	struct pm8001_port	port[PM8001_MAX_PHYS];
 	u32			id;
@@ -631,11 +630,11 @@ struct fw_control_ex {
 extern struct workqueue_struct *pm8001_wq;
 
 /******************** function prototype *********************/
-int pm8001_tag_alloc(struct pm8001_hba_info *pm8001_ha, u32 *tag_out);
-void pm8001_tag_init(struct pm8001_hba_info *pm8001_ha);
+u32 pm8001_tag_alloc(struct pm8001_hba_info *pm8001_ha,
+		     struct domain_device *dev);
 u32 pm8001_get_ncq_tag(struct sas_task *task, u32 *tag);
 void pm8001_ccb_task_free(struct pm8001_hba_info *pm8001_ha,
-	struct sas_task *task, struct pm8001_ccb_info *ccb, u32 ccb_idx);
+	struct sas_task *task, struct pm8001_ccb_info *ccb);
 int pm8001_phy_control(struct asd_sas_phy *sas_phy, enum phy_func func,
 	void *funcdata);
 void pm8001_scan_start(struct Scsi_Host *shost);
@@ -732,10 +731,9 @@ extern struct device_attribute *pm8001_host_attrs[];
 
 static inline void
 pm8001_ccb_task_free_done(struct pm8001_hba_info *pm8001_ha,
-			struct sas_task *task, struct pm8001_ccb_info *ccb,
-			u32 ccb_idx)
+			struct sas_task *task, struct pm8001_ccb_info *ccb)
 {
-	pm8001_ccb_task_free(pm8001_ha, task, ccb, ccb_idx);
+	pm8001_ccb_task_free(pm8001_ha, task, ccb);
 	smp_mb(); /*in order to force CPU ordering*/
 	spin_unlock(&pm8001_ha->lock);
 	task->task_done(task);

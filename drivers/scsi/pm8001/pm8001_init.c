@@ -177,7 +177,6 @@ static void pm8001_free(struct pm8001_hba_info *pm8001_ha)
 	}
 	PM8001_CHIP_DISP->chip_iounmap(pm8001_ha);
 	flush_workqueue(pm8001_wq);
-	kfree(pm8001_ha->tags);
 	kfree(pm8001_ha);
 }
 
@@ -263,14 +262,13 @@ static u32 pm8001_request_irq(struct pm8001_hba_info *pm8001_ha);
  * @ent: PCI device ID structure to match on
  */
 static int pm8001_alloc(struct pm8001_hba_info *pm8001_ha,
-			const struct pci_device_id *ent)
+			 const struct pci_device_id *ent)
 {
 	int i, count = 0, rc = 0;
 	u32 ci_offset, ib_offset, ob_offset, pi_offset;
 	struct inbound_queue_table *circularQ;
 
 	spin_lock_init(&pm8001_ha->lock);
-	spin_lock_init(&pm8001_ha->bitmap_lock);
 	pm8001_dbg(pm8001_ha, INIT, "pm8001_alloc: PHY:%x\n",
 		   pm8001_ha->chip->n_phy);
 
@@ -414,8 +412,6 @@ static int pm8001_alloc(struct pm8001_hba_info *pm8001_ha,
 		atomic_set(&pm8001_ha->devices[i].running_req, 0);
 	}
 	pm8001_ha->flags = PM8001F_INIT_TIME;
-	/* Initialize tags */
-	pm8001_tag_init(pm8001_ha);
 	return 0;
 
 err_out_shost:
@@ -621,7 +617,7 @@ exit:
  * @shost: scsi host which has been allocated outside
  * @chip_info: our ha struct.
  */
-static void  pm8001_post_sas_ha_init(struct Scsi_Host *shost,
+static bool  pm8001_post_sas_ha_init(struct Scsi_Host *shost,
 				     const struct pm8001_chip_info *chip_info)
 {
 	int i = 0;
@@ -642,6 +638,12 @@ static void  pm8001_post_sas_ha_init(struct Scsi_Host *shost,
 	sha->sas_addr = &pm8001_ha->sas_addr[0];
 	sha->num_phys = chip_info->n_phy;
 	sha->core.shost = shost;
+
+	pm8001_ha->host_dev = scsi_get_host_dev(pm8001_ha->shost);
+	if (!pm8001_ha->host_dev)
+		return false;
+
+	return true;
 }
 
 /**
@@ -1136,7 +1138,11 @@ static int pm8001_pci_probe(struct pci_dev *pdev,
 	if (rc)
 		goto err_out_shost;
 
-	pm8001_post_sas_ha_init(shost, chip);
+	if (!pm8001_post_sas_ha_init(shost, chip)) {
+		pm8001_dbg(pm8001_ha, FAIL,
+			   "pm8001_post_sas_ha_init failed\n");
+		goto err_out_shost;
+	}
 	rc = sas_register_ha(SHOST_TO_SAS_HA(shost));
 	if (rc) {
 		pm8001_dbg(pm8001_ha, FAIL,
@@ -1183,10 +1189,6 @@ pm8001_init_ccb_tag(struct pm8001_hba_info *pm8001_ha, struct Scsi_Host *shost,
 	/* Update to the scsi host*/
 	can_queue = ccb_count - PM8001_RESERVE_SLOT;
 	shost->can_queue = can_queue;
-
-	pm8001_ha->tags = kzalloc(ccb_count, GFP_KERNEL);
-	if (!pm8001_ha->tags)
-		goto err_out;
 
 	/* Memory region for ccb_info*/
 	pm8001_ha->ccb_info =
