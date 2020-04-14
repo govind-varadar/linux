@@ -42,60 +42,39 @@
 #include "pm8001_sas.h"
 
 /**
- * pm8001_find_tag - from sas task to find out  tag that belongs to this task
- * @task: the task sent to the LLDD
- * @tag: the found tag associated with the task
- */
-static int pm8001_find_tag(struct sas_task *task, u32 *tag)
-{
-	if (task->lldd_task) {
-		struct pm8001_ccb_info *ccb;
-		ccb = task->lldd_task;
-		*tag = ccb->ccb_tag;
-		return 1;
-	}
-	return 0;
-}
-
-/**
   * pm8001_tag_free - free the no more needed tag
   * @pm8001_ha: our hba struct
   * @tag: the found tag associated with the task
   */
 void pm8001_tag_free(struct pm8001_hba_info *pm8001_ha, u32 tag)
 {
-	void *bitmap = pm8001_ha->tags;
-	clear_bit(tag, bitmap);
+	struct scsi_cmnd *scmd = scsi_host_find_tag(pm8001_ha->shost, tag);
+	struct sas_task *task;
+
+	if (WARN_ON(!scmd))
+		return;
+	task = (void *)scmd->host_scribble;
+	sas_free_task(task);
 }
 
 /**
   * pm8001_tag_alloc - allocate a empty tag for task used.
   * @pm8001_ha: our hba struct
-  * @tag_out: the found empty tag .
+  * @dev: device from which the tag should be allocated or NULL
   */
-inline int pm8001_tag_alloc(struct pm8001_hba_info *pm8001_ha, u32 *tag_out)
+inline u32 pm8001_tag_alloc(struct pm8001_hba_info *pm8001_ha,
+			    struct domain_device *dev)
 {
-	unsigned int tag;
-	void *bitmap = pm8001_ha->tags;
-	unsigned long flags;
+	struct sas_task *task;
+	struct scsi_lun lun;
 
-	spin_lock_irqsave(&pm8001_ha->bitmap_lock, flags);
-	tag = find_first_zero_bit(bitmap, pm8001_ha->tags_num);
-	if (tag >= pm8001_ha->tags_num) {
-		spin_unlock_irqrestore(&pm8001_ha->bitmap_lock, flags);
-		return -SAS_QUEUE_FULL;
-	}
-	set_bit(tag, bitmap);
-	spin_unlock_irqrestore(&pm8001_ha->bitmap_lock, flags);
-	*tag_out = tag;
-	return 0;
-}
+	int_to_scsilun(0, &lun);
+	task = sas_alloc_slow_task(pm8001_ha->sas, dev,
+				   &lun, GFP_KERNEL);
+	if (!task)
+		return -1;
 
-void pm8001_tag_init(struct pm8001_hba_info *pm8001_ha)
-{
-	int i;
-	for (i = 0; i < pm8001_ha->tags_num; ++i)
-		pm8001_tag_free(pm8001_ha, i);
+	return task->tag;
 }
 
  /**
@@ -386,7 +365,7 @@ static int pm8001_task_exec(struct sas_task *task,
 	struct pm8001_port *port = NULL;
 	struct sas_task *t = task;
 	struct pm8001_ccb_info *ccb;
-	u32 tag = 0xdeadbeef, rc = 0, n_elem = 0;
+	u32 rc = 0, n_elem = 0;
 	unsigned long flags = 0;
 	enum sas_protocol task_proto = t->task_proto;
 
@@ -430,10 +409,13 @@ static int pm8001_task_exec(struct sas_task *task,
 				continue;
 			}
 		}
-		rc = pm8001_tag_alloc(pm8001_ha, &tag);
-		if (rc)
+		if (task->tag == -1) {
+			dev_printk(KERN_ERR, pm8001_ha->dev,
+				"invalid sas_task tag\n");
+			rc = -EINVAL;
 			goto err_out;
-		ccb = &pm8001_ha->ccb_info[tag];
+		}
+		ccb = &pm8001_ha->ccb_info[task->tag];
 
 		if (!sas_protocol_ata(task_proto)) {
 			if (t->num_scatter) {
@@ -443,7 +425,7 @@ static int pm8001_task_exec(struct sas_task *task,
 					t->data_dir);
 				if (!n_elem) {
 					rc = -ENOMEM;
-					goto err_out_tag;
+					goto err_out;
 				}
 			}
 		} else {
@@ -452,7 +434,7 @@ static int pm8001_task_exec(struct sas_task *task,
 
 		t->lldd_task = ccb;
 		ccb->n_elem = n_elem;
-		ccb->ccb_tag = tag;
+		ccb->ccb_tag = task->tag;
 		ccb->task = t;
 		ccb->device = pm8001_dev;
 		switch (task_proto) {
@@ -480,7 +462,7 @@ static int pm8001_task_exec(struct sas_task *task,
 		if (rc) {
 			PM8001_IO_DBG(pm8001_ha,
 				pm8001_printk("rc is %x\n", rc));
-			goto err_out_tag;
+			goto err_out;
 		}
 		/* TODO: select normal or high priority */
 		spin_lock(&t->task_state_lock);
@@ -491,8 +473,6 @@ static int pm8001_task_exec(struct sas_task *task,
 	rc = 0;
 	goto out_done;
 
-err_out_tag:
-	pm8001_tag_free(pm8001_ha, tag);
 err_out:
 	dev_printk(KERN_ERR, pm8001_ha->dev, "pm8001 exec failed[%d]!\n", rc);
 	if (!sas_protocol_ata(task_proto))
@@ -520,10 +500,9 @@ int pm8001_queue_command(struct sas_task *task, gfp_t gfp_flags)
   * @pm8001_ha: our hba card information
   * @ccb: the ccb which attached to ssp task
   * @task: the task to be free.
-  * @ccb_idx: ccb index.
   */
 void pm8001_ccb_task_free(struct pm8001_hba_info *pm8001_ha,
-	struct sas_task *task, struct pm8001_ccb_info *ccb, u32 ccb_idx)
+	struct sas_task *task, struct pm8001_ccb_info *ccb)
 {
 	if (!ccb->task)
 		return;
@@ -551,7 +530,6 @@ void pm8001_ccb_task_free(struct pm8001_hba_info *pm8001_ha,
 	ccb->task = NULL;
 	ccb->ccb_tag = 0xFFFFFFFF;
 	ccb->open_retry = 0;
-	pm8001_tag_free(pm8001_ha, ccb_idx);
 }
 
  /**
@@ -805,7 +783,6 @@ pm8001_exec_internal_task_abort(struct pm8001_hba_info *pm8001_ha,
 {
 	struct domain_device *dev = pm8001_dev->sas_device;
 	int res, retry;
-	u32 ccb_tag;
 	struct pm8001_ccb_info *ccb;
 	struct sas_task *task = NULL;
 
@@ -822,17 +799,17 @@ pm8001_exec_internal_task_abort(struct pm8001_hba_info *pm8001_ha,
 		task->slow_task->timer.expires = jiffies + PM8001_TASK_TIMEOUT * HZ;
 		add_timer(&task->slow_task->timer);
 
-		res = pm8001_tag_alloc(pm8001_ha, &ccb_tag);
-		if (res)
-			return res;
-		ccb = &pm8001_ha->ccb_info[ccb_tag];
+		if (task->tag == -1)
+			return -SAS_QUEUE_FULL;
+
+		ccb = &pm8001_ha->ccb_info[task->tag];
 		ccb->device = pm8001_dev;
-		ccb->ccb_tag = ccb_tag;
+		ccb->ccb_tag = task->tag;
 		ccb->task = task;
 		ccb->n_elem = 0;
 
 		res = PM8001_CHIP_DISP->task_abort(pm8001_ha,
-			pm8001_dev, flag, task_tag, ccb_tag);
+			pm8001_dev, flag, task_tag, task->tag);
 
 		if (res) {
 			del_timer(&task->slow_task->timer);
@@ -973,11 +950,11 @@ void pm8001_open_reject_retry(
 				& SAS_TASK_STATE_ABORTED))) {
 			spin_unlock_irqrestore(&task->task_state_lock,
 				flags1);
-			pm8001_ccb_task_free(pm8001_ha, task, ccb, tag);
+			pm8001_ccb_task_free(pm8001_ha, task, ccb);
 		} else {
 			spin_unlock_irqrestore(&task->task_state_lock,
 				flags1);
-			pm8001_ccb_task_free(pm8001_ha, task, ccb, tag);
+			pm8001_ccb_task_free(pm8001_ha, task, ccb);
 			mb();/* in order to force CPU ordering */
 			spin_unlock_irqrestore(&pm8001_ha->lock, flags);
 			task->task_done(task);
@@ -1139,7 +1116,6 @@ int pm8001_lu_reset(struct domain_device *dev, u8 *lun)
 /* optional SAM-3 */
 int pm8001_query_task(struct sas_task *task)
 {
-	u32 tag = 0xdeadbeef;
 	int i = 0;
 	struct scsi_lun lun;
 	struct pm8001_tmf_task tmf_task;
@@ -1154,8 +1130,7 @@ int pm8001_query_task(struct sas_task *task)
 			pm8001_find_ha_by_dev(dev);
 
 		int_to_scsilun(cmnd->device->lun, &lun);
-		rc = pm8001_find_tag(task, &tag);
-		if (rc == 0) {
+		if (task->tag == -1) {
 			rc = TMF_RESP_FUNC_FAILED;
 			return rc;
 		}
@@ -1164,7 +1139,7 @@ int pm8001_query_task(struct sas_task *task)
 			printk(KERN_INFO "%02x ", cmnd->cmnd[i]);
 		printk(KERN_INFO "]\n");
 		tmf_task.tmf = TMF_QUERY_TASK;
-		tmf_task.tag_of_task_to_be_managed = tag;
+		tmf_task.tag_of_task_to_be_managed = task->tag;
 
 		rc = pm8001_exec_internal_tmf_task(dev, lun.scsi_lun, &tmf_task);
 		switch (rc) {
@@ -1205,8 +1180,7 @@ int pm8001_abort_task(struct sas_task *task)
 	pm8001_dev = dev->lldd_dev;
 	pm8001_ha = pm8001_find_ha_by_dev(dev);
 	phy_id = pm8001_dev->attached_phy;
-	ret = pm8001_find_tag(task, &tag);
-	if (ret == 0) {
+	if (task->tag == -1) {
 		pm8001_printk("no tag for task:%p\n", task);
 		return TMF_RESP_FUNC_FAILED;
 	}

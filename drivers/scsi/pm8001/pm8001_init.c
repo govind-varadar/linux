@@ -176,7 +176,6 @@ static void pm8001_free(struct pm8001_hba_info *pm8001_ha)
 	}
 	PM8001_CHIP_DISP->chip_iounmap(pm8001_ha);
 	flush_workqueue(pm8001_wq);
-	kfree(pm8001_ha->tags);
 	kfree(pm8001_ha);
 }
 
@@ -260,11 +259,10 @@ static u32 pm8001_request_irq(struct pm8001_hba_info *pm8001_ha);
  *
  */
 static int pm8001_alloc(struct pm8001_hba_info *pm8001_ha,
-			const struct pci_device_id *ent)
+			 const struct pci_device_id *ent)
 {
 	int i;
 	spin_lock_init(&pm8001_ha->lock);
-	spin_lock_init(&pm8001_ha->bitmap_lock);
 	PM8001_INIT_DBG(pm8001_ha,
 		pm8001_printk("pm8001_alloc: PHY:%x\n",
 				pm8001_ha->chip->n_phy));
@@ -276,9 +274,6 @@ static int pm8001_alloc(struct pm8001_hba_info *pm8001_ha,
 		INIT_LIST_HEAD(&pm8001_ha->port[i].list);
 	}
 
-	pm8001_ha->tags = kzalloc(PM8001_MAX_CCB, GFP_KERNEL);
-	if (!pm8001_ha->tags)
-		goto err_out;
 	/* MPI Memory region 1 for AAP Event Log for fw */
 	pm8001_ha->memoryMap.region[AAP1].num_elements = 1;
 	pm8001_ha->memoryMap.region[AAP1].element_size = PM8001_EVENT_LOG_SIZE;
@@ -378,7 +373,7 @@ static int pm8001_alloc(struct pm8001_hba_info *pm8001_ha,
 				PM8001_FAIL_DBG(pm8001_ha,
 					pm8001_printk("Mem%d alloc failed\n",
 					i));
-				goto err_out;
+				return false;
 		}
 	}
 
@@ -400,11 +395,7 @@ static int pm8001_alloc(struct pm8001_hba_info *pm8001_ha,
 		++pm8001_ha->tags_num;
 	}
 	pm8001_ha->flags = PM8001F_INIT_TIME;
-	/* Initialize tags */
-	pm8001_tag_init(pm8001_ha);
-	return 0;
-err_out:
-	return 1;
+	return true;
 }
 
 /**
@@ -589,7 +580,7 @@ exit:
  * @shost: scsi host which has been allocated outside
  * @chip_info: our ha struct.
  */
-static void  pm8001_post_sas_ha_init(struct Scsi_Host *shost,
+static bool  pm8001_post_sas_ha_init(struct Scsi_Host *shost,
 				     const struct pm8001_chip_info *chip_info)
 {
 	int i = 0;
@@ -610,6 +601,13 @@ static void  pm8001_post_sas_ha_init(struct Scsi_Host *shost,
 	sha->sas_addr = &pm8001_ha->sas_addr[0];
 	sha->num_phys = chip_info->n_phy;
 	sha->core.shost = shost;
+
+	pm8001_ha->host_dev = scsi_get_virtual_dev(pm8001_ha->shost, 0,
+						   PM8001_MAX_DEVICES);
+	if (!pm8001_ha->host_dev)
+		return false;
+
+	return true;
 }
 
 /**
@@ -1108,7 +1106,11 @@ static int pm8001_pci_probe(struct pci_dev *pdev,
 	if (pm8001_configure_phy_settings(pm8001_ha))
 		goto err_out_shost;
 
-	pm8001_post_sas_ha_init(shost, chip);
+	if (!pm8001_post_sas_ha_init(shost, chip)) {
+		PM8001_FAIL_DBG(pm8001_ha, pm8001_printk(
+					"pm8001_post_sas_ha_init failed\n"));
+		goto err_out_shost;
+	}
 	rc = sas_register_ha(SHOST_TO_SAS_HA(shost));
 	if (rc) {
 		PM8001_FAIL_DBG(pm8001_ha, pm8001_printk(
