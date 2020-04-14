@@ -149,7 +149,7 @@ static struct sas_task *sas_create_task(struct scsi_cmnd *cmd,
 	memcpy(task->ssp_task.LUN, &lun.scsi_lun, 8);
 	task->ssp_task.task_attr = TASK_ATTR_SIMPLE;
 	task->ssp_task.cmd = cmd;
-
+	task->tag = cmd->request->tag;
 	task->scatter = scsi_sglist(cmd);
 	task->num_scatter = scsi_sg_count(cmd);
 	task->total_xfer_len = scsi_bufflen(cmd);

@@ -53,6 +53,7 @@ struct sas_task *sas_alloc_slow_task(struct sas_ha_struct *ha,
 	if (!slow)
 		goto out_err_slow;
 
+	task->tag = -1;
 	if (shost->nr_reserved_cmds) {
 		struct scsi_device *sdev;
 
@@ -66,6 +67,7 @@ struct sas_task *sas_alloc_slow_task(struct sas_ha_struct *ha,
 		slow->scmd = scsi_get_reserved_cmd(sdev, DMA_NONE, false);
 		if (!slow->scmd)
 			goto out_err_scmd;
+		task->tag = slow->scmd->request->tag;
 		ASSIGN_SAS_TASK(slow->scmd, task);
 	}
 
