@@ -2078,6 +2078,56 @@ bool tls_sw_sock_is_readable(struct sock *sk)
 		!skb_queue_empty(&ctx->rx_list);
 }
 
+int tls_read_sock(struct sock *sk, read_descriptor_t *desc,
+		  sk_read_actor_t recv_actor)
+{
+	struct tls_context *tls_ctx = tls_get_ctx(sk);
+	struct tls_sw_context_rx *ctx = tls_sw_ctx_rx(tls_ctx);
+	int copied = 0, err, chunk, used;
+	struct strp_msg *rxm = NULL;
+	struct sk_buff *skb;
+	long timeo;
+	bool zc = false, noblock = true, from_queue;
+
+	timeo = sock_rcvtimeo(sk, noblock);
+
+	do {
+		from_queue = !skb_queue_empty(&ctx->rx_list);
+		if (from_queue) {
+			skb = __skb_dequeue(&ctx->rx_list);
+		} else {
+			skb = tls_wait_data(sk, NULL, noblock, timeo, &err);
+			if (!skb)
+				break;
+			err = decrypt_skb_update(sk, skb, NULL, &chunk, &zc, false);
+			if (err < 0) {
+				tls_err_abort(sk, -EBADMSG);
+				break;
+			}
+		}
+
+		if (ctx->control != TLS_RECORD_TYPE_DATA)
+			break;
+		rxm = strp_msg(skb);
+
+		/* recv_actor on plaintext */
+		used = recv_actor(desc, skb, rxm->offset, rxm->full_len);
+		if (used <= 0) {
+			if (!copied)
+				copied = used;
+			break;
+		}
+		copied += used;
+		if (!from_queue) {
+			ctx->recv_pkt = NULL;
+			__strp_unpause(&ctx->strp);
+		}
+		consume_skb(skb);
+	} while (desc->count);
+
+	return copied;
+}
+
 static int tls_read_size(struct strparser *strp, struct sk_buff *skb)
 {
 	struct tls_context *tls_ctx = tls_get_ctx(strp->sk);
