@@ -214,6 +214,10 @@ static unsigned int sas_ata_qc_issue(struct ata_queued_cmd *qc)
 	else
 		task->data_dir = qc->dma_dir;
 	task->scatter = qc->sg;
+	if (qc->scsicmd)
+		task->tag = qc->scsicmd->request->tag;
+	else
+		task->tag = qc->tag;
 	task->ata_task.retry_count = 1;
 	task->task_state_flags = SAS_TASK_STATE_PENDING;
 	qc->lldd_task = task;

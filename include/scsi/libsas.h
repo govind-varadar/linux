@@ -590,6 +590,8 @@ struct sas_task {
 	u32    total_xfer_len;
 	u8     data_dir:2;	  /* Use PCI_DMA_... */
 
+	u32    tag;
+
 	struct task_status_struct task_status;
 	void   (*task_done)(struct sas_task *);
 
