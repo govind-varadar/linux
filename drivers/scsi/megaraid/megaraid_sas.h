@@ -2323,7 +2323,6 @@ struct megasas_instance {
 	struct megasas_pd_list          pd_list[MEGASAS_MAX_PD];
 	struct megasas_pd_list          local_pd_list[MEGASAS_MAX_PD];
 	u8 ld_ids[MEGASAS_MAX_LD_IDS];
-	s8 init_id;
 
 	u16 max_num_sge;
 	u16 max_fw_cmds;
@@ -2359,7 +2358,6 @@ struct megasas_instance {
 	wait_queue_head_t abort_cmd_wait_q;
 
 	struct pci_dev *pdev;
-	u32 unique_id;
 	u32 fw_support_ieee;
 	u32 threshold_reply_count;
 

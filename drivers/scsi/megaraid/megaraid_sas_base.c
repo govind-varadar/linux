@@ -3425,6 +3425,7 @@ static struct scsi_host_template megasas_template = {
 	.bios_param = megasas_bios_param,
 	.change_queue_depth = scsi_change_queue_depth,
 	.max_segment_size = 0xffffffff,
+	.this_id = -1,
 };
 
 /**
@@ -5494,9 +5495,7 @@ megasas_init_adapter_mfi(struct megasas_instance *instance)
 		goto fail_fw_init;
 
 	if (megasas_get_ctrl_info(instance)) {
-		dev_err(&instance->pdev->dev, "(%d): Could get controller info "
-			"Fail from %s %d\n", instance->unique_id,
-			__func__, __LINE__);
+		dev_err(&instance->pdev->dev, "Couldn't get controller info\n");
 		goto fail_fw_init;
 	}
 
@@ -6758,9 +6757,7 @@ static int megasas_io_attach(struct megasas_instance *instance)
 	/*
 	 * Export parameters required by SCSI mid-layer
 	 */
-	host->unique_id = instance->unique_id;
 	host->can_queue = instance->max_scsi_cmds;
-	host->this_id = instance->init_id;
 	host->sg_tablesize = instance->max_num_sge;
 
 	if (instance->fw_support_ieee)
@@ -7346,8 +7343,7 @@ static int megasas_probe_one(struct pci_dev *pdev,
 	 */
 	instance->pdev = pdev;
 	instance->host = host;
-	instance->unique_id = pdev->bus->number << 8 | pdev->devfn;
-	instance->init_id = MEGASAS_DEFAULT_INIT_ID;
+	host->unique_id = pdev->bus->number << 8 | pdev->devfn;
 
 	megasas_set_adapter_type(instance);
 
