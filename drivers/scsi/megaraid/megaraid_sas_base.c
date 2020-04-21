@@ -2004,9 +2004,7 @@ static void megasas_set_static_target_properties(struct scsi_device *sdev,
 						 bool is_target_prop)
 {
 	u32 max_io_size_kb = MR_DEFAULT_NVME_MDTS_KB;
-	struct megasas_instance *instance;
-
-	instance = megasas_lookup_instance(sdev->host->host_no);
+	struct megasas_instance *instance = shost_priv(sdev->host);
 
 	/*
 	 * The RAID firmware may require extended timeouts.
@@ -2029,11 +2027,10 @@ static void megasas_set_static_target_properties(struct scsi_device *sdev,
 static int megasas_slave_configure(struct scsi_device *sdev)
 {
 	u16 pd_index = 0;
-	struct megasas_instance *instance;
+	struct megasas_instance *instance = shost_priv(sdev->host);
 	int ret_target_prop = DCMD_FAILED;
 	bool is_target_prop = false;
 
-	instance = megasas_lookup_instance(sdev->host->host_no);
 	if (instance->pd_list_not_supported) {
 		if (!MEGASAS_IS_LOGICAL(sdev) && sdev->type == TYPE_DISK) {
 			pd_index = (sdev->channel * MEGASAS_MAX_DEV_PER_CHANNEL) +
@@ -2069,10 +2066,9 @@ static int megasas_slave_configure(struct scsi_device *sdev)
 static int megasas_slave_alloc(struct scsi_device *sdev)
 {
 	u16 pd_index = 0;
-	struct megasas_instance *instance ;
+	struct megasas_instance *instance = shost_priv(sdev->host);
 	struct MR_PRIV_DEVICE *mr_device_priv_data;
 
-	instance = megasas_lookup_instance(sdev->host->host_no);
 	if (!MEGASAS_IS_LOGICAL(sdev)) {
 		/*
 		 * Open the OS scan to the SYSTEM PD
