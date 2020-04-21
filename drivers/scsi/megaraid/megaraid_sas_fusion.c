@@ -1857,6 +1857,9 @@ megasas_init_adapter_fusion(struct megasas_instance *instance)
 	if (megasas_alloc_cmds_fusion(instance))
 		goto fail_alloc_cmds;
 
+	if (megasas_io_attach(instance))
+		goto fail_io_attach;
+
 	if (megasas_ioc_init_fusion(instance)) {
 		status_reg = instance->instancet->read_fw_status_reg(instance);
 		if (((status_reg & MFI_STATE_MASK) == MFI_STATE_FAULT) &&
@@ -1895,6 +1898,8 @@ megasas_init_adapter_fusion(struct megasas_instance *instance)
 	return 0;
 
 fail_ioc_init:
+	megasas_io_detach(instance);
+fail_io_attach:
 	megasas_free_cmds_fusion(instance);
 fail_alloc_cmds:
 	megasas_free_cmds(instance);

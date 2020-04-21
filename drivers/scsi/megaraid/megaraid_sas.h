@@ -2677,6 +2677,9 @@ int megasas_set_crash_dump_params(struct megasas_instance *instance,
 	u8 crash_buf_state);
 void megasas_free_host_crash_buffer(struct megasas_instance *instance);
 
+int megasas_io_attach(struct megasas_instance *instance);
+void megasas_io_detach(struct megasas_instance *instance);
+
 void megasas_return_cmd_fusion(struct megasas_instance *instance,
 	struct megasas_cmd_fusion *cmd);
 int megasas_issue_blocked_cmd(struct megasas_instance *instance,

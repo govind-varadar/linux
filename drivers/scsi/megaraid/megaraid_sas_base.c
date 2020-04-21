@@ -5468,6 +5468,13 @@ megasas_init_adapter_mfi(struct megasas_instance *instance)
 		goto fail_reply_queue;
 	}
 
+	/*
+	 * Notify the mid-layer about the new controller; do this
+	 * early so that we can allocate internal commands
+	 */
+	if (megasas_io_attach(instance))
+		goto fail_io_attach;
+
 	if (megasas_issue_init_mfi(instance))
 		goto fail_fw_init;
 
@@ -5490,7 +5497,8 @@ megasas_init_adapter_mfi(struct megasas_instance *instance)
 	return 0;
 
 fail_fw_init:
-
+	megasas_io_detach(instance);
+fail_io_attach:
 	dma_free_coherent(&instance->pdev->dev, reply_q_sz,
 			    instance->reply_queue, instance->reply_queue_h);
 fail_reply_queue:
@@ -6340,6 +6348,8 @@ static int megasas_init_fw(struct megasas_instance *instance)
 	if (tmp_sectors && (instance->max_sectors_per_req > tmp_sectors))
 		instance->max_sectors_per_req = tmp_sectors;
 
+	megasas_set_max_sectors(instance);
+
 	/* Check for valid throttlequeuedepth module parameter */
 	if (throttlequeuedepth &&
 			throttlequeuedepth <= instance->max_scsi_cmds)
@@ -6757,7 +6767,7 @@ static int megasas_start_aen(struct megasas_instance *instance)
  * megasas_io_attach -	Attaches this driver to SCSI mid-layer
  * @instance:		Adapter soft state
  */
-static int megasas_io_attach(struct megasas_instance *instance)
+int megasas_io_attach(struct megasas_instance *instance)
 {
 	struct Scsi_Host *host = instance->host;
 
@@ -6767,7 +6777,8 @@ static int megasas_io_attach(struct megasas_instance *instance)
 	host->can_queue = instance->max_scsi_cmds;
 	host->sg_tablesize = instance->max_num_sge;
 
-	megasas_set_max_sectors(instance);
+	/* Will be adjusted later */
+	host->max_sectors = MEGASAS_MAX_SECTORS_IEEE;
 
 	host->cmd_per_lun = MEGASAS_DEFAULT_CMD_PER_LUN;
 	host->max_channel = MEGASAS_MAX_CHANNELS - 1;
@@ -6786,6 +6797,15 @@ static int megasas_io_attach(struct megasas_instance *instance)
 	}
 
 	return 0;
+}
+
+/**
+ * megasas_io_detach -	Detaches this driver from the SCSI mid-layer
+ * @instance:		Adapter soft state
+ */
+void megasas_io_detach(struct megasas_instance *instance)
+{
+	scsi_remove_host(instance->host);
 }
 
 /**
@@ -7373,12 +7393,6 @@ static int megasas_probe_one(struct pci_dev *pdev,
 	megasas_mgmt_info.instance[megasas_mgmt_info.max_index] = instance;
 	megasas_mgmt_info.max_index++;
 
-	/*
-	 * Register with SCSI mid-layer
-	 */
-	if (megasas_io_attach(instance))
-		goto fail_io_attach;
-
 	instance->unload = 0;
 	/*
 	 * Trigger SCSI to scan our drives
@@ -7404,7 +7418,6 @@ static int megasas_probe_one(struct pci_dev *pdev,
 	return 0;
 
 fail_start_aen:
-fail_io_attach:
 	megasas_mgmt_info.count--;
 	megasas_mgmt_info.max_index--;
 	megasas_mgmt_info.instance[megasas_mgmt_info.max_index] = NULL;
@@ -7802,7 +7815,6 @@ static void megasas_detach_one(struct pci_dev *pdev)
 
 	if (instance->fw_crash_state != UNAVAILABLE)
 		megasas_free_host_crash_buffer(instance);
-	scsi_remove_host(instance->host);
 	instance->unload = 1;
 
 	if (megasas_wait_for_adapter_operational(instance))
@@ -7812,6 +7824,8 @@ static void megasas_detach_one(struct pci_dev *pdev)
 	megasas_shutdown_controller(instance, MR_DCMD_CTRL_SHUTDOWN);
 
 skip_firing_dcmds:
+	megasas_io_detach(instance);
+
 	/* cancel the delayed work if this work still in queue*/
 	if (instance->ev != NULL) {
 		struct megasas_aen_event *ev = instance->ev;
