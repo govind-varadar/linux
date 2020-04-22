@@ -781,7 +781,10 @@ struct class_container;
  * from any high-level drivers.
  */
 extern void scsi_free_host_dev(struct scsi_device *);
+extern struct scsi_device *scsi_get_virtual_dev(struct Scsi_Host *,
+						unsigned int, unsigned int);
 extern struct scsi_device *scsi_get_host_dev(struct Scsi_Host *);
+extern bool scsi_device_is_virtual(struct scsi_device *);
 
 /*
  * DIF defines the exchange of protection information between

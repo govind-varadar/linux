@@ -1080,6 +1080,9 @@ static int scsi_probe_and_add_lun(struct scsi_target *starget,
 	if (!sdev)
 		goto out;
 
+	if (sdev->hidden)
+		return SCSI_SCAN_LUN_PRESENT;
+
 	result = kmalloc(result_len, GFP_KERNEL |
 			((shost->unchecked_isa_dma) ? __GFP_DMA : 0));
 	if (!result)
@@ -1324,6 +1327,8 @@ static int scsi_report_lun_scan(struct scsi_target *starget, blist_flags_t bflag
 	if (!(sdev = scsi_device_lookup_by_target(starget, 0))) {
 		sdev = scsi_alloc_sdev(starget, 0, NULL);
 		if (!sdev)
+			return 0;
+		if (sdev->hidden)
 			return 0;
 		if (scsi_device_get(sdev)) {
 			__scsi_remove_device(sdev);
@@ -1698,6 +1703,8 @@ static void scsi_sysfs_add_devices(struct Scsi_Host *shost)
 		/* If device is already visible, skip adding it to sysfs */
 		if (sdev->is_visible)
 			continue;
+		if (sdev->hidden)
+			continue;
 		if (!scsi_host_scan_allowed(shost) ||
 		    scsi_sysfs_add_sdev(sdev) != 0)
 			__scsi_remove_device(sdev);
@@ -1861,39 +1868,48 @@ EXPORT_SYMBOL(scsi_scan_host);
 
 void scsi_forget_host(struct Scsi_Host *shost)
 {
-	struct scsi_device *sdev;
+	struct scsi_device *sdev, *virtual_sdev = NULL;
 	unsigned long flags;
 
  restart:
 	spin_lock_irqsave(shost->host_lock, flags);
 	list_for_each_entry(sdev, &shost->__devices, siblings) {
+		if (scsi_device_is_virtual(sdev)) {
+			virtual_sdev = sdev;
+			continue;
+		}
 		if (sdev->sdev_state == SDEV_DEL)
 			continue;
 		spin_unlock_irqrestore(shost->host_lock, flags);
 		__scsi_remove_device(sdev);
 		goto restart;
 	}
+	/* Remove virtual device last, might be needed to send commands */
+	if (virtual_sdev)
+		__scsi_remove_device(virtual_sdev);
 	spin_unlock_irqrestore(shost->host_lock, flags);
 }
 
 /**
- * scsi_get_host_dev - Create a scsi_device that points to the host adapter itself
+ * scsi_get_virtual_dev - Create a virtual scsi_device to the host adapter
  * @shost: Host that needs a scsi_device
+ * @channel: SCSI channel number for the virtual device
+ * @id: SCSI target number for the virtual device
  *
  * Lock status: None assumed.
  *
  * Returns:     The scsi_device or NULL
  *
  * Notes:
- *	Attach a single scsi_device to the Scsi_Host - this should
- *	be made to look like a "pseudo-device" that points to the
- *	HA itself.
- *
- *	Note - this device is not accessible from any high-level
- *	drivers (including generics), which is probably not
- *	optimal.  We can add hooks later to attach.
+ *	Attach a single scsi_device to the Scsi_Host. This device
+ *	has a minimal command emulation, but will never submit commands
+ *	to the LLDD. The primary aim for this device is to serve as a
+ *	container from which command tags can be allocated from; each
+ *	scsi command will carry an unused/free command tag, which then
+ *	can be used by the LLDD to format internal or passthrough commands.
  */
-struct scsi_device *scsi_get_host_dev(struct Scsi_Host *shost)
+struct scsi_device *scsi_get_virtual_dev(struct Scsi_Host *shost,
+	 unsigned int channel, unsigned int id)
 {
 	struct scsi_device *sdev = NULL;
 	struct scsi_target *starget;
@@ -1901,21 +1917,37 @@ struct scsi_device *scsi_get_host_dev(struct Scsi_Host *shost)
 	mutex_lock(&shost->scan_mutex);
 	if (!scsi_host_scan_allowed(shost))
 		goto out;
-	starget = scsi_alloc_target(&shost->shost_gendev, 0, shost->this_id);
+	starget = scsi_alloc_target(&shost->shost_gendev, channel, id);
 	if (!starget)
 		goto out;
 
 	sdev = scsi_alloc_sdev(starget, 0, NULL);
-	if (sdev)
+	if (sdev) {
 		sdev->borken = 0;
-	else
+		sdev->hidden = 1;
+		sdev->inquiry = (unsigned char *)scsi_null_inquiry;
+		sdev->inquiry_len = sizeof(scsi_null_inquiry);
+		scsi_device_set_state(sdev, SDEV_RUNNING);
+	} else
 		scsi_target_reap(starget);
 	put_device(&starget->dev);
  out:
 	mutex_unlock(&shost->scan_mutex);
 	return sdev;
 }
+EXPORT_SYMBOL_GPL(scsi_get_virtual_dev);
+
+struct scsi_device *scsi_get_host_dev(struct Scsi_Host *shost)
+{
+	return scsi_get_virtual_dev(shost, 0, shost->this_id);
+}
 EXPORT_SYMBOL(scsi_get_host_dev);
+
+bool scsi_device_is_virtual(struct scsi_device *sdev)
+{
+	return ((const unsigned char *)sdev->inquiry == scsi_null_inquiry);
+}
+EXPORT_SYMBOL_GPL(scsi_device_is_virtual);
 
 /**
  * scsi_free_host_dev - Free a scsi_device that points to the host adapter itself
@@ -1927,7 +1959,7 @@ EXPORT_SYMBOL(scsi_get_host_dev);
  */
 void scsi_free_host_dev(struct scsi_device *sdev)
 {
-	BUG_ON(sdev->id != sdev->host->this_id);
+	BUG_ON(!scsi_device_is_virtual(sdev));
 
 	__scsi_remove_device(sdev);
 }

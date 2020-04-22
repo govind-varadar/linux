@@ -1528,6 +1528,30 @@ static int scsi_dispatch_cmd(struct scsi_cmnd *cmd)
 
 	}
 
+	if (unlikely(scsi_device_is_virtual(cmd->device))) {
+		unsigned char null_report_luns[16];
+
+		switch (cmd->cmnd[0]) {
+		case TEST_UNIT_READY:
+			cmd->result = (DID_OK << 16);
+			goto done;
+		case INQUIRY:
+			scsi_sg_copy_from_buffer(cmd, cmd->device->inquiry, 36);
+			cmd->result = (DID_OK << 16);
+			goto done;
+		case REPORT_LUNS:
+			memset(null_report_luns, 0, 16);
+			null_report_luns[3] = 0x08;
+			scsi_sg_copy_from_buffer(cmd, null_report_luns, 16);
+			cmd->result = (DID_OK << 16);
+			goto done;
+		default:
+			scsi_build_sense_buffer(0, cmd->sense_buffer,
+						ILLEGAL_REQUEST, 0x20, 0x00);
+			cmd->result = (DID_NO_CONNECT << 16);
+			goto done;
+		}
+	}
 	trace_scsi_dispatch_cmd_start(cmd);
 	rtn = host->hostt->queuecommand(host, cmd);
 	if (rtn) {
