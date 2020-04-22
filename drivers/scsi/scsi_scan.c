@@ -81,7 +81,27 @@
 #define SCSI_SCAN_TARGET_PRESENT	1
 #define SCSI_SCAN_LUN_PRESENT		2
 
-static const char *scsi_null_device_strs = "nullnullnullnull";
+/*
+ * Dummy inquiry for virtual LUNs:
+ *
+ * standard INQUIRY: [qualifier indicates no connected LU]
+ *  PQual=1  Device_type=31  RMB=0  LU_CONG=0  version=0x05  [SPC-3]
+ *  [AERC=0]  [TrmTsk=0]  NormACA=0  HiSUP=0  Resp_data_format=2
+ *  SCCS=0  ACC=0  TPGS=0  3PC=0  Protect=0  [BQue=0]
+ *  EncServ=0  MultiP=0  [MChngr=0]  [ACKREQQ=0]  Addr16=0
+ *  [RelAdr=0]  WBus16=0  Sync=0  [Linked=0]  [TranDis=0]  CmdQue=0
+ *    length=36 (0x24)   Peripheral device type: no physical device on this lu
+ * Vendor identification: LINUX
+ * Product identification: VIRTUALLUN
+ * Product revision level: 1.0
+ */
+static const unsigned char scsi_null_inquiry[36] = {
+	0x3f, 0x00, 0x05, 0x02, 0x1f, 0x00, 0x00, 0x00,
+	0x4c, 0x49, 0x4e, 0x55, 0x58, 0x20, 0x20, 0x20,
+	0x56, 0x49, 0x52, 0x54, 0x55, 0x41, 0x4c, 0x4c,
+	0x55, 0x4e, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+	0x31, 0x2e, 0x30, 0x20
+};
 
 #define MAX_SCSI_LUNS	512
 
@@ -224,9 +244,10 @@ static struct scsi_device *scsi_alloc_sdev(struct scsi_target *starget,
 	if (!sdev)
 		goto out;
 
-	sdev->vendor = scsi_null_device_strs;
-	sdev->model = scsi_null_device_strs;
-	sdev->rev = scsi_null_device_strs;
+	sdev->type = scsi_null_inquiry[0] & 0x1f;
+	sdev->vendor = scsi_null_inquiry + 8;
+	sdev->model = scsi_null_inquiry + 16;
+	sdev->rev = scsi_null_inquiry + 32;
 	sdev->host = shost;
 	sdev->queue_ramp_up_period = SCSI_DEFAULT_RAMP_UP_PERIOD;
 	sdev->id = starget->id;
@@ -252,11 +273,6 @@ static struct scsi_device *scsi_alloc_sdev(struct scsi_target *starget,
 	/* if the device needs this changing, it may do so in the
 	 * slave_configure function */
 	sdev->max_device_blocked = SCSI_DEFAULT_DEVICE_BLOCKED;
-
-	/*
-	 * Some low level driver could use device->type
-	 */
-	sdev->type = -1;
 
 	/*
 	 * Assume that the device will have handshaking problems,
