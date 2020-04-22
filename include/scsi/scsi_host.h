@@ -786,14 +786,15 @@ void scsi_host_busy_iter(struct Scsi_Host *,
 struct class_container;
 
 /*
- * These three functions are used to allocate, free, and test for
- * a pseudo device which will connect to the host adapter itself rather
- * than any physical device.  You must deallocate when you are done with the
- * thing.  This physical pseudo-device isn't real and won't be available
+ * These functions are used to allocate and test a pseudo device
+ * which will refer to the host adapter itself rather than any
+ * physical device.  The device will be deallocated together with
+ * all other scsi devices, so there is no need to have a separate
+ * function to free it.
+ * This device will not show up in sysfs and won't be available
  * from any high-level drivers.
  */
-extern void scsi_free_host_dev(struct scsi_device *);
-extern struct scsi_device *scsi_get_host_dev(struct Scsi_Host *);
+struct scsi_device *scsi_get_host_dev(struct Scsi_Host *);
 bool scsi_device_is_host_dev(struct scsi_device *);
 
 /*
