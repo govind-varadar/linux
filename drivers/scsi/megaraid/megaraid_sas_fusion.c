@@ -49,17 +49,10 @@
 
 
 extern void megasas_free_cmds(struct megasas_instance *instance);
-extern struct megasas_cmd *megasas_get_cmd(struct megasas_instance
-					   *instance);
-extern void
-megasas_complete_cmd(struct megasas_instance *instance,
-		     struct megasas_cmd *cmd, u8 alt_status);
 int
 wait_and_poll(struct megasas_instance *instance, struct megasas_cmd *cmd,
 	      int seconds);
 
-void
-megasas_return_cmd(struct megasas_instance *instance, struct megasas_cmd *cmd);
 int megasas_alloc_cmds(struct megasas_instance *instance);
 int
 megasas_clear_intr_fusion(struct megasas_instance *instance);
@@ -343,10 +336,11 @@ megasas_fusion_update_can_queue(struct megasas_instance *instance, int fw_boot_c
 	if (fw_boot_context == OCR_CONTEXT) {
 		cur_max_fw_cmds = cur_max_fw_cmds - 1;
 		if (cur_max_fw_cmds < instance->max_fw_cmds) {
-			instance->cur_can_queue =
-				cur_max_fw_cmds - (MEGASAS_FUSION_INTERNAL_CMDS +
-						MEGASAS_FUSION_IOCTL_CMDS);
+			instance->cur_can_queue = cur_max_fw_cmds;
 			instance->host->can_queue = instance->cur_can_queue;
+			instance->host->nr_reserved_cmds =
+				MEGASAS_FUSION_INTERNAL_CMDS +
+				MEGASAS_FUSION_IOCTL_CMDS;
 			instance->ldio_threshold = ldio_threshold;
 		}
 	} else {
@@ -1291,7 +1285,8 @@ megasas_sync_pd_seq_num(struct megasas_instance *instance, bool pend) {
 	pd_seq_h = fusion->pd_seq_phys[(instance->pd_seq_map_id & 1)];
 	pd_seq_map_sz = struct_size(pd_sync, seq, MAX_PHYSICAL_DEVICES - 1);
 
-	cmd = megasas_get_cmd(instance);
+	cmd = megasas_get_cmd(instance,
+		pend ? DMA_TO_DEVICE : DMA_FROM_DEVICE, pend);
 	if (!cmd) {
 		dev_err(&instance->pdev->dev,
 			"Could not get mfi cmd. Fail from %s %d\n",
@@ -1379,10 +1374,11 @@ megasas_get_ld_map_info(struct megasas_instance *instance)
 	u32 size_map_info;
 	struct fusion_context *fusion;
 
-	cmd = megasas_get_cmd(instance);
+	cmd = megasas_get_cmd(instance, DMA_FROM_DEVICE, false);
 
 	if (!cmd) {
-		dev_printk(KERN_DEBUG, &instance->pdev->dev, "Failed to get cmd for map info\n");
+		dev_printk(KERN_DEBUG, &instance->pdev->dev,
+			   "Failed to get cmd for map info\n");
 		return -ENOMEM;
 	}
 
@@ -1473,13 +1469,13 @@ megasas_sync_map_info(struct megasas_instance *instance)
 	dma_addr_t ci_h = 0;
 	u32 size_map_info;
 
-	cmd = megasas_get_cmd(instance);
+	cmd = megasas_get_cmd(instance, DMA_TO_DEVICE, true);
 
 	if (!cmd) {
-		dev_printk(KERN_DEBUG, &instance->pdev->dev, "Failed to get cmd for sync info\n");
+		dev_printk(KERN_DEBUG, &instance->pdev->dev,
+			   "Failed to get cmd for sync info\n");
 		return -ENOMEM;
 	}
-
 	fusion = instance->ctrl_context;
 
 	if (!fusion) {
@@ -1699,8 +1695,7 @@ void megasas_configure_queue_sizes(struct megasas_instance *instance)
 		instance->max_mpt_cmds = instance->max_fw_cmds;
 
 	instance->max_scsi_cmds = instance->max_fw_cmds - instance->max_mfi_cmds;
-	instance->cur_can_queue = instance->max_scsi_cmds;
-	instance->host->can_queue = instance->cur_can_queue;
+	instance->cur_can_queue = instance->max_fw_cmds;
 
 	fusion->reply_q_depth = 2 * ((max_cmd + 1 + 15) / 16) * 16;
 
@@ -4477,7 +4472,7 @@ megasas_issue_tm(struct megasas_instance *instance, u16 device_handle,
 
 	fusion = instance->ctrl_context;
 
-	cmd_mfi = megasas_get_cmd(instance);
+	cmd_mfi = megasas_get_cmd(instance, DMA_NONE, false);
 
 	if (!cmd_mfi) {
 		dev_err(&instance->pdev->dev, "Failed from %s %d\n",

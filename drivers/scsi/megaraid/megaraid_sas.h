@@ -2336,7 +2336,6 @@ struct megasas_instance {
 	struct megasas_aen_event *ev;
 
 	struct megasas_cmd **cmd_list;
-	struct list_head cmd_pool;
 	/* used to sync fire the cmd to fw */
 	spinlock_t mfi_pool_lock;
 	/* used to sync fire the cmd to fw */
@@ -2353,6 +2352,7 @@ struct megasas_instance {
 	struct semaphore ioctl_sem;
 
 	struct Scsi_Host *host;
+	struct scsi_device *host_dev;
 
 	wait_queue_head_t int_cmd_wait_q;
 	wait_queue_head_t abort_cmd_wait_q;
@@ -2680,11 +2680,15 @@ void megasas_free_host_crash_buffer(struct megasas_instance *instance);
 int megasas_io_attach(struct megasas_instance *instance);
 void megasas_io_detach(struct megasas_instance *instance);
 
+struct megasas_cmd *megasas_get_cmd(struct megasas_instance *instance,
+	int direction, bool persistent);
+void megasas_complete_cmd(struct megasas_instance *instance,
+	struct megasas_cmd *cmd, u8 alt_status);
 void megasas_return_cmd_fusion(struct megasas_instance *instance,
 	struct megasas_cmd_fusion *cmd);
 int megasas_issue_blocked_cmd(struct megasas_instance *instance,
 	struct megasas_cmd *cmd, int timeout);
-void __megasas_return_cmd(struct megasas_instance *instance,
+void megasas_return_cmd(struct megasas_instance *instance,
 	struct megasas_cmd *cmd);
 
 void megasas_return_mfi_mpt_pthr(struct megasas_instance *instance,
