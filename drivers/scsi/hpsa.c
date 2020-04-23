@@ -6148,7 +6148,7 @@ static struct CommandList *cmd_alloc(struct ctlr_info *h, u8 direction)
 	int idx;
 
 	scmd = scsi_get_reserved_cmd(h->raid_ctrl_sdev, direction & XFER_WRITE ?
-				     DMA_TO_DEVICE : DMA_FROM_DEVICE);
+				     DMA_TO_DEVICE : DMA_FROM_DEVICE, false);
 	if (!scmd) {
 		dev_warn(&h->pdev->dev, "failed to allocate reserved cmd\n");
 		return NULL;

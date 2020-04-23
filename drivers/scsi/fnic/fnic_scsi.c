@@ -2237,7 +2237,7 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 		goto fnic_device_reset_end;
 	}
 
-	reset_sc = scsi_get_reserved_cmd(sdev, DMA_NONE);
+	reset_sc = scsi_get_reserved_cmd(sdev, DMA_NONE, false);
 	if (unlikely(!reset_sc))
 		goto fnic_device_reset_end;
 

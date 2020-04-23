@@ -2105,7 +2105,7 @@ csio_eh_lun_reset_handler(struct scsi_cmnd *cmnd)
 		goto fail;
 	}
 
-	reset_cmnd = scsi_get_reserved_cmd(sdev, DMA_NONE);
+	reset_cmnd = scsi_get_reserved_cmd(sdev, DMA_NONE, false);
 	if (!reset_cmnd) {
 		csio_err(hw, "No free TMF request\n");
 		goto fail;

@@ -459,7 +459,7 @@ static inline int scsi_execute_req(struct scsi_device *sdev,
 		bufflen, NULL, sshdr, timeout, retries,  0, 0, resid);
 }
 struct scsi_cmnd *scsi_get_reserved_cmd(struct scsi_device *sdev,
-					int data_direction);
+					int data_direction, bool persistent);
 void scsi_put_reserved_cmd(struct scsi_cmnd *scmd);
 extern void sdev_disable_disk_events(struct scsi_device *sdev);
 extern void sdev_enable_disk_events(struct scsi_device *sdev);

@@ -244,7 +244,7 @@ struct fib *aac_fib_alloc(struct aac_dev *dev, int direction)
 	unsigned long flags;
 
 	spin_lock_irqsave(&dev->fib_lock, flags);
-	scmd = scsi_get_reserved_cmd(dev->scsi_host_dev, direction);
+	scmd = scsi_get_reserved_cmd(dev->scsi_host_dev, direction, false);
 	if (scmd)
 		fibptr = aac_fib_alloc_tag(dev, scmd);
 	spin_unlock_irqrestore(&dev->fib_lock, flags);

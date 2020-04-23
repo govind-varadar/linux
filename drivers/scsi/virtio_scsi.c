@@ -620,7 +620,7 @@ static int virtscsi_device_reset(struct scsi_cmnd *sc)
 	int rc;
 
 	sdev_printk(KERN_INFO, sdev, "device reset\n");
-	reset_sc = scsi_get_reserved_cmd(sdev, DMA_NONE);
+	reset_sc = scsi_get_reserved_cmd(sdev, DMA_NONE, false);
 	if (!reset_sc)
 		return FAILED;
 	cmd = scsi_cmd_priv(reset_sc);
@@ -684,7 +684,7 @@ static int virtscsi_abort(struct scsi_cmnd *sc)
 	int rc;
 
 	scmd_printk(KERN_INFO, sc, "abort\n");
-	reset_sc = scsi_get_reserved_cmd(sdev, DMA_NONE);
+	reset_sc = scsi_get_reserved_cmd(sdev, DMA_NONE, false);
 	if (!reset_sc)
 		return FAILED;
 	cmd = scsi_cmd_priv(reset_sc);

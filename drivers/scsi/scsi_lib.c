@@ -1929,17 +1929,27 @@ void scsi_mq_destroy_tags(struct Scsi_Host *shost)
  * scsi_get_reserved_cmd - allocate a SCSI command from reserved tags
  * @sdev: SCSI device from which to allocate the command
  * @data_direction: Data direction for the allocated command
+ * @persistent: Allocate a persistent command
  */
 struct scsi_cmnd *scsi_get_reserved_cmd(struct scsi_device *sdev,
-					int data_direction)
+					int data_direction, bool persistent)
 {
 	struct request *rq;
 	struct scsi_cmnd *scmd;
+	blk_mq_req_flags_t flags = 0;
+	int op = REQ_NOWAIT;
 
-	rq = blk_mq_alloc_request(sdev->request_queue,
-				  data_direction == DMA_TO_DEVICE ?
-				  REQ_OP_SCSI_OUT : REQ_OP_SCSI_IN | REQ_NOWAIT,
-				  BLK_MQ_REQ_RESERVED);
+	if (sdev->host->nr_reserved_cmds) {
+		flags |= BLK_MQ_REQ_RESERVED;
+		if (persistent)
+			flags |= BLK_MQ_REQ_PERSISTENT;
+	}
+	if (data_direction == DMA_TO_DEVICE)
+		op |= REQ_OP_SCSI_OUT;
+	else
+		op |= REQ_OP_SCSI_IN;
+
+	rq = blk_mq_alloc_request(sdev->request_queue, op, flags);
 	if (IS_ERR(rq))
 		return NULL;
 	scmd = blk_mq_rq_to_pdu(rq);
