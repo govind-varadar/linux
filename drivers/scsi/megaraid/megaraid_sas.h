@@ -2406,6 +2406,7 @@ struct megasas_instance {
 	struct megasas_cmd *jbod_seq_cmd;
 	unsigned long bar;
 	long reset_flags;
+	unsigned int reset_count;
 	struct mutex reset_mutex;
 	struct timer_list sriov_heartbeat_timer;
 	char skip_heartbeat_timer_del;

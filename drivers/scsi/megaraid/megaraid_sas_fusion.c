@@ -4227,96 +4227,122 @@ void  megasas_reset_reply_desc(struct megasas_instance *instance)
 }
 
 /*
- * megasas_refire_mgmt_cmd :	Re-fire management commands
- * @instance:				Controller's soft instance
-*/
-static void megasas_refire_mgmt_cmd(struct megasas_instance *instance,
-			     bool return_ioctl)
+ * Re-fire management commands.
+ * Do not traverse complet MPT frame pool, only the MFI frame pool.
+ */
+static bool megasas_refire_mgmt_cmd_iter(struct scsi_cmnd *scmd,
+					 void *data, bool reserved)
 {
-	int j;
-	struct megasas_cmd_fusion *cmd_fusion;
-	struct fusion_context *fusion;
 	struct megasas_cmd *cmd_mfi;
+	struct megasas_instance *instance = data;
 	union MEGASAS_REQUEST_DESCRIPTOR_UNION *req_desc;
 	u16 smid;
 	bool refire_cmd = 0;
 	u8 result;
 	u32 opcode = 0;
 
-	fusion = instance->ctrl_context;
+	if (!reserved)
+		return true;
 
-	/* Re-fire management commands.
-	 * Do not traverse complete MPT frame pool, only the MFI frame pool.
-	 */
-	for (j = 0; j < instance->max_mfi_cmds; j++) {
-		cmd_fusion = fusion->cmd_list[j];
-		cmd_mfi = instance->cmd_list[j];
-		smid = le16_to_cpu(cmd_mfi->context.smid);
-		result = REFIRE_CMD;
+	cmd_mfi = instance->cmd_list[scmd->request->tag];
+	smid = le16_to_cpu(cmd_mfi->context.smid);
+	result = REFIRE_CMD;
 
-		if (!smid)
-			continue;
+	if (!smid)
+		return true;
 
-		req_desc = megasas_get_request_descriptor(instance, smid - 1);
+	req_desc = megasas_get_request_descriptor(instance, smid - 1);
 
-		switch (cmd_mfi->frame->hdr.cmd) {
-		case MFI_CMD_DCMD:
-			opcode = le32_to_cpu(cmd_mfi->frame->dcmd.opcode);
-			 /* Do not refire shutdown command */
-			if (opcode == MR_DCMD_CTRL_SHUTDOWN) {
-				cmd_mfi->frame->dcmd.cmd_status = MFI_STAT_OK;
-				result = COMPLETE_CMD;
-				break;
-			}
-
-			refire_cmd = ((opcode != MR_DCMD_LD_MAP_GET_INFO)) &&
-				      (opcode != MR_DCMD_SYSTEM_PD_MAP_GET_INFO) &&
-				      !(cmd_mfi->flags & DRV_DCMD_SKIP_REFIRE);
-
-			if (!refire_cmd)
-				result = RETURN_CMD;
-
-			break;
-		case MFI_CMD_NVME:
-			if (!instance->support_nvme_passthru) {
-				cmd_mfi->frame->hdr.cmd_status = MFI_STAT_INVALID_CMD;
-				result = COMPLETE_CMD;
-			}
-
-			break;
-		case MFI_CMD_TOOLBOX:
-			if (!instance->support_pci_lane_margining) {
-				cmd_mfi->frame->hdr.cmd_status = MFI_STAT_INVALID_CMD;
-				result = COMPLETE_CMD;
-			}
-
-			break;
-		default:
-			break;
+	switch (cmd_mfi->frame->hdr.cmd) {
+	case MFI_CMD_DCMD:
+		opcode = le32_to_cpu(cmd_mfi->frame->dcmd.opcode);
+		/* Do not refire shutdown command */
+		if (opcode == MR_DCMD_CTRL_SHUTDOWN) {
+			cmd_mfi->frame->dcmd.cmd_status = MFI_STAT_OK;
+			result = COMPLETE_CMD;
+			return true;
 		}
 
-		if (return_ioctl && cmd_mfi->sync_cmd &&
-		    cmd_mfi->frame->hdr.cmd != MFI_CMD_ABORT) {
-			dev_err(&instance->pdev->dev,
-				"return -EBUSY from %s %d cmd 0x%x opcode 0x%x\n",
-				__func__, __LINE__, cmd_mfi->frame->hdr.cmd,
-				le32_to_cpu(cmd_mfi->frame->dcmd.opcode));
-			cmd_mfi->cmd_status_drv = DCMD_BUSY;
+		refire_cmd = ((opcode != MR_DCMD_LD_MAP_GET_INFO)) &&
+			(opcode != MR_DCMD_SYSTEM_PD_MAP_GET_INFO) &&
+			!(cmd_mfi->flags & DRV_DCMD_SKIP_REFIRE);
+
+		if (!refire_cmd)
+			result = RETURN_CMD;
+
+		break;
+	case MFI_CMD_NVME:
+		if (!instance->support_nvme_passthru) {
+			cmd_mfi->frame->hdr.cmd_status = MFI_STAT_INVALID_CMD;
 			result = COMPLETE_CMD;
 		}
 
-		switch (result) {
-		case REFIRE_CMD:
-			megasas_fire_cmd_fusion(instance, req_desc);
-			break;
-		case RETURN_CMD:
-			megasas_return_cmd(instance, cmd_mfi);
-			break;
-		case COMPLETE_CMD:
-			megasas_complete_cmd(instance, cmd_mfi, DID_OK);
-			break;
+		break;
+	case MFI_CMD_TOOLBOX:
+		if (!instance->support_pci_lane_margining) {
+			cmd_mfi->frame->hdr.cmd_status = MFI_STAT_INVALID_CMD;
+			result = COMPLETE_CMD;
 		}
+
+		break;
+	default:
+		break;
 	}
+
+	if (!instance->reset_count && cmd_mfi->sync_cmd &&
+	    cmd_mfi->frame->hdr.cmd != MFI_CMD_ABORT) {
+		dev_err(&instance->pdev->dev,
+			"return -EBUSY from %s %d cmd 0x%x opcode 0x%x\n",
+			__func__, __LINE__, cmd_mfi->frame->hdr.cmd,
+			le32_to_cpu(cmd_mfi->frame->dcmd.opcode));
+		cmd_mfi->cmd_status_drv = DCMD_BUSY;
+		result = COMPLETE_CMD;
+	}
+
+	switch (result) {
+	case REFIRE_CMD:
+		megasas_fire_cmd_fusion(instance, req_desc);
+		break;
+	case RETURN_CMD:
+		megasas_return_cmd(instance, cmd_mfi);
+		break;
+	case COMPLETE_CMD:
+		megasas_complete_cmd(instance, cmd_mfi, DID_OK);
+		break;
+	}
+	return true;
+}
+
+/*
+ * megasas_refire_mgmt_cmd :	Re-fire management commands
+ * @instance:				Controller's soft instance
+*/
+static void megasas_refire_mgmt_cmd(struct megasas_instance *instance)
+{
+	scsi_host_busy_iter(instance->host, megasas_refire_mgmt_cmd_iter,
+			    instance);
+}
+
+static bool megasas_polled_cmds_iter(struct scsi_cmnd *scmd, void *data,
+				     bool reserved)
+{
+	struct megasas_instance *instance = data;
+	u32 index = scmd->request->tag;
+	struct megasas_cmd *cmd_mfi;
+
+	if (!reserved)
+		return true;
+	cmd_mfi = instance->cmd_list[index];
+	if (cmd_mfi->flags & DRV_DCMD_POLLED_MODE) {
+		if (megasas_dbg_lvl & OCR_DEBUG)
+			dev_info(&instance->pdev->dev,
+				 "%s %d return cmd 0x%x opcode 0x%x\n",
+				 __func__, __LINE__, cmd_mfi->frame->hdr.cmd,
+				 le32_to_cpu(cmd_mfi->frame->dcmd.opcode));
+		cmd_mfi->flags &= ~DRV_DCMD_POLLED_MODE;
+		megasas_return_cmd(instance, cmd_mfi);
+	}
+	return true;
 }
 
 /*
@@ -4327,27 +4353,36 @@ static void megasas_refire_mgmt_cmd(struct megasas_instance *instance,
 static void
 megasas_return_polled_cmds(struct megasas_instance *instance)
 {
-	int i;
-	struct megasas_cmd_fusion *cmd_fusion;
-	struct fusion_context *fusion;
-	struct megasas_cmd *cmd_mfi;
+	scsi_host_busy_iter(instance->host, megasas_polled_cmds_iter, instance);
+}
 
-	fusion = instance->ctrl_context;
+struct megasas_track_scsiio_data {
+	struct megasas_instance *instance;
+	unsigned int id;
+	unsigned int channel;
+	bool io_pending;
+};
 
-	for (i = 0; i < instance->max_mfi_cmds; i++) {
-		cmd_fusion = fusion->cmd_list[i];
-		cmd_mfi = instance->cmd_list[i];
+static bool megasas_track_scsiio_iter(struct scsi_cmnd *scmd, void *data,
+				      bool reserved)
+{
+	struct megasas_track_scsiio_data *iter_data = data;
+	u32 index = scmd->request->tag;
 
-		if (cmd_mfi->flags & DRV_DCMD_POLLED_MODE) {
-			if (megasas_dbg_lvl & OCR_DEBUG)
-				dev_info(&instance->pdev->dev,
-					 "%s %d return cmd 0x%x opcode 0x%x\n",
-					 __func__, __LINE__, cmd_mfi->frame->hdr.cmd,
-					 le32_to_cpu(cmd_mfi->frame->dcmd.opcode));
-			cmd_mfi->flags &= ~DRV_DCMD_POLLED_MODE;
-			megasas_return_cmd(instance, cmd_mfi);
-		}
+	if (reserved)
+		return true;
+
+	if (scmd->device->id == iter_data->id &&
+	    scmd->device->channel == iter_data->channel) {
+		dev_info(&iter_data->instance->pdev->dev,
+			 "SCSI commands pending to target"
+			 "channel %d id %d \tSMID: 0x%x\n",
+			 iter_data->channel, iter_data->id, index);
+		scsi_print_command(scmd);
+		iter_data->io_pending = true;
+		return false;
 	}
+	return true;
 }
 
 /*
@@ -4362,27 +4397,16 @@ megasas_return_polled_cmds(struct megasas_instance *instance)
 static int megasas_track_scsiio(struct megasas_instance *instance,
 		int id, int channel)
 {
-	int i, found = 0;
-	struct megasas_cmd_fusion *cmd_fusion;
-	struct fusion_context *fusion;
-	fusion = instance->ctrl_context;
+	struct megasas_track_scsiio_data iter_data = {
+		.instance = instance,
+		.id = id,
+		.channel = channel,
+		.io_pending = false,
+	};
 
-	for (i = instance->max_mfi_cmds; i < instance->max_fw_cmds; i++) {
-		cmd_fusion = fusion->cmd_list[i];
-		if (cmd_fusion->scmd &&
-			(cmd_fusion->scmd->device->id == id &&
-			cmd_fusion->scmd->device->channel == channel)) {
-			dev_info(&instance->pdev->dev,
-				"SCSI commands pending to target"
-				"channel %d id %d \tSMID: 0x%x\n",
-				channel, id, cmd_fusion->index);
-			scsi_print_command(cmd_fusion->scmd);
-			found = 1;
-			break;
-		}
-	}
-
-	return found ? FAILED : SUCCESS;
+	scsi_host_busy_iter(instance->host, megasas_track_scsiio_iter,
+			    &iter_data);
+	return iter_data.io_pending ? FAILED : SUCCESS;
 }
 
 /**
@@ -4804,24 +4828,58 @@ int megasas_check_mpio_paths(struct megasas_instance *instance,
 	return retval;
 }
 
+static bool megasas_return_cmd_iter(struct scsi_cmnd *scmd, void *data,
+				    bool reserved)
+{
+	struct megasas_instance *instance = data;
+	struct fusion_context *fusion = instance->ctrl_context;
+	struct megasas_cmd_fusion *cmd_fusion;
+	u32 index = scmd->request->tag;
+
+	if (reserved)
+		return true;
+
+	cmd_fusion = fusion->cmd_list[index];
+	/* check for extra commands issued by driver*/
+	if (instance->adapter_type >= VENTURA_SERIES) {
+		struct megasas_cmd_fusion *r1_cmd;
+
+		r1_cmd = fusion->cmd_list[index + instance->max_fw_cmds];
+		megasas_return_cmd_fusion(instance, r1_cmd);
+	}
+	if (megasas_dbg_lvl & OCR_DEBUG) {
+		sdev_printk(KERN_INFO,
+			    scmd->device, "SMID: 0x%x\n",
+			    cmd_fusion->index);
+		megasas_dump_fusion_io(scmd);
+	}
+
+	scmd->result = megasas_check_mpio_paths(instance, scmd);
+	if (instance->ldio_threshold &&
+	    megasas_cmd_type(scmd) == READ_WRITE_LDIO)
+		atomic_dec(&instance->ldio_outstanding);
+	megasas_return_cmd_fusion(instance, cmd_fusion);
+	scsi_dma_unmap(scmd);
+	scmd->scsi_done(scmd);
+	return true;
+}
+
 /* Core fusion reset function */
 int megasas_reset_fusion(struct Scsi_Host *shost, int reason)
 {
-	int retval = SUCCESS, i, j, convert = 0;
+	int retval = SUCCESS, j, convert = 0;
 	struct megasas_instance *instance;
-	struct megasas_cmd_fusion *cmd_fusion, *r1_cmd;
 	struct fusion_context *fusion;
-	u32 abs_state, status_reg, reset_adapter, fpio_count = 0;
+	u32 abs_state, status_reg, reset_adapter;
 	u32 io_timeout_in_crash_mode = 0;
-	struct scsi_cmnd *scmd_local = NULL;
 	struct scsi_device *sdev;
 	int ret_target_prop = DCMD_FAILED;
 	bool is_target_prop = false;
 	bool do_adp_reset = true;
-	int max_reset_tries = MEGASAS_FUSION_MAX_RESET_TRIES;
 
 	instance = (struct megasas_instance *)shost->hostdata;
 	fusion = instance->ctrl_context;
+	instance->reset_count = MEGASAS_FUSION_MAX_RESET_TRIES;
 
 	mutex_lock(&instance->reset_mutex);
 
@@ -4890,40 +4948,8 @@ int megasas_reset_fusion(struct Scsi_Host *shost, int reason)
 			dev_info(&instance->pdev->dev, "\nPending SCSI commands:\n");
 
 		/* Now return commands back to the OS */
-		for (i = instance->max_mfi_cmds; i < instance->max_fw_cmds; i++) {
-			cmd_fusion = fusion->cmd_list[i];
-			/*check for extra commands issued by driver*/
-			if (instance->adapter_type >= VENTURA_SERIES) {
-				r1_cmd = fusion->cmd_list[i + instance->max_fw_cmds];
-				megasas_return_cmd_fusion(instance, r1_cmd);
-			}
-			scmd_local = cmd_fusion->scmd;
-			if (cmd_fusion->scmd) {
-				if (megasas_dbg_lvl & OCR_DEBUG) {
-					sdev_printk(KERN_INFO,
-						cmd_fusion->scmd->device, "SMID: 0x%x\n",
-						cmd_fusion->index);
-					megasas_dump_fusion_io(cmd_fusion->scmd);
-				}
-
-				if (cmd_fusion->io_request->Function ==
-					MPI2_FUNCTION_SCSI_IO_REQUEST)
-					fpio_count++;
-
-				scmd_local->result =
-					megasas_check_mpio_paths(instance,
-							scmd_local);
-				if (instance->ldio_threshold &&
-					megasas_cmd_type(scmd_local) == READ_WRITE_LDIO)
-					atomic_dec(&instance->ldio_outstanding);
-				megasas_return_cmd_fusion(instance, cmd_fusion);
-				scsi_dma_unmap(scmd_local);
-				scmd_local->scsi_done(scmd_local);
-			}
-		}
-
-		dev_info(&instance->pdev->dev, "Outstanding fastpath IOs: %d\n",
-			fpio_count);
+		scsi_host_busy_iter(instance->host, megasas_return_cmd_iter,
+				    instance);
 
 		atomic_set(&instance->fw_outstanding, 0);
 
@@ -4943,11 +4969,12 @@ int megasas_reset_fusion(struct Scsi_Host *shost, int reason)
 		if (instance->requestorId && !reason) {
 			msleep(MEGASAS_OCR_SETTLE_TIME_VF);
 			do_adp_reset = false;
-			max_reset_tries = MEGASAS_SRIOV_MAX_RESET_TRIES_VF;
+			instance->reset_count = MEGASAS_SRIOV_MAX_RESET_TRIES_VF;
 		}
 
 		/* Now try to reset the chip */
-		for (i = 0; i < max_reset_tries; i++) {
+		while (instance->reset_count) {
+			instance->reset_count--;
 			/*
 			 * Do adp reset and wait for
 			 * controller to transition to ready
@@ -4977,9 +5004,7 @@ int megasas_reset_fusion(struct Scsi_Host *shost, int reason)
 				goto kill_hba;
 			}
 
-			megasas_refire_mgmt_cmd(instance,
-						(i == (MEGASAS_FUSION_MAX_RESET_TRIES - 1)
-							? 1 : 0));
+			megasas_refire_mgmt_cmd(instance);
 
 			/* Reset load balance info */
 			if (fusion->load_balance_info)
