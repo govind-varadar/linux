@@ -336,6 +336,9 @@ enum req_flag_bits {
 	/* command specific flags for REQ_OP_WRITE_ZEROES: */
 	__REQ_NOUNMAP,		/* do not free blocks when zeroing */
 
+	/* Persistent firmware command, ignore for q_usage_counter */
+	__REQ_PERSISTENT,
+
 	__REQ_HIPRI,
 
 	/* for driver use */
@@ -362,6 +365,7 @@ enum req_flag_bits {
 #define REQ_CGROUP_PUNT		(1ULL << __REQ_CGROUP_PUNT)
 
 #define REQ_NOUNMAP		(1ULL << __REQ_NOUNMAP)
+#define REQ_PERSISTENT		(1ULL << __REQ_PERSISTENT)
 #define REQ_HIPRI		(1ULL << __REQ_HIPRI)
 
 #define REQ_DRV			(1ULL << __REQ_DRV)

@@ -402,9 +402,14 @@ struct request *blk_mq_alloc_request(struct request_queue *q, unsigned int op,
 {
 	struct blk_mq_alloc_data alloc_data = { .flags = flags, .cmd_flags = op };
 	struct request *rq;
-	int ret;
+	int ret = 0;
 
-	ret = blk_queue_enter(q, flags);
+	if (flags & BLK_MQ_REQ_PERSISTENT) {
+		if (blk_queue_dying(q))
+			ret = -ENODEV;
+		alloc_data.cmd_flags |= REQ_PERSISTENT;
+	} else
+		ret = blk_queue_enter(q, flags);
 	if (ret)
 		return ERR_PTR(ret);
 
@@ -481,7 +486,8 @@ static void __blk_mq_free_request(struct request *rq)
 	if (sched_tag != -1)
 		blk_mq_put_tag(hctx->sched_tags, ctx, sched_tag);
 	blk_mq_sched_restart(hctx);
-	blk_queue_exit(q);
+	if (!(rq->cmd_flags & REQ_PERSISTENT))
+		blk_queue_exit(q);
 }
 
 void blk_mq_free_request(struct request *rq)
