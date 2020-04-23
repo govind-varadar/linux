@@ -604,6 +604,21 @@ static void __blk_mq_complete_request(struct request *rq)
 	put_cpu();
 }
 
+/**
+ * blk_mq_rq_is_reserved - Check for reserved request
+ *
+ * @rq: Request to check
+ *
+ * Returns true if the request originates from the reserved tag pool.
+ */
+bool blk_mq_rq_is_reserved(struct request *rq)
+{
+	struct blk_mq_hw_ctx *hctx = rq->mq_hctx;
+
+	return blk_mq_tag_is_reserved(hctx->tags, rq->tag);
+}
+EXPORT_SYMBOL_GPL(blk_mq_rq_is_reserved);
+
 static void hctx_unlock(struct blk_mq_hw_ctx *hctx, int srcu_idx)
 	__releases(hctx->srcu)
 {

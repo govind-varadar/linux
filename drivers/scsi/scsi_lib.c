@@ -1930,9 +1930,12 @@ EXPORT_SYMBOL_GPL(scsi_get_reserved_cmd);
  */
 void scsi_put_reserved_cmd(struct scsi_cmnd *scmd)
 {
-	struct request *rq = blk_mq_rq_from_pdu(scmd);
+	struct request *rq;
 
-	blk_mq_free_request(rq);
+	if (scmd && scsi_cmd_is_reserved(scmd)) {
+		rq = blk_mq_rq_from_pdu(scmd);
+		blk_mq_free_request(rq);
+	}
 }
 EXPORT_SYMBOL_GPL(scsi_put_reserved_cmd);
 

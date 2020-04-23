@@ -159,6 +159,19 @@ static inline struct scsi_driver *scsi_cmd_to_driver(struct scsi_cmnd *cmd)
 	return *(struct scsi_driver **)cmd->request->rq_disk->private_data;
 }
 
+/**
+ * scsi_cmd_is_reserved - check for reserved scsi command
+ * @scmd: command to check
+ *
+ * Returns true if @scmd originates from the reserved tag pool.
+ */
+static inline bool scsi_cmd_is_reserved(struct scsi_cmnd *scmd)
+{
+	struct request *rq = blk_mq_rq_from_pdu(scmd);
+
+	return blk_mq_rq_is_reserved(rq);
+}
+
 extern void scsi_finish_command(struct scsi_cmnd *cmd);
 
 extern void *scsi_kmap_atomic_sg(struct scatterlist *sg, int sg_count,
