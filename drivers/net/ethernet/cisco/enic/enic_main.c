@@ -58,6 +58,9 @@
 #include "enic_pp.h"
 #include "enic_clsf.h"
 
+#define CREATE_TRACE_POINTS
+#include "enic_trace.h"
+
 #define PCI_DEVICE_ID_CISCO_VIC_ENET         0x0043  /* ethernet vnic */
 #define PCI_DEVICE_ID_CISCO_VIC_ENET_DYN     0x0044  /* enet dynamic vnic */
 #define PCI_DEVICE_ID_CISCO_VIC_ENET_VF      0x0071  /* enet SRIOV VF */
@@ -440,6 +443,11 @@ static irqreturn_t enic_isr_msi(int irq, void *data)
 	struct napi_struct *napi = data;
 
 	napi_schedule_irqoff(napi);
+	if (trace_enic_isr_msi_enabled()) {
+		struct enic_qp *qp = container_of(napi, struct enic_qp, napi);
+
+		trace_enic_isr_msi(qp, irq);
+	}
 
 	return IRQ_HANDLED;
 }

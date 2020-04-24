@@ -38,6 +38,7 @@
 #include "cq_enet_desc.h"
 #include "rq_enet_desc.h"
 #include "enic_res.h"
+#include "enic_trace.h"
 
 static void enic_wq_enable(struct enic_qp *qp)
 {
@@ -631,6 +632,7 @@ static inline int enic_rq_fill_bufs(struct enic_qp *qp)
 		rq_enet_desc_enc(&qp->rq.rq_base[buf->index],
 				 (u64)buf->dma_addr | VNIC_PADDR_TARGET,
 				 RQ_ENET_TYPE_ONLY_SOP, buf->len);
+		trace_enic_rq_desc(qp, buf);
 		buf = buf->next;
 		/* Hw caches the rq_desc in multiple of 16 entries (256 bytes)
 		 * Update posted_index (PI) in multiple of 16 so that hw does
@@ -650,10 +652,12 @@ static inline int enic_rq_fill_bufs(struct enic_qp *qp)
 			 */
 			wmb();
 			iowrite32(buf->index, &qp->rq.ctrl->posted_index);
+			trace_enic_rq_posted_index(qp);
 		}
 	}
 	qp->rq.to_use = buf;
 
+	trace_enic_rq_fill_bufs(qp, ret);
 	return ret;
 }
 
@@ -905,6 +909,7 @@ static inline int enic_wq_service(struct enic_qp *qp, int budget)
 		return 0;
 again:
 	cq_desc = &qp->wq.cq_base[qp->wq.cq_to_clean];
+	trace_enic_wq_cq_desc(qp, cq_desc);
 	if (CQ_DESC_COLOR(cq_desc) != qp->wq.last_color) {
 		toclean = CQ_DESC_INDEX(cq_desc);
 		qp->wq.cq_to_clean++;
@@ -922,6 +927,7 @@ again:
 		/* clean until (toclean - 1) index
 		 */
 		while (buf->index != toclean) {
+			trace_enic_wq_buf(qp, buf);
 			if (buf->sop)
 				dma_unmap_single(qp->dev, buf->dma_addr,
 						 buf->len,
@@ -944,10 +950,12 @@ again:
 		    (enic_wq_desc_avail(qp) >=
 		     (MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS))) {
 			netif_tx_wake_queue(txq);
+			trace_enic_tx_wake_queue(qp);
 			qp->wq.stats.wake++;
 		}
 	}
 	qp->wq.stats.cq_work += work;
+	trace_enic_wq_service(qp, work);
 	return work;
 }
 
@@ -970,10 +978,12 @@ static inline int enic_rq_service(struct enic_qp *qp, u16 budget)
 
 next_cq_desc:
 	cq_desc = &qp->rq.cq_base[qp->rq.cq_to_clean];
+	trace_enic_rq_cq_desc(qp, cq_desc);
 	if ((CQ_DESC_COLOR(cq_desc) == qp->rq.last_color) ||
 	    work >= budget) {
 		qp->rq.stats.packets += work;
 
+		trace_enic_rq_service(qp, work);
 		return work;
 	}
 
@@ -984,6 +994,7 @@ next_cq_desc:
 	}
 next_buf:
 	buf = qp->rq.to_clean;
+	trace_enic_rq_buf(qp, buf);
 	qp->rq.to_clean = buf->next;
 	dma_sync_single_range_for_cpu(qp->dev, buf->dma_addr, 0, buf->len,
 				      DMA_FROM_DEVICE);
@@ -1124,6 +1135,7 @@ int enic_napi_poll(struct napi_struct *napi, int budget)
 					 1, /* Unmask interrupt */
 					 0);/* Do not reset timer */
 
+		trace_enic_napi_ret(qp, rq_work, rq_work + wq_work, 1);
 		return rq_work;
 	}
 	enic_intr_return_credits(qp->ctrl, rq_work + wq_work,
@@ -1131,6 +1143,8 @@ int enic_napi_poll(struct napi_struct *napi, int budget)
 				 0);/* Do not reset timer */
 
 	qp->rq.stats.napi_repoll++;
+	trace_enic_napi_ret(qp, rq_work, rq_work + wq_work, 0);
+
 	return rq_work;
 }
 
@@ -1299,6 +1313,9 @@ again:
 		enic_enc_wq_desc(&qp->wq.wq_base[buf->index],
 				 dma_addr + offset, length, mss, header_length,
 				 offload_mode, eop, cq_entry, vlan_tag);
+		trace_enic_wq_desc(qp, buf, dma_addr + offset, length, mss,
+				   header_length, offload_mode, eop, cq_entry,
+				   vlan_tag);
 		atomic_dec(&qp->wq.desc_avail);
 		offset += length;
 		buf = buf->next;
@@ -1367,6 +1384,7 @@ netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	if (unlikely(enic_wq_desc_avail(qp) <
 		     skb_shinfo(skb)->nr_frags + ENIC_DESC_MAX_SPLITS)) {
 		netif_tx_stop_queue(txq);
+		trace_enic_tx_stop_queue(qp);
 		/* This is a hard error, log it */
 		netdev_err(netdev, "BUG! Tx ring full when queue awake!\n");
 		qp->wq.stats.stopped++;
@@ -1377,13 +1395,16 @@ netdev_tx_t enic_hard_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 	if (enic_wq_desc_avail(qp) < MAX_SKB_FRAGS + ENIC_DESC_MAX_SPLITS) {
 		netif_tx_stop_queue(txq);
+		trace_enic_tx_stop_queue(qp);
 		qp->wq.stats.stopped++;
 	}
 	skb_tx_timestamp(skb);
-	if (!netdev_xmit_more() || netif_xmit_stopped(txq))
+	if (!netdev_xmit_more() || netif_xmit_stopped(txq)) {
 		enic_qp_doorbell(qp);
-	else
+		trace_enic_wq_posted_index(qp);
+	} else {
 		qp->wq.stats.delayed_doorbell++;
+	}
 	qp->wq.stats.packets++;
 	qp->wq.stats.bytes += skb->len;
 

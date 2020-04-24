@@ -24,6 +24,7 @@
 #include <linux/netdevice.h>
 #include <linux/pci.h>
 #include <linux/dim.h>
+#include <linux/tracepoint.h>
 
 #include "wq_enet_desc.h"
 #include "vnic_wq.h"
