@@ -982,10 +982,6 @@ megasas_alloc_cmds_fusion(struct megasas_instance *instance)
 		memset(cmd, 0, sizeof(struct megasas_cmd_fusion));
 		cmd->index = i + 1;
 		cmd->scmd = NULL;
-		cmd->sync_cmd_idx =
-		(i >= instance->max_scsi_cmds && i < instance->max_fw_cmds) ?
-				(i - instance->max_scsi_cmds) :
-				(u32)ULONG_MAX; /* Set to Invalid */
 		cmd->instance = instance;
 		cmd->io_request =
 			(struct MPI2_RAID_SCSI_IO_REQUEST *)
@@ -3612,7 +3608,7 @@ complete_cmd_fusion(struct megasas_instance *instance, u32 MSIxIndex,
 				megasas_complete_r1_command(instance, cmd_fusion);
 			break;
 		case MEGASAS_MPI2_FUNCTION_PASSTHRU_IO_REQUEST: /*MFI command */
-			cmd_mfi = instance->cmd_list[cmd_fusion->sync_cmd_idx];
+			cmd_mfi = instance->cmd_list[cmd_fusion->index - 1];
 			/* Poll mode. Dummy free.
 			 * In case of Interrupt mode, caller has reverse check.
 			 */
@@ -3836,8 +3832,7 @@ build_mpt_mfi_pass_thru(struct megasas_instance *instance,
 
 	fusion = instance->ctrl_context;
 
-	cmd = megasas_get_cmd_fusion(instance,
-			instance->max_scsi_cmds + mfi_cmd->index);
+	cmd = megasas_get_cmd_fusion(instance, mfi_cmd->index);
 
 	/*  Save the smid. To be used for returning the cmd */
 	mfi_cmd->context.smid = cmd->index;
@@ -4246,11 +4241,11 @@ static void megasas_refire_mgmt_cmd(struct megasas_instance *instance,
 	fusion = instance->ctrl_context;
 
 	/* Re-fire management commands.
-	 * Do not traverse complet MPT frame pool. Start from max_scsi_cmds.
+	 * Do not traverse complete MPT frame pool, only the MFI frame pool.
 	 */
-	for (j = instance->max_scsi_cmds ; j < instance->max_fw_cmds; j++) {
+	for (j = 0; j < instance->max_mfi_cmds; j++) {
 		cmd_fusion = fusion->cmd_list[j];
-		cmd_mfi = instance->cmd_list[cmd_fusion->sync_cmd_idx];
+		cmd_mfi = instance->cmd_list[j];
 		smid = le16_to_cpu(cmd_mfi->context.smid);
 		result = REFIRE_CMD;
 
@@ -4334,9 +4329,9 @@ megasas_return_polled_cmds(struct megasas_instance *instance)
 
 	fusion = instance->ctrl_context;
 
-	for (i = instance->max_scsi_cmds; i < instance->max_fw_cmds; i++) {
+	for (i = 0; i < instance->max_mfi_cmds; i++) {
 		cmd_fusion = fusion->cmd_list[i];
-		cmd_mfi = instance->cmd_list[cmd_fusion->sync_cmd_idx];
+		cmd_mfi = instance->cmd_list[i];
 
 		if (cmd_mfi->flags & DRV_DCMD_POLLED_MODE) {
 			if (megasas_dbg_lvl & OCR_DEBUG)
@@ -4367,7 +4362,7 @@ static int megasas_track_scsiio(struct megasas_instance *instance,
 	struct fusion_context *fusion;
 	fusion = instance->ctrl_context;
 
-	for (i = 0 ; i < instance->max_scsi_cmds; i++) {
+	for (i = instance->max_mfi_cmds; i < instance->max_fw_cmds; i++) {
 		cmd_fusion = fusion->cmd_list[i];
 		if (cmd_fusion->scmd &&
 			(cmd_fusion->scmd->device->id == id &&
@@ -4480,8 +4475,7 @@ megasas_issue_tm(struct megasas_instance *instance, u16 device_handle,
 		return -ENOMEM;
 	}
 
-	cmd_fusion = megasas_get_cmd_fusion(instance,
-			instance->max_scsi_cmds + cmd_mfi->index);
+	cmd_fusion = megasas_get_cmd_fusion(instance, cmd_mfi->index);
 
 	/*  Save the smid. To be used for returning the cmd */
 	cmd_mfi->context.smid = cmd_fusion->index;
@@ -4601,7 +4595,7 @@ static u16 megasas_fusion_smid_lookup(struct scsi_cmnd *scmd)
 
 	fusion = instance->ctrl_context;
 
-	for (i = 0; i < instance->max_scsi_cmds; i++) {
+	for (i = instance->max_mfi_cmds; i < instance->max_fw_cmds; i++) {
 		cmd_fusion = fusion->cmd_list[i];
 		if (cmd_fusion->scmd && (cmd_fusion->scmd == scmd)) {
 			scmd_printk(KERN_NOTICE, scmd, "Abort request is for"
@@ -4918,7 +4912,7 @@ int megasas_reset_fusion(struct Scsi_Host *shost, int reason)
 			dev_info(&instance->pdev->dev, "\nPending SCSI commands:\n");
 
 		/* Now return commands back to the OS */
-		for (i = 0 ; i < instance->max_scsi_cmds; i++) {
+		for (i = instance->max_mfi_cmds; i < instance->max_fw_cmds; i++) {
 			cmd_fusion = fusion->cmd_list[i];
 			/*check for extra commands issued by driver*/
 			if (instance->adapter_type >= VENTURA_SERIES) {

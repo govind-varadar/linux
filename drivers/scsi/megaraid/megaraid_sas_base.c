@@ -345,7 +345,7 @@ megasas_return_cmd(struct megasas_instance *instance, struct megasas_cmd *cmd)
 		return;
 
 	if (fusion) {
-		blk_tags = instance->max_scsi_cmds + cmd->index;
+		blk_tags = cmd->index;
 		cmd_fusion = fusion->cmd_list[blk_tags];
 		megasas_return_cmd_fusion(instance, cmd_fusion);
 	}
@@ -2123,8 +2123,8 @@ static void megasas_complete_outstanding_ioctls(struct megasas_instance *instanc
 	if (fusion) {
 		for (i = 0; i < instance->max_fw_cmds; i++) {
 			cmd_fusion = fusion->cmd_list[i];
-			if (cmd_fusion->sync_cmd_idx != (u32)ULONG_MAX) {
-				cmd_mfi = instance->cmd_list[cmd_fusion->sync_cmd_idx];
+			if (i < instance->max_mfi_cmds) {
+				cmd_mfi = instance->cmd_list[i];
 				if (cmd_mfi->sync_cmd &&
 				    (cmd_mfi->frame->hdr.cmd != MFI_CMD_ABORT)) {
 					cmd_mfi->frame->hdr.cmd_status =

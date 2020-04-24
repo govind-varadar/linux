@@ -1105,11 +1105,6 @@ struct megasas_cmd_fusion {
 	u8 retry_for_fw_reset;
 	union MEGASAS_REQUEST_DESCRIPTOR_UNION  *request_desc;
 
-	/*
-	 * Context for a MFI frame.
-	 * Used to get the mfi cmd from list when a MFI cmd is completed
-	 */
-	u32 sync_cmd_idx;
 	u32 index;
 	u8 pd_r1_lb;
 	struct completion done;
