@@ -6506,6 +6506,51 @@ dcmd_failed:
 	return ret;
 }
 
+static struct megasas_cmd *
+megasas_prepare_aen(struct megasas_instance *instance, u32 seq_num,
+		    union megasas_evt_class_locale *aen)
+{
+	struct megasas_cmd *cmd;
+	struct megasas_dcmd_frame *dcmd;
+
+	cmd = megasas_get_cmd(instance);
+	if (!cmd)
+		return NULL;
+
+	dcmd = &cmd->frame->dcmd;
+
+	memset(instance->evt_detail, 0, sizeof(struct megasas_evt_detail));
+
+	/*
+	 * Prepare DCMD for aen registration
+	 */
+	memset(dcmd->mbox.b, 0, MFI_MBOX_SIZE);
+
+	dcmd->cmd = MFI_CMD_DCMD;
+	dcmd->cmd_status = 0x0;
+	dcmd->sge_count = 1;
+	dcmd->flags = MFI_FRAME_DIR_READ;
+	dcmd->timeout = 0;
+	dcmd->pad_0 = 0;
+	dcmd->data_xfer_len = cpu_to_le32(sizeof(struct megasas_evt_detail));
+	dcmd->opcode = cpu_to_le32(MR_DCMD_CTRL_EVENT_WAIT);
+	dcmd->mbox.w[0] = cpu_to_le32(seq_num);
+	instance->last_seq_num = seq_num;
+	dcmd->mbox.w[1] = cpu_to_le32(aen->word);
+
+	megasas_set_dma_settings(instance, dcmd, instance->evt_detail_h,
+				 sizeof(struct megasas_evt_detail));
+
+	/*
+	 * Store reference to the cmd used to register for AEN. When an
+	 * application wants us to register for AEN, we have to abort this
+	 * cmd and re-register with a new EVENT LOCALE supplied by that app
+	 */
+	instance->aen_cmd = cmd;
+
+	return cmd;
+}
+
 /**
  * megasas_register_aen -	Registers for asynchronous event notification
  * @instance:			Adapter soft state
@@ -6521,7 +6566,6 @@ megasas_register_aen(struct megasas_instance *instance, u32 seq_num,
 {
 	int ret_val;
 	struct megasas_cmd *cmd;
-	struct megasas_dcmd_frame *dcmd;
 	union megasas_evt_class_locale curr_aen;
 	union megasas_evt_class_locale prev_aen;
 
@@ -6590,46 +6634,9 @@ megasas_register_aen(struct megasas_instance *instance, u32 seq_num,
 		}
 	}
 
-	cmd = megasas_get_cmd(instance);
-
+	cmd = megasas_prepare_aen(instance, seq_num, &curr_aen);
 	if (!cmd)
 		return -ENOMEM;
-
-	dcmd = &cmd->frame->dcmd;
-
-	memset(instance->evt_detail, 0, sizeof(struct megasas_evt_detail));
-
-	/*
-	 * Prepare DCMD for aen registration
-	 */
-	memset(dcmd->mbox.b, 0, MFI_MBOX_SIZE);
-
-	dcmd->cmd = MFI_CMD_DCMD;
-	dcmd->cmd_status = 0x0;
-	dcmd->sge_count = 1;
-	dcmd->flags = MFI_FRAME_DIR_READ;
-	dcmd->timeout = 0;
-	dcmd->pad_0 = 0;
-	dcmd->data_xfer_len = cpu_to_le32(sizeof(struct megasas_evt_detail));
-	dcmd->opcode = cpu_to_le32(MR_DCMD_CTRL_EVENT_WAIT);
-	dcmd->mbox.w[0] = cpu_to_le32(seq_num);
-	instance->last_seq_num = seq_num;
-	dcmd->mbox.w[1] = cpu_to_le32(curr_aen.word);
-
-	megasas_set_dma_settings(instance, dcmd, instance->evt_detail_h,
-				 sizeof(struct megasas_evt_detail));
-
-	if (instance->aen_cmd != NULL) {
-		megasas_return_cmd(instance, cmd);
-		return 0;
-	}
-
-	/*
-	 * Store reference to the cmd used to register for AEN. When an
-	 * application wants us to register for AEN, we have to abort this
-	 * cmd and re-register with a new EVENT LOCALE supplied by that app
-	 */
-	instance->aen_cmd = cmd;
 
 	/*
 	 * Issue the aen registration frame
