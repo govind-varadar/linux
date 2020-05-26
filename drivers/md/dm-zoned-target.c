@@ -40,9 +40,10 @@ struct dm_chunk_work {
  * Target descriptor.
  */
 struct dmz_target {
-	struct dm_dev		*ddev[DMZ_MAX_DEVS];
+	struct dm_dev		**ddev;
+	unsigned int		nr_ddevs;
 
-	unsigned long		flags;
+	unsigned int		flags;
 
 	/* Zoned block device information */
 	struct dmz_dev		*dev;
@@ -836,12 +837,20 @@ static int dmz_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "Unable to allocate the zoned target descriptor";
 		return -ENOMEM;
 	}
-	dmz->dev = kcalloc(2, sizeof(struct dmz_dev), GFP_KERNEL);
+	dmz->dev = kcalloc(argc, sizeof(struct dmz_dev), GFP_KERNEL);
 	if (!dmz->dev) {
 		ti->error = "Unable to allocate the zoned device descriptors";
 		kfree(dmz);
 		return -ENOMEM;
 	}
+	dmz->ddev = kcalloc(argc, sizeof(struct dm_dev *), GFP_KERNEL);
+	if (!dmz->ddev) {
+		ti->error = "Unable to allocate the dm device descriptors";
+		ret = -ENOMEM;
+		goto err;
+	}
+	dmz->nr_ddevs = argc;
+
 	ti->private = dmz;
 
 	/* Get the target zoned block device */
@@ -1048,13 +1057,13 @@ static int dmz_iterate_devices(struct dm_target *ti,
 	struct dmz_target *dmz = ti->private;
 	unsigned int zone_nr_sectors = dmz_zone_nr_sectors(dmz->metadata);
 	sector_t capacity;
-	int r;
+	int i, r;
 
-	capacity = dmz->dev[0].capacity & ~(zone_nr_sectors - 1);
-	r = fn(ti, dmz->ddev[0], 0, capacity, data);
-	if (!r && dmz->ddev[1]) {
-		capacity = dmz->dev[1].capacity & ~(zone_nr_sectors - 1);
-		r = fn(ti, dmz->ddev[1], 0, capacity, data);
+	for (i = 0; i < dmz->nr_ddevs; i++) {
+		capacity = dmz->dev[i].capacity & ~(zone_nr_sectors - 1);
+		r = fn(ti, dmz->ddev[i], 0, capacity, data);
+		if (r)
+			break;
 	}
 	return r;
 }
@@ -1083,7 +1092,7 @@ static void dmz_status(struct dm_target *ti, status_type_t type,
 		dev = &dmz->dev[0];
 		format_dev_t(buf, dev->bdev->bd_dev);
 		DMEMIT("%s", buf);
-		if (dmz->dev[1].bdev) {
+		if (dmz->nr_ddevs > 1) {
 			dev = &dmz->dev[1];
 			format_dev_t(buf, dev->bdev->bd_dev);
 			DMEMIT(" %s", buf);
