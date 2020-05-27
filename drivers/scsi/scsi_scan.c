@@ -309,6 +309,7 @@ static void scsi_target_destroy(struct scsi_target *starget)
 	struct device *dev = &starget->dev;
 	struct Scsi_Host *shost = dev_to_shost(dev->parent);
 	unsigned long flags;
+	unsigned long tid = scsi_target_index(starget);
 
 	BUG_ON(starget->state == STARGET_DEL);
 	starget->state = STARGET_DEL;
@@ -316,7 +317,7 @@ static void scsi_target_destroy(struct scsi_target *starget)
 	spin_lock_irqsave(shost->host_lock, flags);
 	if (shost->hostt->target_destroy)
 		shost->hostt->target_destroy(starget);
-	list_del_init(&starget->siblings);
+	xa_erase(&shost->__targets, tid);
 	spin_unlock_irqrestore(shost->host_lock, flags);
 	put_device(dev);
 }
@@ -340,27 +341,6 @@ int scsi_is_target_device(const struct device *dev)
 	return dev->type == &scsi_target_type;
 }
 EXPORT_SYMBOL(scsi_is_target_device);
-
-static struct scsi_target *__scsi_find_target(struct device *parent,
-					      int channel, uint id)
-{
-	struct scsi_target *starget, *found_starget = NULL;
-	struct Scsi_Host *shost = dev_to_shost(parent);
-	/*
-	 * Search for an existing target for this sdev.
-	 */
-	list_for_each_entry(starget, &shost->__targets, siblings) {
-		if (starget->id == id &&
-		    starget->channel == channel) {
-			found_starget = starget;
-			break;
-		}
-	}
-	if (found_starget)
-		get_device(&found_starget->dev);
-
-	return found_starget;
-}
 
 /**
  * scsi_target_reap_ref_release - remove target from visibility
@@ -417,6 +397,7 @@ static struct scsi_target *scsi_alloc_target(struct device *parent,
 	struct scsi_target *starget;
 	struct scsi_target *found_target;
 	int error, ref_got;
+	unsigned long tid;
 
 	starget = kzalloc(size, GFP_KERNEL);
 	if (!starget) {
@@ -433,27 +414,37 @@ static struct scsi_target *scsi_alloc_target(struct device *parent,
 	starget->id = id;
 	starget->channel = channel;
 	starget->can_queue = 0;
-	INIT_LIST_HEAD(&starget->siblings);
 	INIT_LIST_HEAD(&starget->devices);
 	starget->state = STARGET_CREATED;
 	starget->scsi_level = SCSI_2;
 	starget->max_target_blocked = SCSI_DEFAULT_TARGET_BLOCKED;
+	tid = scsi_target_index(starget);
  retry:
 	spin_lock_irqsave(shost->host_lock, flags);
-
-	found_target = __scsi_find_target(parent, channel, id);
-	if (found_target)
+	found_target = xa_load(&shost->__targets, tid);
+	if (found_target) {
+		get_device(&found_target->dev);
 		goto found;
-
-	list_add_tail(&starget->siblings, &shost->__targets);
+	}
+	error = xa_insert(&shost->__targets, tid, starget, GFP_ATOMIC);
 	spin_unlock_irqrestore(shost->host_lock, flags);
+	if (error) {
+		dev_printk(KERN_ERR, dev,
+			     "target %u:%u index allocation failed, error %d\n",
+			     channel, id, error);
+		put_device(dev);
+		kfree(starget);
+		return NULL;
+	}
 	/* allocate and add */
 	transport_setup_device(dev);
 	if (shost->hostt->target_alloc) {
 		error = shost->hostt->target_alloc(starget);
 
 		if(error) {
-			dev_printk(KERN_ERR, dev, "target allocation failed, error %d\n", error);
+			dev_printk(KERN_ERR, dev,
+				   "target %u:%u allocation failed, error %d\n",
+				   channel, id, error);
 			/* don't want scsi_target_reap to do the final
 			 * put because it will be under the host lock */
 			scsi_target_destroy(starget);

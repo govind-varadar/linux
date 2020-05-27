@@ -521,7 +521,7 @@ struct Scsi_Host {
 	 * access this list directly from a driver.
 	 */
 	struct list_head	__devices;
-	struct list_head	__targets;
+	struct xarray		__targets;
 	
 	struct list_head	starved_list;
 

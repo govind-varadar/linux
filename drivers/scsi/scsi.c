@@ -576,6 +576,19 @@ struct scsi_device *__scsi_iterate_devices(struct Scsi_Host *shost,
 EXPORT_SYMBOL(__scsi_iterate_devices);
 
 /**
+ * __scsi_target_lookup  -  find a target based on channel and target id
+ * @shost:	SCSI host pointer
+ * @channel:	channel number of the target
+ * @id:		ID of the target
+ *
+ */
+static struct scsi_target *__scsi_target_lookup(struct Scsi_Host *shost,
+					 u16 channel, u16 id)
+{
+	return xa_load(&shost->__targets, (channel << 16) | id);
+}
+
+/**
  * starget_for_each_device  -  helper to walk all devices of a target
  * @starget:	target whose devices we want to iterate over.
  * @data:	Opaque passed to each function call.
@@ -701,19 +714,14 @@ EXPORT_SYMBOL(scsi_device_lookup_by_target);
  * really want to use scsi_device_lookup instead.
  **/
 struct scsi_device *__scsi_device_lookup(struct Scsi_Host *shost,
-		uint channel, uint id, u64 lun)
+		u16 channel, u16 id, u64 lun)
 {
-	struct scsi_device *sdev;
+	struct scsi_target *starget;
 
-	list_for_each_entry(sdev, &shost->__devices, siblings) {
-		if (sdev->sdev_state == SDEV_DEL)
-			continue;
-		if (sdev->channel == channel && sdev->id == id &&
-				sdev->lun ==lun)
-			return sdev;
-	}
-
-	return NULL;
+	starget = __scsi_target_lookup(shost, channel, id);
+	if (!starget)
+		return NULL;
+	return __scsi_device_lookup_by_target(starget, lun);
 }
 EXPORT_SYMBOL(__scsi_device_lookup);
 
@@ -729,7 +737,7 @@ EXPORT_SYMBOL(__scsi_device_lookup);
  * needs to be released with scsi_device_put once you're done with it.
  **/
 struct scsi_device *scsi_device_lookup(struct Scsi_Host *shost,
-		uint channel, uint id, u64 lun)
+		u16 channel, u16 id, u64 lun)
 {
 	struct scsi_device *sdev;
 	unsigned long flags;

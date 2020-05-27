@@ -1511,16 +1511,21 @@ static void __scsi_remove_target(struct scsi_target *starget)
 void scsi_remove_target(struct device *dev)
 {
 	struct Scsi_Host *shost = dev_to_shost(dev->parent);
-	struct scsi_target *starget;
+	struct scsi_target *starget, *starget_next;
+	unsigned long tid = 0;
 	unsigned long flags;
 
-restart:
 	spin_lock_irqsave(shost->host_lock, flags);
-	list_for_each_entry(starget, &shost->__targets, siblings) {
+	starget = xa_find(&shost->__targets, &tid, UINT_MAX, XA_PRESENT);
+	while (starget) {
+		starget_next = xa_find_after(&shost->__targets, &tid,
+					     UINT_MAX, XA_PRESENT);
 		if (starget->state == STARGET_DEL ||
 		    starget->state == STARGET_REMOVE ||
-		    starget->state == STARGET_CREATED_REMOVE)
+		    starget->state == STARGET_CREATED_REMOVE) {
+			starget = starget_next;
 			continue;
+		}
 		if (starget->dev.parent == dev || &starget->dev == dev) {
 			kref_get(&starget->reap_ref);
 			if (starget->state == STARGET_CREATED)
@@ -1530,8 +1535,9 @@ restart:
 			spin_unlock_irqrestore(shost->host_lock, flags);
 			__scsi_remove_target(starget);
 			scsi_target_reap(starget);
-			goto restart;
+			spin_lock_irqsave(shost->host_lock, flags);
 		}
+		starget = starget_next;
 	}
 	spin_unlock_irqrestore(shost->host_lock, flags);
 }
