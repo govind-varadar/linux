@@ -234,7 +234,6 @@ static struct scsi_device *scsi_alloc_sdev(struct scsi_target *starget,
 	sdev->channel = starget->channel;
 	mutex_init(&sdev->state_mutex);
 	sdev->sdev_state = SDEV_CREATED;
-	INIT_LIST_HEAD(&sdev->siblings);
 	INIT_LIST_HEAD(&sdev->starved_entry);
 	INIT_LIST_HEAD(&sdev->event_list);
 	spin_lock_init(&sdev->list_lock);
@@ -1851,17 +1850,30 @@ EXPORT_SYMBOL(scsi_scan_host);
 
 void scsi_forget_host(struct Scsi_Host *shost)
 {
-	struct scsi_device *sdev;
+	struct scsi_target *starget, *starget_next;
+	struct scsi_device *sdev, *sdev_next;
 	unsigned long flags;
+	unsigned long tid = 0;
 
- restart:
 	spin_lock_irqsave(shost->host_lock, flags);
-	list_for_each_entry(sdev, &shost->__devices, siblings) {
-		if (sdev->sdev_state == SDEV_DEL)
-			continue;
-		spin_unlock_irqrestore(shost->host_lock, flags);
-		__scsi_remove_device(sdev);
-		goto restart;
+	starget = xa_find(&shost->__targets, &tid, UINT_MAX, XA_PRESENT);
+	while (starget) {
+		unsigned long lun_idx = 0;
+
+		starget_next = xa_find_after(&shost->__targets, &tid, UINT_MAX, XA_PRESENT);
+
+		sdev = xa_find(&starget->__devices, &lun_idx, UINT_MAX, XA_PRESENT);
+		while (sdev) {
+			sdev_next = xa_find_after(&starget->__devices, &lun_idx, UINT_MAX, XA_PRESENT);
+
+			if (sdev->sdev_state != SDEV_DEL) {
+				spin_unlock_irqrestore(shost->host_lock, flags);
+				__scsi_remove_device(sdev);
+				spin_lock_irqsave(shost->host_lock, flags);
+			}
+			sdev = sdev_next;
+		}
+		starget = starget_next;
 	}
 	spin_unlock_irqrestore(shost->host_lock, flags);
 }

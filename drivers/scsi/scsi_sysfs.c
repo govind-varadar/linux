@@ -449,7 +449,6 @@ static void scsi_device_dev_release_usercontext(struct work_struct *work)
 	parent = sdev->sdev_gendev.parent;
 
 	spin_lock_irqsave(sdev->host->host_lock, flags);
-	list_del(&sdev->siblings);
 	/* Use cmpxchg to avoid accidental deletion */
 	tmp_sdev = xa_cmpxchg(&starget->__devices, sdev->lun_idx, sdev,
 			      NULL, GFP_KERNEL);
@@ -1480,29 +1479,31 @@ static void __scsi_remove_target(struct scsi_target *starget)
 {
 	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
 	unsigned long flags;
-	struct scsi_device *sdev;
+	struct scsi_device *sdev, *sdev_next;
+	unsigned long lun_idx = 0;
 
 	spin_lock_irqsave(shost->host_lock, flags);
- restart:
-	list_for_each_entry(sdev, &shost->__devices, siblings) {
+	sdev = xa_find(&starget->__devices, &lun_idx, UINT_MAX, XA_PRESENT);
+	while (sdev) {
+		sdev_next = xa_find_after(&starget->__devices, &lun_idx, UINT_MAX, XA_PRESENT);
+
 		/*
 		 * We cannot call scsi_device_get() here, as
 		 * we might've been called from rmmod() causing
 		 * scsi_device_get() to fail the module_is_live()
 		 * check.
 		 */
-		if (sdev->channel != starget->channel ||
-		    sdev->id != starget->id)
-			continue;
 		if (sdev->sdev_state == SDEV_DEL ||
 		    sdev->sdev_state == SDEV_CANCEL ||
-		    !get_device(&sdev->sdev_gendev))
+		    !get_device(&sdev->sdev_gendev)) {
+			sdev = sdev_next;
 			continue;
+		}
 		spin_unlock_irqrestore(shost->host_lock, flags);
 		scsi_remove_device(sdev);
 		put_device(&sdev->sdev_gendev);
 		spin_lock_irqsave(shost->host_lock, flags);
-		goto restart;
+		sdev = sdev_next;
 	}
 	spin_unlock_irqrestore(shost->host_lock, flags);
 }
@@ -1651,7 +1652,6 @@ void scsi_sysfs_device_initialize(struct scsi_device *sdev)
 			     "LUN index %u:%u:%llu allocation error %d\n",
 			     sdev_channel(sdev), sdev_id(sdev), sdev->lun, ret);
 	}
-	list_add_tail(&sdev->siblings, &shost->__devices);
 	spin_unlock_irqrestore(shost->host_lock, flags);
 	/*
 	 * device can now only be removed via __scsi_remove_device() so hold

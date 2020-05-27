@@ -554,18 +554,48 @@ EXPORT_SYMBOL(scsi_device_put);
 struct scsi_device *__scsi_iterate_devices(struct Scsi_Host *shost,
 					   struct scsi_device *prev)
 {
-	struct list_head *list = (prev ? &prev->siblings : &shost->__devices);
+	struct scsi_target *starget;
 	struct scsi_device *next = NULL;
 	unsigned long flags;
+	unsigned long tid = 0, lun_idx = 0;
 
 	spin_lock_irqsave(shost->host_lock, flags);
-	while (list->next != &shost->__devices) {
-		next = list_entry(list->next, struct scsi_device, siblings);
-		/* skip devices that we can't get a reference to */
-		if (!scsi_device_get(next))
+	if (!prev) {
+		starget = xa_find(&shost->__targets, &tid,
+				       UINT_MAX, XA_PRESENT);
+		if (starget) {
+			next = xa_find(&starget->__devices, &lun_idx,
+				       UINT_MAX, XA_PRESENT);
+			if (!scsi_device_get(next)) {
+				spin_unlock_irqrestore(shost->host_lock, flags);
+				return next;
+			}
+		}
+	} else {
+		starget = prev->sdev_target;
+		tid = (starget->channel << 16) | starget->id;
+		lun_idx = prev->lun_idx;
+	}
+	while (starget) {
+		next = xa_find_after(&starget->__devices, &lun_idx,
+				     UINT_MAX, XA_PRESENT);
+		if (next) {
+			if (!scsi_device_get(next))
+				break;
+			continue;
+		}
+		/* No more LUNs on this target, switch to the next */
+		starget = xa_find_after(&shost->__targets, &tid,
+					UINT_MAX, XA_PRESENT);
+		if (!starget) {
+			next = NULL;
 			break;
-		next = NULL;
-		list = list->next;
+		}
+		lun_idx = 0;
+		next = xa_find(&starget->__devices, &lun_idx,
+			       UINT_MAX, XA_PRESENT);
+		if (next && !scsi_device_get(next))
+			break;
 	}
 	spin_unlock_irqrestore(shost->host_lock, flags);
 
@@ -574,6 +604,46 @@ struct scsi_device *__scsi_iterate_devices(struct Scsi_Host *shost,
 	return next;
 }
 EXPORT_SYMBOL(__scsi_iterate_devices);
+
+/* helper for __shost_for_each_device, see that for documentation */
+struct scsi_device *__scsi_iterate_devices_unlocked(struct Scsi_Host *shost,
+						    struct scsi_device *prev)
+{
+	struct scsi_target *starget;
+	struct scsi_device *next = NULL;
+	unsigned long tid = 0, lun_idx = 0;
+
+	if (!prev) {
+		starget = xa_find(&shost->__targets, &tid,
+				       UINT_MAX, XA_PRESENT);
+		if (starget)
+			return xa_find(&starget->__devices, &lun_idx,
+				       UINT_MAX, XA_PRESENT);
+	} else {
+		starget = prev->sdev_target;
+		tid = scsi_target_index(starget);
+		lun_idx = prev->lun_idx;
+	}
+	while (starget) {
+		next = xa_find_after(&starget->__devices, &lun_idx,
+				     UINT_MAX, XA_PRESENT);
+		if (next)
+			return next;
+		/* No more LUNs on this target, switch to the next */
+		starget = xa_find_after(&shost->__targets, &tid,
+					UINT_MAX, XA_PRESENT);
+		if (!starget)
+			return NULL;
+
+		lun_idx = 0;
+		next = xa_find(&starget->__devices, &lun_idx,
+			       UINT_MAX, XA_PRESENT);
+		if (next)
+			return next;
+	}
+	return NULL;
+}
+EXPORT_SYMBOL(__scsi_iterate_devices_unlocked);
 
 /**
  * __scsi_target_lookup  -  find a target based on channel and target id
