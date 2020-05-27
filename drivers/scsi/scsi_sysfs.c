@@ -433,7 +433,8 @@ static void scsi_device_cls_release(struct device *class_dev)
 
 static void scsi_device_dev_release_usercontext(struct work_struct *work)
 {
-	struct scsi_device *sdev;
+	struct scsi_device *sdev, *tmp_sdev;
+	struct scsi_target *starget;
 	struct device *parent;
 	struct list_head *this, *tmp;
 	struct scsi_vpd *vpd_pg80 = NULL, *vpd_pg83 = NULL;
@@ -441,6 +442,7 @@ static void scsi_device_dev_release_usercontext(struct work_struct *work)
 	unsigned long flags;
 
 	sdev = container_of(work, struct scsi_device, ew.work);
+	starget = sdev->sdev_target;
 
 	scsi_dh_release_device(sdev);
 
@@ -448,7 +450,12 @@ static void scsi_device_dev_release_usercontext(struct work_struct *work)
 
 	spin_lock_irqsave(sdev->host->host_lock, flags);
 	list_del(&sdev->siblings);
-	list_del(&sdev->same_target_siblings);
+	/* Use cmpxchg to avoid accidental deletion */
+	tmp_sdev = xa_cmpxchg(&starget->__devices, sdev->lun_idx, sdev,
+			      NULL, GFP_KERNEL);
+	if (tmp_sdev != sdev)
+		sdev_printk(KERN_WARNING, sdev,
+			    "index %u reassigned!\n", sdev->lun_idx);
 	list_del(&sdev->starved_entry);
 	spin_unlock_irqrestore(sdev->host->host_lock, flags);
 
@@ -1593,6 +1600,7 @@ void scsi_sysfs_device_initialize(struct scsi_device *sdev)
 	unsigned long flags;
 	struct Scsi_Host *shost = sdev->host;
 	struct scsi_target  *starget = sdev->sdev_target;
+	int ret = -ERANGE;
 
 	device_initialize(&sdev->sdev_gendev);
 	sdev->sdev_gendev.bus = &scsi_bus_type;
@@ -1620,7 +1628,29 @@ void scsi_sysfs_device_initialize(struct scsi_device *sdev)
 
 	transport_setup_device(&sdev->sdev_gendev);
 	spin_lock_irqsave(shost->host_lock, flags);
-	list_add_tail(&sdev->same_target_siblings, &starget->devices);
+	if (sdev->lun < UINT_MAX) {
+		sdev->lun_idx = sdev->lun;
+		ret = xa_insert(&starget->__devices, (unsigned int)sdev->lun,
+				sdev, GFP_ATOMIC);
+	}
+	/*
+	 * Use a free index if the LUN is larger than 32 bit or
+	 * if the index is already taken. Leave the lower 256
+	 * entries free to avoid collisions.
+	 */
+	if (ret) {
+		struct xa_limit scsi_lun_limit = {
+			.min = 256,
+			.max = UINT_MAX,
+		};
+		ret = xa_alloc(&starget->__devices, &sdev->lun_idx,
+			       sdev, scsi_lun_limit, GFP_ATOMIC);
+	}
+	if (ret) {
+		shost_printk(KERN_ERR, shost,
+			     "LUN index %u:%u:%llu allocation error %d\n",
+			     sdev_channel(sdev), sdev_id(sdev), sdev->lun, ret);
+	}
 	list_add_tail(&sdev->siblings, &shost->__devices);
 	spin_unlock_irqrestore(shost->host_lock, flags);
 	/*
