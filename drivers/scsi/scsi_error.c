@@ -643,7 +643,9 @@ EXPORT_SYMBOL_GPL(scsi_check_sense);
 static void scsi_handle_queue_ramp_up(struct scsi_device *sdev)
 {
 	struct scsi_host_template *sht = sdev->host->hostt;
+	struct scsi_target *starget;
 	struct scsi_device *tmp_sdev;
+	unsigned long lun_idx = 0;
 
 	if (!sht->track_queue_depth ||
 	    sdev->queue_depth >= sdev->max_queue_depth)
@@ -661,10 +663,9 @@ static void scsi_handle_queue_ramp_up(struct scsi_device *sdev)
 	 * Walk all devices of a target and do
 	 * ramp up on them.
 	 */
-	shost_for_each_device(tmp_sdev, sdev->host) {
-		if (tmp_sdev->channel != sdev->channel ||
-		    tmp_sdev->id != sdev->id ||
-		    tmp_sdev->queue_depth == sdev->max_queue_depth)
+	starget = __scsi_target_lookup(sdev->host, sdev->channel, sdev->id);
+	xa_for_each(&starget->__devices, lun_idx, tmp_sdev) {
+		if (tmp_sdev->queue_depth == sdev->max_queue_depth)
 			continue;
 
 		scsi_change_queue_depth(tmp_sdev, tmp_sdev->queue_depth + 1);
@@ -675,14 +676,15 @@ static void scsi_handle_queue_ramp_up(struct scsi_device *sdev)
 static void scsi_handle_queue_full(struct scsi_device *sdev)
 {
 	struct scsi_host_template *sht = sdev->host->hostt;
+	struct scsi_target *starget = sdev->sdev_target;
 	struct scsi_device *tmp_sdev;
+	unsigned long lun_idx = 0;
 
 	if (!sht->track_queue_depth)
 		return;
 
-	shost_for_each_device(tmp_sdev, sdev->host) {
-		if (tmp_sdev->channel != sdev->channel ||
-		    tmp_sdev->id != sdev->id)
+	xa_for_each(&starget->__devices, lun_idx, tmp_sdev) {
+		if (tmp_sdev->sdev_state == SDEV_DEL)
 			continue;
 		/*
 		 * We do not know the number of commands that were at
@@ -2273,10 +2275,16 @@ int scsi_error_handler(void *data)
  */
 void scsi_report_bus_reset(struct Scsi_Host *shost, int channel)
 {
+	struct scsi_target *starget;
 	struct scsi_device *sdev;
+	unsigned long tid = 0;
 
-	__shost_for_each_device(sdev, shost) {
-		if (channel == sdev_channel(sdev))
+	xa_for_each(&shost->__targets, tid, starget) {
+		unsigned long lun_idx = 0;
+
+		if (starget->channel != channel)
+			continue;
+		xa_for_each(&starget->__devices, lun_idx, sdev)
 			__scsi_report_device_reset(sdev, NULL);
 	}
 }
@@ -2306,13 +2314,14 @@ EXPORT_SYMBOL(scsi_report_bus_reset);
  */
 void scsi_report_device_reset(struct Scsi_Host *shost, int channel, int target)
 {
+	struct scsi_target *starget;
 	struct scsi_device *sdev;
+	unsigned long lun_idx = 0;
 
-	__shost_for_each_device(sdev, shost) {
-		if (channel == sdev_channel(sdev) &&
-		    target == sdev_id(sdev))
+	starget = __scsi_target_lookup(shost, channel, target);
+	if (starget)
+		xa_for_each(&starget->__devices, lun_idx, sdev)
 			__scsi_report_device_reset(sdev, NULL);
-	}
 }
 EXPORT_SYMBOL(scsi_report_device_reset);
 

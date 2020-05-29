@@ -49,6 +49,8 @@ enum scsi_devinfo_key {
 	SCSI_DEVINFO_SPI,
 };
 
+extern struct scsi_target *__scsi_target_lookup(struct Scsi_Host *shost,
+						u16 channel, u16 id);
 extern blist_flags_t scsi_get_device_flags(struct scsi_device *sdev,
 					   const unsigned char *vendor,
 					   const unsigned char *model);
