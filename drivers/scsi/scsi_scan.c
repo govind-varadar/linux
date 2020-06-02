@@ -387,7 +387,7 @@ static void scsi_target_reap_ref_put(struct scsi_target *starget)
  * is responsible for both reaping and doing a last put
  */
 static struct scsi_target *scsi_alloc_target(struct device *parent,
-					     int channel, uint id)
+					     u16 channel, u16 id)
 {
 	struct Scsi_Host *shost = dev_to_shost(parent);
 	struct device *dev = NULL;
@@ -397,7 +397,23 @@ static struct scsi_target *scsi_alloc_target(struct device *parent,
 	struct scsi_target *starget;
 	struct scsi_target *found_target;
 	int error, ref_got;
-	unsigned long tid;
+	unsigned long tid = (channel << 16) | id;
+
+	/*
+	 * Try if the target is already present, and save us
+	 * a pointless memory allocation if so.
+	 */
+	spin_lock_irqsave(shost->host_lock, flags);
+	found_target = xa_load(&shost->__targets, tid);
+	if (found_target) {
+		get_device(&found_target->dev);
+		if (kref_get_unless_zero(&found_target->reap_ref)) {
+			spin_unlock_irqrestore(shost->host_lock, flags);
+			return found_target;
+		}
+		put_device(&found_target->dev);
+	}
+	spin_unlock_irqrestore(shost->host_lock, flags);
 
 	starget = kzalloc(size, GFP_KERNEL);
 	if (!starget) {
@@ -418,7 +434,6 @@ static struct scsi_target *scsi_alloc_target(struct device *parent,
 	starget->state = STARGET_CREATED;
 	starget->scsi_level = SCSI_2;
 	starget->max_target_blocked = SCSI_DEFAULT_TARGET_BLOCKED;
-	tid = scsi_target_index(starget);
  retry:
 	spin_lock_irqsave(shost->host_lock, flags);
 	found_target = xa_load(&shost->__targets, tid);
