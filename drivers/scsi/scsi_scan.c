@@ -1920,9 +1920,11 @@ struct scsi_device *scsi_get_host_dev(struct Scsi_Host *shost)
 		goto out;
 
 	sdev = scsi_alloc_sdev(starget, 0, NULL);
-	if (sdev)
+	if (sdev) {
 		sdev->borken = 0;
-	else
+		sdev->inquiry = (unsigned char *)scsi_null_inquiry;
+		sdev->inquiry_len = sizeof(scsi_null_inquiry);
+	} else
 		scsi_target_reap(starget);
 	put_device(&starget->dev);
  out:
@@ -1947,3 +1949,14 @@ void scsi_free_host_dev(struct scsi_device *sdev)
 }
 EXPORT_SYMBOL(scsi_free_host_dev);
 
+/**
+ * scsi_device_is_host_dev - Check if a scsi device is a host device
+ * @sdev: SCSI device to test
+ *
+ * Returns: true if @sdev is a host device, false otherwise
+ */
+bool scsi_device_is_host_dev(struct scsi_device *sdev)
+{
+	return ((const unsigned char *)sdev->inquiry == scsi_null_inquiry);
+}
+EXPORT_SYMBOL_GPL(scsi_device_is_host_dev);
