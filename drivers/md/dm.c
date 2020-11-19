@@ -48,6 +48,7 @@ static DEFINE_IDR(_minor_idr);
 static DEFINE_SPINLOCK(_minor_lock);
 
 static void do_deferred_remove(struct work_struct *w);
+static blk_qc_t dm_submit_bio_interposed(struct blk_interposer *ip, struct bio *bio);
 
 static DECLARE_WORK(deferred_remove_work, do_deferred_remove);
 
@@ -730,6 +731,38 @@ static void dm_put_live_table_fast(struct mapped_device *md) __releases(RCU)
 	rcu_read_unlock();
 }
 
+static inline int dm_install_interposer(struct gendisk *disk,
+					struct mapped_device *md)
+{
+	struct blk_interposer *blk_ip;
+	int ret;
+
+	blk_ip = kzalloc(sizeof(struct blk_interposer), GFP_KERNEL);
+	if (!blk_ip)
+		return -ENOMEM;
+
+	blk_ip->ip_submit_bio = dm_submit_bio_interposed;
+	blk_ip->ip_disk = disk;
+	blk_ip->ip_private = md;
+
+	ret = blk_interposer_attach(disk, blk_ip);
+	if (ret) {
+		kfree(blk_ip);
+		return ret;
+	}
+
+	return 0;
+}
+
+static inline void dm_uninstall_interposer(struct gendisk *disk)
+{
+	struct blk_interposer *blk_ip;
+
+	blk_ip = blk_interposer_detach(disk);
+	if (blk_ip)
+		kfree(blk_ip);
+}
+
 static char *_dm_claim_ptr = "I belong to device-mapper";
 
 /*
@@ -739,19 +772,38 @@ static int open_table_device(struct table_device *td, dev_t dev,
 			     struct mapped_device *md)
 {
 	struct block_device *bdev;
-
-	int r;
+	fmode_t fmode = td->dm_dev.mode | FMODE_EXCL;
+	int ret;
 
 	BUG_ON(td->dm_dev.bdev);
 
-	bdev = blkdev_get_by_dev(dev, td->dm_dev.mode | FMODE_EXCL, _dm_claim_ptr);
-	if (IS_ERR(bdev))
-		return PTR_ERR(bdev);
+	bdev = blkdev_get_by_dev(dev, fmode, _dm_claim_ptr);
+	if (IS_ERR(bdev)) {
+		ret = PTR_ERR(bdev);
+		if (ret != -EBUSY)
+			return ret;
 
-	r = bd_link_disk_holder(bdev, dm_disk(md));
-	if (r) {
-		blkdev_put(bdev, td->dm_dev.mode | FMODE_EXCL);
-		return r;
+		/*
+		 * If device cannot be opened in exclusive mode,
+		 * then try to use blk_interpose.
+		 */
+		fmode = td->dm_dev.mode;
+		bdev = blkdev_get_by_dev(dev, fmode, NULL);
+		if (IS_ERR(bdev))
+			return PTR_ERR(bdev);
+
+		ret = dm_install_interposer(bdev->bd_disk, md);
+		if (ret) {
+			blkdev_put(bdev, fmode);
+			return ret;
+		}
+	}
+
+	ret = bd_link_disk_holder(bdev, dm_disk(md));
+	if (ret) {
+		dm_uninstall_interposer(bdev->bd_disk);
+		blkdev_put(bdev, fmode);
+		return ret;
 	}
 
 	td->dm_dev.bdev = bdev;
@@ -764,11 +816,18 @@ static int open_table_device(struct table_device *td, dev_t dev,
  */
 static void close_table_device(struct table_device *td, struct mapped_device *md)
 {
+	fmode_t fmode = td->dm_dev.mode | FMODE_EXCL;
+
 	if (!td->dm_dev.bdev)
 		return;
 
 	bd_unlink_disk_holder(td->dm_dev.bdev, dm_disk(md));
-	blkdev_put(td->dm_dev.bdev, td->dm_dev.mode | FMODE_EXCL);
+	if (blk_has_interposer(td->dm_dev.bdev->bd_disk)) {
+		dm_uninstall_interposer(td->dm_dev.bdev->bd_disk);
+		fmode = td->dm_dev.mode;
+	}
+	blkdev_put(td->dm_dev.bdev, fmode);
+
 	put_dax(td->dm_dev.dax_dev);
 	td->dm_dev.bdev = NULL;
 	td->dm_dev.dax_dev = NULL;
@@ -1667,6 +1726,62 @@ out:
 	return ret;
 }
 
+static void dm_interposed_endio(struct bio *clone)
+{
+	struct bio *bio = clone->bi_private;
+
+	bio->bi_status = clone->bi_status;
+	bio_endio(bio);
+	bio_put(bio);
+
+	bio_put(clone);
+}
+
+static blk_qc_t dm_submit_bio_interposed(struct blk_interposer *interposer,
+					 struct bio *bio)
+{
+	struct mapped_device *md = interposer->ip_private;
+	blk_qc_t ret = BLK_QC_T_NONE;
+	int srcu_idx;
+	struct dm_table *map;
+	struct bio *clone;
+
+	if (unlikely(!md))
+		return submit_bio_noacct(bio);
+
+	map = dm_get_live_table(md, &srcu_idx);
+	if (unlikely(!map)) {
+		DMERR_LIMIT("%s: mapping table unavailable, erroring io",
+			    dm_device_name(md));
+		goto out;
+	}
+
+	clone = bio_clone_fast(bio, GFP_NOIO, NULL);
+	if (unlikely(!clone)) {
+		DMERR_LIMIT("%s: failed to clone bio",
+			    dm_device_name(md));
+		goto out;
+	}
+
+	bio_get(bio);
+	bio_set_flag(clone, BIO_INTERPOSED);
+	clone->bi_private = bio;
+	clone->bi_disk = dm_disk(md);
+	clone->bi_end_io = dm_interposed_endio;
+
+	trace_block_bio_remap(clone->bi_disk->queue, bio, bio_dev(bio),
+			      bio->bi_iter.bi_sector);
+
+	ret = submit_bio_noacct(clone);
+	dm_put_live_table(md, srcu_idx);
+	return  ret;
+
+out:
+	bio_io_error(bio);
+	dm_put_live_table(md, srcu_idx);
+	return ret;
+}
+
 /*-----------------------------------------------------------------
  * An IDR is used to keep track of allocated minor numbers.
  *---------------------------------------------------------------*/
@@ -2006,8 +2121,11 @@ static struct dm_table *__bind(struct mapped_device *md, struct dm_table *t,
 	md->immutable_target_type = dm_table_get_immutable_target_type(t);
 
 	dm_table_set_restrictions(t, q, limits);
-	if (old_map)
+	if (old_map) {
+		dm_table_deactivate_interposer(old_map);
 		dm_sync_table(md);
+	}
+	dm_table_activate_interposer(t, md);
 
 out:
 	return old_map;

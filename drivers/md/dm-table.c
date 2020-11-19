@@ -1798,6 +1798,65 @@ static bool dm_table_requires_stable_pages(struct dm_table *t)
 	return false;
 }
 
+static char *_dm_interposer_claim_ptr = "device-mapper interposer";
+
+static int device_activate_interposer(struct dm_target *ti,
+				      struct dm_dev *dev, sector_t start,
+				      sector_t len, void *data)
+{
+	struct blk_interposer *blk_ip = dev->bdev->bd_disk->interposer;
+	struct mapped_device *md = data;
+
+	if (!blk_ip)
+		return false;
+	if (md) {
+		struct block_device *bdev;
+
+		bdev = blkdev_get_by_dev(md->bdev->bd_dev,
+					     dev->mode | FMODE_EXCL,
+					     _dm_interposer_claim_ptr);
+		if (!bdev)
+			return false;
+		blk_ip->ip_private = md;
+	} else if (blk_ip->ip_private) {
+		md = blk_ip->ip_private;
+		blkdev_put(md->bdev, dev->mode | FMODE_EXCL);
+		blk_ip->ip_private = NULL;
+	}
+	return true;
+}
+
+bool dm_table_activate_interposer(struct dm_table *t, struct mapped_device *md)
+{
+	struct dm_target *ti;
+
+	if (t->num_targets) {
+		ti = t->targets;
+
+		if (!ti->type->iterate_devices ||
+		    !ti->type->iterate_devices(ti,
+				device_activate_interposer, md))
+			return false;
+		DMINFO("%s: activated interposer", dm_device_name(md));
+	}
+	return true;
+}
+
+bool dm_table_deactivate_interposer(struct dm_table *t)
+{
+	struct dm_target *ti;
+
+	if (t->num_targets) {
+		ti = t->targets;
+
+		if (!ti->type->iterate_devices ||
+		    !ti->type->iterate_devices(ti,
+				device_activate_interposer, NULL))
+			return false;
+	}
+	return true;
+}
+
 void dm_table_set_restrictions(struct dm_table *t, struct request_queue *q,
 			       struct queue_limits *limits)
 {

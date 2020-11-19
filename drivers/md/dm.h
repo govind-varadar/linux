@@ -75,7 +75,9 @@ bool dm_table_supports_dax(struct dm_table *t, iterate_devices_callout_fn fn,
 			   int *blocksize);
 int device_supports_dax(struct dm_target *ti, struct dm_dev *dev,
 			   sector_t start, sector_t len, void *data);
-
+bool dm_table_activate_interposer(struct dm_table *t,
+				  struct mapped_device *md);
+bool dm_table_deactivate_interposer(struct dm_table *t);
 void dm_lock_md_type(struct mapped_device *md);
 void dm_unlock_md_type(struct mapped_device *md);
 void dm_set_md_type(struct mapped_device *md, enum dm_queue_mode type);
