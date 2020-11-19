@@ -2364,3 +2364,58 @@ static void disk_release_events(struct gendisk *disk)
 	WARN_ON_ONCE(disk->ev && disk->ev->block != 1);
 	kfree(disk->ev);
 }
+
+/**
+ * blk_interposer_attach - Attach interposer to disk
+ * @disk: target disk
+ * @interposer: block device interposer
+ *
+ * Returns:
+ *     -EINVAL if @interposer is NULL.
+ *     -ENODEV if interposer is not initialized,
+ *     -EBUSY if the block device already has interposer.
+ */
+int blk_interposer_attach(struct gendisk *disk,
+			  struct blk_interposer *interposer)
+{
+	int ret = 0;
+
+	if (!interposer)
+		return -EINVAL;
+
+	blk_mq_freeze_queue(disk->queue);
+	blk_mq_quiesce_queue(disk->queue);
+	if (blk_has_interposer(disk))
+		ret = -EBUSY;
+	else
+		disk->interposer = interposer;
+	blk_mq_unquiesce_queue(disk->queue);
+	blk_mq_unfreeze_queue(disk->queue);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(blk_interposer_attach);
+
+/**
+ * blk_interposer_detach - Detach interposer from disk
+ * @disk: target disk
+ *
+ * Returns the attached interposer or NULL if none was attached.
+ */
+struct blk_interposer *blk_interposer_detach(struct gendisk *disk)
+{
+	struct blk_interposer *interposer;
+
+	if (WARN_ON(!disk))
+		return NULL;
+
+	blk_mq_freeze_queue(disk->queue);
+	blk_mq_quiesce_queue(disk->queue);
+	interposer = disk->interposer;
+	disk->interposer = NULL;
+	blk_mq_unquiesce_queue(disk->queue);
+	blk_mq_unfreeze_queue(disk->queue);
+
+	return interposer;
+}
+EXPORT_SYMBOL_GPL(blk_interposer_detach);

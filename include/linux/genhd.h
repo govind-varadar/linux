@@ -164,6 +164,15 @@ struct blk_integrity {
 	unsigned char				tag_size;
 };
 
+struct blk_interposer;
+typedef blk_qc_t (*ip_submit_bio_t) (struct blk_interposer *ip, struct bio *bio);
+
+struct blk_interposer {
+	struct gendisk *ip_disk;
+	ip_submit_bio_t ip_submit_bio;
+	void *ip_private;
+};
+
 struct gendisk {
 	/* major, first_minor and minors are input parameters only,
 	 * don't use directly.  Use disk_devt() and disk_max_parts().
@@ -188,6 +197,7 @@ struct gendisk {
 
 	const struct block_device_operations *fops;
 	struct request_queue *queue;
+	struct blk_interposer *interposer;
 	void *private_data;
 
 	int flags;
@@ -408,5 +418,14 @@ static inline dev_t blk_lookup_devt(const char *name, int partno)
 	return devt;
 }
 #endif /* CONFIG_BLOCK */
+
+/*
+ * Block device interposing
+ */
+#define blk_has_interposer(d) ((d)->interposer != NULL)
+#define blk_interposer_active(ip) ((ip)->ip_disk != NULL)
+
+int blk_interposer_attach(struct gendisk *, struct blk_interposer *);
+struct blk_interposer * blk_interposer_detach(struct gendisk *);
 
 #endif /* _LINUX_GENHD_H */
