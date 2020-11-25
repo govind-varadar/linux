@@ -2275,9 +2275,9 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 	fc_port_t	*fcport;
 	struct scsi_cmnd *cp;
 	struct sts_entry_fx00 *sts;
-	__le16		comp_status;
-	__le16		scsi_status;
-	__le16		lscsi_status;
+	uint16_t		comp_status;
+	uint16_t	scsi_status;
+	uint8_t		lscsi_status;
 	int32_t		resid;
 	uint32_t	sense_len, par_sense_len, rsp_info_len, resid_len,
 	    fw_resid_len;
@@ -2291,8 +2291,8 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 
 	sts = (struct sts_entry_fx00 *) pkt;
 
-	comp_status = sts->comp_status;
-	scsi_status = sts->scsi_status & cpu_to_le16((uint16_t)SS_MASK);
+	comp_status = le16_to_cpu(sts->comp_status);
+	scsi_status = le16_to_cpu(sts->scsi_status) & (uint16_t)SS_MASK;
 	hindex = sts->handle;
 	handle = LSW(hindex);
 
@@ -2337,43 +2337,41 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 		return;
 	}
 
-	lscsi_status = scsi_status & cpu_to_le16((uint16_t)STATUS_MASK);
+	lscsi_status = scsi_status & 0xff;
 
 	fcport = sp->fcport;
 
 	sense_len = par_sense_len = rsp_info_len = resid_len =
 		fw_resid_len = 0;
-	if (scsi_status & cpu_to_le16((uint16_t)SS_SENSE_LEN_VALID))
+	if (scsi_status & SS_SENSE_LEN_VALID)
 		sense_len = sts->sense_len;
-	if (scsi_status & cpu_to_le16(((uint16_t)SS_RESIDUAL_UNDER
-	    | (uint16_t)SS_RESIDUAL_OVER)))
+	if (scsi_status & (SS_RESIDUAL_UNDER | SS_RESIDUAL_OVER))
 		resid_len = le32_to_cpu(sts->residual_len);
-	if (comp_status == cpu_to_le16((uint16_t)CS_DATA_UNDERRUN))
+	if (comp_status == CS_DATA_UNDERRUN)
 		fw_resid_len = le32_to_cpu(sts->residual_len);
 	rsp_info = sense_data = sts->data;
 	par_sense_len = sizeof(sts->data);
 
 	/* Check for overrun. */
 	if (comp_status == CS_COMPLETE &&
-	    scsi_status & cpu_to_le16((uint16_t)SS_RESIDUAL_OVER))
-		comp_status = cpu_to_le16((uint16_t)CS_DATA_OVERRUN);
+	    (scsi_status & SS_RESIDUAL_OVER))
+		comp_status = CS_DATA_OVERRUN;
 
 	/*
 	 * Based on Host and scsi status generate status code for Linux
 	 */
-	switch (le16_to_cpu(comp_status)) {
+	switch (comp_status) {
 	case CS_COMPLETE:
 	case CS_QUEUE_FULL:
 		if (scsi_status == 0) {
 			res = DID_OK << 16;
 			break;
 		}
-		if (scsi_status & cpu_to_le16(((uint16_t)SS_RESIDUAL_UNDER
-		    | (uint16_t)SS_RESIDUAL_OVER))) {
+		if (scsi_status & (SS_RESIDUAL_UNDER |SS_RESIDUAL_OVER)) {
 			resid = resid_len;
 			scsi_set_resid(cp, resid);
 
-			if (!lscsi_status &&
+			if (lscsi_status == SAM_STAT_GOOD &&
 			    ((unsigned)(scsi_bufflen(cp) - resid) <
 			     cp->underflow)) {
 				ql_dbg(ql_dbg_io, fcport->vha, 0x3050,
@@ -2385,20 +2383,19 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 				break;
 			}
 		}
-		res = DID_OK << 16 | le16_to_cpu(lscsi_status);
+		res = DID_OK << 16 | lscsi_status;
 
-		if (lscsi_status ==
-		    cpu_to_le16((uint16_t)SAM_STAT_TASK_SET_FULL)) {
+		if (lscsi_status == SAM_STAT_TASK_SET_FULL) {
 			ql_dbg(ql_dbg_io, fcport->vha, 0x3051,
 			    "QUEUE FULL detected.\n");
 			break;
 		}
 		logit = 0;
-		if (lscsi_status != cpu_to_le16((uint16_t)SS_CHECK_CONDITION))
+		if (lscsi_status != SAM_STAT_CHECK_CONDITION)
 			break;
 
 		memset(cp->sense_buffer, 0, SCSI_SENSE_BUFFERSIZE);
-		if (!(scsi_status & cpu_to_le16((uint16_t)SS_SENSE_LEN_VALID)))
+		if (!(scsi_status & SS_SENSE_LEN_VALID))
 			break;
 
 		qlafx00_handle_sense(sp, sense_data, par_sense_len, sense_len,
@@ -2412,7 +2409,7 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 		else
 			resid = resid_len;
 		scsi_set_resid(cp, resid);
-		if (scsi_status & cpu_to_le16((uint16_t)SS_RESIDUAL_UNDER)) {
+		if (scsi_status & SS_RESIDUAL_UNDER) {
 			if ((IS_FWI2_CAPABLE(ha) || IS_QLAFX00(ha))
 			    && fw_resid_len != resid_len) {
 				ql_dbg(ql_dbg_io, fcport->vha, 0x3052,
@@ -2420,12 +2417,11 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 				    "(0x%x of 0x%x bytes).\n",
 				    resid, scsi_bufflen(cp));
 
-				res = DID_ERROR << 16 |
-				    le16_to_cpu(lscsi_status);
+				res = DID_ERROR << 16 | lscsi_status;
 				goto check_scsi_status;
 			}
 
-			if (!lscsi_status &&
+			if (lscsi_status == SAM_STAT_GOOD &&
 			    ((unsigned)(scsi_bufflen(cp) - resid) <
 			    cp->underflow)) {
 				ql_dbg(ql_dbg_io, fcport->vha, 0x3053,
@@ -2437,9 +2433,8 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 				res = DID_ERROR << 16;
 				break;
 			}
-		} else if (lscsi_status !=
-		    cpu_to_le16((uint16_t)SAM_STAT_TASK_SET_FULL) &&
-		    lscsi_status != cpu_to_le16((uint16_t)SAM_STAT_BUSY)) {
+		} else if (lscsi_status != SAM_STAT_TASK_SET_FULL &&
+			   lscsi_status != SAM_STAT_BUSY) {
 			/*
 			 * scsi status of task set and busy are considered
 			 * to be task not completed.
@@ -2450,7 +2445,7 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 			    "of 0x%x bytes).\n", resid,
 			    scsi_bufflen(cp));
 
-			res = DID_ERROR << 16 | le16_to_cpu(lscsi_status);
+			res = DID_ERROR << 16 | lscsi_status;
 			goto check_scsi_status;
 		} else {
 			ql_dbg(ql_dbg_io, fcport->vha, 0x3055,
@@ -2458,7 +2453,7 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 			    scsi_status, lscsi_status);
 		}
 
-		res = DID_OK << 16 | le16_to_cpu(lscsi_status);
+		res = DID_OK << 16 | lscsi_status;
 		logit = 0;
 
 check_scsi_status:
@@ -2466,21 +2461,18 @@ check_scsi_status:
 		 * Check to see if SCSI Status is non zero. If so report SCSI
 		 * Status.
 		 */
-		if (lscsi_status != 0) {
-			if (lscsi_status ==
-			    cpu_to_le16((uint16_t)SAM_STAT_TASK_SET_FULL)) {
+		if (lscsi_status != SAM_STAT_GOOD) {
+			if (lscsi_status == SAM_STAT_TASK_SET_FULL) {
 				ql_dbg(ql_dbg_io, fcport->vha, 0x3056,
 				    "QUEUE FULL detected.\n");
 				logit = 1;
 				break;
 			}
-			if (lscsi_status !=
-			    cpu_to_le16((uint16_t)SS_CHECK_CONDITION))
+			if (lscsi_status != SAM_STAT_CHECK_CONDITION)
 				break;
 
 			memset(cp->sense_buffer, 0, SCSI_SENSE_BUFFERSIZE);
-			if (!(scsi_status &
-			    cpu_to_le16((uint16_t)SS_SENSE_LEN_VALID)))
+			if (!(scsi_status & SS_SENSE_LEN_VALID))
 				break;
 
 			qlafx00_handle_sense(sp, sense_data, par_sense_len,
