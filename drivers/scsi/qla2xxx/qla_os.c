@@ -724,7 +724,7 @@ void qla2x00_sp_compl(srb_t *sp, int res)
 	struct completion *comp = sp->comp;
 
 	sp->free(sp);
-	cmd->result = res;
+	set_host_byte(cmd, res);
 	CMD_SP(cmd) = NULL;
 	cmd->scsi_done(cmd);
 	if (comp)
@@ -815,7 +815,7 @@ void qla2xxx_qpair_sp_compl(srb_t *sp, int res)
 	struct completion *comp = sp->comp;
 
 	sp->free(sp);
-	cmd->result = res;
+	set_host_byte(cmd, res);
 	CMD_SP(cmd) = NULL;
 	cmd->scsi_done(cmd);
 	if (comp)
@@ -1722,7 +1722,7 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, unsigned char res
 	lockdep_assert_held(qp->qp_lock_ptr);
 
 	if (qla2x00_chip_is_down(vha)) {
-		sp->done(sp, res << 16);
+		sp->done(sp, res);
 		return;
 	}
 
@@ -1731,7 +1731,7 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, unsigned char res
 	     !test_bit(ABORT_ISP_ACTIVE, &vha->dpc_flags) &&
 	     !qla2x00_isp_reg_stat(ha))) {
 		if (sp->comp) {
-			sp->done(sp, res << 16);
+			sp->done(sp, res);
 			return;
 		}
 
@@ -1760,9 +1760,9 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, unsigned char res
 
 		spin_lock_irqsave(qp->qp_lock_ptr, *flags);
 		if (ret_cmd && blk_mq_request_started(cmd->request))
-			sp->done(sp, res << 16);
+			sp->done(sp, res);
 	} else {
-		sp->done(sp, res << 16);
+		sp->done(sp, res);
 	}
 }
 

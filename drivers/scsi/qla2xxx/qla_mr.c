@@ -2123,7 +2123,7 @@ qlafx00_get_host_speed(struct Scsi_Host *shost)
 
 static inline void
 qlafx00_handle_sense(srb_t *sp, uint8_t *sense_data, uint32_t par_sense_len,
-		     uint32_t sense_len, struct rsp_que *rsp, int res)
+		     uint32_t sense_len, struct rsp_que *rsp)
 {
 	struct scsi_qla_host *vha = sp->vha;
 	struct scsi_cmnd *cp = GET_CMD_SP(sp);
@@ -2154,7 +2154,7 @@ qlafx00_handle_sense(srb_t *sp, uint8_t *sense_data, uint32_t par_sense_len,
 	    sense_len, par_sense_len, track_sense_len);
 	if (GET_FW_SENSE_LEN(sp) > 0) {
 		rsp->status_srb = sp;
-		cp->result = res;
+		set_status_byte(cp, SAM_STAT_CHECK_CONDITION);
 	}
 
 	if (sense_len) {
@@ -2255,7 +2255,8 @@ qlafx00_ioctl_iosb_entry(scsi_qla_host_t *vha, struct req_que *req,
 		    sp->vha, 0x5074,
 		    fw_sts_ptr, sizeof(fstatus));
 
-		res = bsg_reply->result = DID_OK << 16;
+		res = DID_OK;
+		bsg_reply->result = res << 16;
 		bsg_reply->reply_payload_rcv_len =
 		    bsg_job->reply_payload.payload_len;
 	}
@@ -2364,7 +2365,7 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 	case CS_COMPLETE:
 	case CS_QUEUE_FULL:
 		if (scsi_status == 0) {
-			res = DID_OK << 16;
+			res = DID_OK;
 			break;
 		}
 		if (scsi_status & (SS_RESIDUAL_UNDER |SS_RESIDUAL_OVER)) {
@@ -2379,11 +2380,12 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 				    "detected (0x%x of 0x%x bytes).\n",
 				    resid, scsi_bufflen(cp));
 
-				res = DID_ERROR << 16;
+				res = DID_ERROR;
 				break;
 			}
 		}
-		res = DID_OK << 16 | lscsi_status;
+		set_status_byte(cp, lscsi_status);
+		res = DID_OK;
 
 		if (lscsi_status == SAM_STAT_TASK_SET_FULL) {
 			ql_dbg(ql_dbg_io, fcport->vha, 0x3051,
@@ -2399,7 +2401,7 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 			break;
 
 		qlafx00_handle_sense(sp, sense_data, par_sense_len, sense_len,
-		    rsp, res);
+		    rsp);
 		break;
 
 	case CS_DATA_UNDERRUN:
@@ -2417,7 +2419,8 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 				    "(0x%x of 0x%x bytes).\n",
 				    resid, scsi_bufflen(cp));
 
-				res = DID_ERROR << 16 | lscsi_status;
+				set_status_byte(cp, lscsi_status);
+				res = DID_ERROR;
 				goto check_scsi_status;
 			}
 
@@ -2430,7 +2433,7 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 				    "cp->underflow: 0x%x).\n",
 				    resid, scsi_bufflen(cp), cp->underflow);
 
-				res = DID_ERROR << 16;
+				res = DID_ERROR;
 				break;
 			}
 		} else if (lscsi_status != SAM_STAT_TASK_SET_FULL &&
@@ -2445,7 +2448,8 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 			    "of 0x%x bytes).\n", resid,
 			    scsi_bufflen(cp));
 
-			res = DID_ERROR << 16 | lscsi_status;
+			set_status_byte(cp, lscsi_status);
+			res = DID_ERROR;
 			goto check_scsi_status;
 		} else {
 			ql_dbg(ql_dbg_io, fcport->vha, 0x3055,
@@ -2453,7 +2457,8 @@ qlafx00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 			    scsi_status, lscsi_status);
 		}
 
-		res = DID_OK << 16 | lscsi_status;
+		set_status_byte(cp, lscsi_status);
+		res = DID_OK;
 		logit = 0;
 
 check_scsi_status:
@@ -2476,7 +2481,7 @@ check_scsi_status:
 				break;
 
 			qlafx00_handle_sense(sp, sense_data, par_sense_len,
-			    sense_len, rsp, res);
+			    sense_len, rsp);
 		}
 		break;
 
@@ -2493,7 +2498,7 @@ check_scsi_status:
 		 * while we try to recover so instruct the mid layer
 		 * to requeue until the class decides how to handle this.
 		 */
-		res = DID_TRANSPORT_DISRUPTED << 16;
+		res = DID_TRANSPORT_DISRUPTED;
 
 		ql_dbg(ql_dbg_io, fcport->vha, 0x3057,
 		    "Port down status: port-state=0x%x.\n",
@@ -2504,11 +2509,11 @@ check_scsi_status:
 		break;
 
 	case CS_ABORTED:
-		res = DID_RESET << 16;
+		res = DID_RESET;
 		break;
 
 	default:
-		res = DID_ERROR << 16;
+		res = DID_ERROR;
 		break;
 	}
 
@@ -2604,7 +2609,7 @@ qlafx00_status_cont_entry(struct rsp_que *rsp, sts_cont_entry_t *pkt)
 	/* Place command on done queue. */
 	if (sense_len == 0) {
 		rsp->status_srb = NULL;
-		sp->done(sp, cp->result);
+		sp->done(sp, get_host_byte(cp));
 	} else {
 		WARN_ON_ONCE(true);
 	}
@@ -2681,7 +2686,7 @@ qlafx00_error_entry(scsi_qla_host_t *vha, struct rsp_que *rsp,
 	const char func[] = "ERROR-IOCB";
 	uint16_t que = 0;
 	struct req_que *req = NULL;
-	int res = DID_ERROR << 16;
+	int res = DID_ERROR;
 
 	req = ha->req_q_map[que];
 

@@ -1698,7 +1698,7 @@ qla2x00_process_completed_request(struct scsi_qla_host *vha,
 		req->outstanding_cmds[index] = NULL;
 
 		/* Save ISP completion status */
-		sp->done(sp, DID_OK << 16);
+		sp->done(sp, DID_OK);
 	} else {
 		ql_log(ql_log_warn, vha, 0x3016, "Invalid SCSI SRB.\n");
 
@@ -1923,7 +1923,7 @@ qla2x00_ct_entry(scsi_qla_host_t *vha, struct req_que *req,
 
 	    if (comp_status != CS_COMPLETE) {
 		    if (comp_status == CS_DATA_UNDERRUN) {
-			    res = DID_OK << 16;
+			    res = DID_OK;
 			    bsg_reply->reply_payload_rcv_len =
 				le16_to_cpu(pkt->rsp_info_len);
 
@@ -1935,13 +1935,13 @@ qla2x00_ct_entry(scsi_qla_host_t *vha, struct req_que *req,
 			    ql_log(ql_log_warn, vha, 0x5049,
 				"CT pass-through-%s error comp_status=0x%x.\n",
 				type, comp_status);
-			    res = DID_ERROR << 16;
+			    res = DID_ERROR;
 			    bsg_reply->reply_payload_rcv_len = 0;
 		    }
 		    ql_dump_buffer(ql_dbg_async + ql_dbg_buffer, vha, 0x5035,
 			pkt, sizeof(*pkt));
 	    } else {
-		    res = DID_OK << 16;
+		    res = DID_OK;
 		    bsg_reply->reply_payload_rcv_len =
 			bsg_job->reply_payload.payload_len;
 		    bsg_job->reply_len = 0;
@@ -2025,15 +2025,15 @@ qla24xx_els_ct_entry(scsi_qla_host_t *vha, struct req_que *req,
 		els->u.els_plogi.fw_status[2] = cpu_to_le32(fw_status[2]);
 		els->u.els_plogi.comp_status = cpu_to_le16(fw_status[0]);
 		if (comp_status == CS_COMPLETE) {
-			res =  DID_OK << 16;
+			res =  DID_OK;
 		} else {
 			if (comp_status == CS_DATA_UNDERRUN) {
-				res =  DID_OK << 16;
+				res =  DID_OK;
 				els->u.els_plogi.len = cpu_to_le16(le32_to_cpu(
 					ese->total_byte_count));
 			} else {
 				els->u.els_plogi.len = 0;
-				res = DID_ERROR << 16;
+				res = DID_ERROR;
 			}
 		}
 		ql_dbg(ql_dbg_disc, vha, 0x503f,
@@ -2053,7 +2053,7 @@ qla24xx_els_ct_entry(scsi_qla_host_t *vha, struct req_que *req,
 
 	if (comp_status != CS_COMPLETE) {
 		if (comp_status == CS_DATA_UNDERRUN) {
-			res = DID_OK << 16;
+			res = DID_OK;
 			bsg_reply->reply_payload_rcv_len =
 				le32_to_cpu(ese->total_byte_count);
 
@@ -2069,7 +2069,7 @@ qla24xx_els_ct_entry(scsi_qla_host_t *vha, struct req_que *req,
 			    type, sp->handle, comp_status,
 			    le32_to_cpu(ese->error_subcode_1),
 			    le32_to_cpu(ese->error_subcode_2));
-			res = DID_ERROR << 16;
+			res = DID_ERROR;
 			bsg_reply->reply_payload_rcv_len = 0;
 		}
 		memcpy(bsg_job->reply + sizeof(struct fc_bsg_reply),
@@ -2078,7 +2078,7 @@ qla24xx_els_ct_entry(scsi_qla_host_t *vha, struct req_que *req,
 		    pkt, sizeof(*pkt));
 	}
 	else {
-		res =  DID_OK << 16;
+		res =  DID_OK;
 		bsg_reply->reply_payload_rcv_len = bsg_job->reply_payload.payload_len;
 		bsg_job->reply_len = 0;
 	}
@@ -2519,7 +2519,7 @@ qla2x00_process_response_queue(struct rsp_que *rsp)
 
 static inline void
 qla2x00_handle_sense(srb_t *sp, uint8_t *sense_data, uint32_t par_sense_len,
-		     uint32_t sense_len, struct rsp_que *rsp, int res)
+		     uint32_t sense_len, struct rsp_que *rsp)
 {
 	struct scsi_qla_host *vha = sp->vha;
 	struct scsi_cmnd *cp = GET_CMD_SP(sp);
@@ -2543,7 +2543,7 @@ qla2x00_handle_sense(srb_t *sp, uint8_t *sense_data, uint32_t par_sense_len,
 
 	if (track_sense_len != 0) {
 		rsp->status_srb = sp;
-		cp->result = res;
+		set_host_byte(cp, SAM_STAT_CHECK_CONDITION);
 	}
 
 	if (sense_len) {
@@ -2663,7 +2663,7 @@ qla2x00_handle_dif_error(srb_t *sp, struct sts_entry_24xx *sts24)
 		    0x10, 0x1);
 		set_driver_byte(cmd, DRIVER_SENSE);
 		set_host_byte(cmd, DID_ABORT);
-		cmd->result |= SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		return 1;
 	}
 
@@ -2673,7 +2673,7 @@ qla2x00_handle_dif_error(srb_t *sp, struct sts_entry_24xx *sts24)
 		    0x10, 0x3);
 		set_driver_byte(cmd, DRIVER_SENSE);
 		set_host_byte(cmd, DID_ABORT);
-		cmd->result |= SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		return 1;
 	}
 
@@ -2683,7 +2683,7 @@ qla2x00_handle_dif_error(srb_t *sp, struct sts_entry_24xx *sts24)
 		    0x10, 0x2);
 		set_driver_byte(cmd, DRIVER_SENSE);
 		set_host_byte(cmd, DID_ABORT);
-		cmd->result |= SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		return 1;
 	}
 
@@ -2834,7 +2834,7 @@ done:
 	bsg_job->reply_len = sizeof(struct fc_bsg_reply);
 	/* Always return DID_OK, bsg will send the vendor specific response
 	 * in this case only */
-	sp->done(sp, DID_OK << 16);
+	sp->done(sp, DID_OK);
 
 }
 
@@ -2958,7 +2958,7 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 		return;
 	}
 
-	lscsi_status = scsi_status & STATUS_MASK;
+	lscsi_status = scsi_status & 0xff;
 
 	fcport = sp->fcport;
 
@@ -3003,7 +3003,7 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 			    "FCP I/O protocol failure (0x%x/0x%x).\n",
 			    rsp_info_len, rsp_info[3]);
 
-			res = DID_BUS_BUSY << 16;
+			res = DID_BUS_BUSY;
 			goto out;
 		}
 	}
@@ -3028,7 +3028,7 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 	case CS_COMPLETE:
 	case CS_QUEUE_FULL:
 		if (scsi_status == 0) {
-			res = DID_OK << 16;
+			res = DID_OK;
 			break;
 		}
 		if (scsi_status & (SS_RESIDUAL_UNDER | SS_RESIDUAL_OVER)) {
@@ -3042,11 +3042,12 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 				    "Mid-layer underflow detected (0x%x of 0x%x bytes).\n",
 				    resid, scsi_bufflen(cp));
 
-				res = DID_ERROR << 16;
+				res = DID_ERROR;
 				break;
 			}
 		}
-		res = DID_OK << 16 | lscsi_status;
+		set_status_byte(cp, lscsi_status);
+		res = DID_OK;
 
 		if (lscsi_status == SAM_STAT_TASK_SET_FULL) {
 			ql_dbg(ql_dbg_io, fcport->vha, 0x301b,
@@ -3062,7 +3063,7 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 			break;
 
 		qla2x00_handle_sense(sp, sense_data, par_sense_len, sense_len,
-		    rsp, res);
+		    rsp);
 		break;
 
 	case CS_DATA_UNDERRUN:
@@ -3075,7 +3076,8 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 				    "Dropped frame(s) detected (0x%x of 0x%x bytes).\n",
 				    resid, scsi_bufflen(cp));
 
-				res = DID_ERROR << 16 | lscsi_status;
+				set_status_byte(cp, lscsi_status);
+				res = DID_ERROR;
 				goto check_scsi_status;
 			}
 
@@ -3086,7 +3088,7 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 				    "Mid-layer underflow detected (0x%x of 0x%x bytes).\n",
 				    resid, scsi_bufflen(cp));
 
-				res = DID_ERROR << 16;
+				res = DID_ERROR;
 				break;
 			}
 		} else if (lscsi_status != SAM_STAT_TASK_SET_FULL &&
@@ -3100,7 +3102,8 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 			    "Dropped frame(s) detected (0x%x of 0x%x bytes).\n",
 			    resid, scsi_bufflen(cp));
 
-			res = DID_ERROR << 16 | lscsi_status;
+			set_status_byte(cp, lscsi_status);
+			res = DID_ERROR;
 			goto check_scsi_status;
 		} else {
 			ql_dbg(ql_dbg_io, fcport->vha, 0x3030,
@@ -3108,7 +3111,8 @@ qla2x00_status_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, void *pkt)
 			    scsi_status, lscsi_status);
 		}
 
-		res = DID_OK << 16 | lscsi_status;
+		set_status_byte(cp, lscsi_status);
+		res = DID_OK;
 		logit = 0;
 
 check_scsi_status:
@@ -3131,7 +3135,7 @@ check_scsi_status:
 				break;
 
 			qla2x00_handle_sense(sp, sense_data, par_sense_len,
-			    sense_len, rsp, res);
+			    sense_len, rsp);
 		}
 		break;
 
@@ -3148,7 +3152,7 @@ check_scsi_status:
 		 * while we try to recover so instruct the mid layer
 		 * to requeue until the class decides how to handle this.
 		 */
-		res = DID_TRANSPORT_DISRUPTED << 16;
+		res = DID_TRANSPORT_DISRUPTED;
 
 		if (comp_status == CS_TIMEOUT) {
 			if (IS_FWI2_CAPABLE(ha))
@@ -3172,16 +3176,16 @@ check_scsi_status:
 		break;
 
 	case CS_ABORTED:
-		res = DID_RESET << 16;
+		res = DID_RESET;
 		break;
 
 	case CS_DIF_ERROR:
 		logit = qla2x00_handle_dif_error(sp, sts24);
-		res = cp->result;
+		res = get_host_byte(cp);
 		break;
 
 	case CS_TRANSPORT:
-		res = DID_ERROR << 16;
+		res = DID_ERROR;
 
 		if (!IS_PI_SPLIT_DET_CAPABLE(ha))
 			break;
@@ -3201,10 +3205,10 @@ check_scsi_status:
 		    resid_len, fw_resid_len, sp, cp);
 		ql_dump_buffer(ql_dbg_tgt + ql_dbg_verbose, vha, 0xe0ee,
 		    pkt, sizeof(*sts24));
-		res = DID_ERROR << 16;
+		res = DID_ERROR;
 		break;
 	default:
-		res = DID_ERROR << 16;
+		res = DID_ERROR;
 		break;
 	}
 
@@ -3278,7 +3282,7 @@ qla2x00_status_cont_entry(struct rsp_que *rsp, sts_cont_entry_t *pkt)
 	/* Place command on done queue. */
 	if (sense_len == 0) {
 		rsp->status_srb = NULL;
-		sp->done(sp, cp->result);
+		sp->done(sp, get_host_byte(cp));
 	}
 }
 
@@ -3297,7 +3301,7 @@ qla2x00_error_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, sts_entry_t *pkt)
 	const char func[] = "ERROR-IOCB";
 	uint16_t que = MSW(pkt->handle);
 	struct req_que *req = NULL;
-	int res = DID_ERROR << 16;
+	int res = DID_ERROR;
 
 	ql_dbg(ql_dbg_async, vha, 0x502a,
 	    "iocb type %xh with error status %xh, handle %xh, rspq id %d\n",
@@ -3309,7 +3313,7 @@ qla2x00_error_entry(scsi_qla_host_t *vha, struct rsp_que *rsp, sts_entry_t *pkt)
 	req = ha->req_q_map[que];
 
 	if (pkt->entry_status & RF_BUSY)
-		res = DID_BUS_BUSY << 16;
+		res = DID_BUS_BUSY;
 
 	if ((pkt->handle & ~QLA_TGT_HANDLE_MASK) == QLA_TGT_SKIP_HANDLE)
 		return 0;
