@@ -729,7 +729,7 @@ void qla2x00_sp_compl(srb_t *sp, int res)
 	struct completion *comp = sp->comp;
 
 	sp->free(sp);
-	cmd->result = res;
+	set_host_byte(cmd, res);
 	CMD_SP(cmd) = NULL;
 	cmd->scsi_done(cmd);
 	if (comp)
@@ -820,7 +820,7 @@ void qla2xxx_qpair_sp_compl(srb_t *sp, int res)
 	struct completion *comp = sp->comp;
 
 	sp->free(sp);
-	cmd->result = res;
+	set_host_byte(cmd, res);
 	CMD_SP(cmd) = NULL;
 	cmd->scsi_done(cmd);
 	if (comp)
@@ -840,7 +840,7 @@ qla2xxx_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 
 	if (unlikely(test_bit(UNLOADING, &base_vha->dpc_flags)) ||
 	    WARN_ON_ONCE(!rport)) {
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		goto qc24_fail_command;
 	}
 
@@ -862,18 +862,18 @@ qla2xxx_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 			ql_dbg(ql_dbg_aer, vha, 0x9010,
 			    "PCI Channel IO permanent failure, exiting "
 			    "cmd=%p.\n", cmd);
-			cmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(cmd, DID_NO_CONNECT);
 		} else {
 			ql_dbg(ql_dbg_aer, vha, 0x9011,
 			    "EEH_Busy, Requeuing the cmd=%p.\n", cmd);
-			cmd->result = DID_REQUEUE << 16;
+			set_host_byte(cmd, DID_REQUEUE);
 		}
 		goto qc24_fail_command;
 	}
 
 	rval = fc_remote_port_chkready(rport);
 	if (rval) {
-		cmd->result = rval << 16;
+		set_host_byte(cmd, rval);
 		ql_dbg(ql_dbg_io + ql_dbg_verbose, vha, 0x3003,
 		    "fc_remote_port_chkready failed for cmd=%p, rval=0x%x.\n",
 		    cmd, rval);
@@ -885,12 +885,12 @@ qla2xxx_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 			ql_dbg(ql_dbg_io, vha, 0x3004,
 			    "DIF Cap not reg, fail DIF capable cmd's:%p.\n",
 			    cmd);
-			cmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(cmd, DID_NO_CONNECT);
 			goto qc24_fail_command;
 	}
 
 	if (!fcport || fcport->deleted) {
-		cmd->result = DID_IMM_RETRY << 16;
+		set_host_byte(cmd, DID_IMM_RETRY);
 		goto qc24_fail_command;
 	}
 
@@ -901,7 +901,7 @@ qla2xxx_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 			    "Returning DNC, fcport_state=%d loop_state=%d.\n",
 			    atomic_read(&fcport->state),
 			    atomic_read(&base_vha->loop_state));
-			cmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(cmd, DID_NO_CONNECT);
 			goto qc24_fail_command;
 		}
 		goto qc24_target_busy;
@@ -964,7 +964,7 @@ qla2xxx_mqueuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd,
 
 	rval = rport ? fc_remote_port_chkready(rport) : (DID_NO_CONNECT << 16);
 	if (rval) {
-		cmd->result = rval << 16;
+		set_host_byte(cmd, rval);
 		ql_dbg(ql_dbg_io + ql_dbg_verbose, vha, 0x3076,
 		    "fc_remote_port_chkready failed for cmd=%p, rval=0x%x.\n",
 		    cmd, rval);
@@ -974,12 +974,12 @@ qla2xxx_mqueuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd,
 	if (!qpair->online) {
 		ql_dbg(ql_dbg_io, vha, 0x3077,
 		       "qpair not online. eeh_busy=%d.\n", ha->flags.eeh_busy);
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		goto qc24_fail_command;
 	}
 
 	if (!fcport || fcport->deleted) {
-		cmd->result = DID_IMM_RETRY << 16;
+		set_host_byte(cmd, DID_IMM_RETRY);
 		goto qc24_fail_command;
 	}
 
@@ -990,7 +990,7 @@ qla2xxx_mqueuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd,
 			    "Returning DNC, fcport_state=%d loop_state=%d.\n",
 			    atomic_read(&fcport->state),
 			    atomic_read(&base_vha->loop_state));
-			cmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(cmd, DID_NO_CONNECT);
 			goto qc24_fail_command;
 		}
 		goto qc24_target_busy;
@@ -1705,7 +1705,7 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, unsigned char res
 	lockdep_assert_held(qp->qp_lock_ptr);
 
 	if (qla2x00_chip_is_down(vha)) {
-		sp->done(sp, res << 16);
+		sp->done(sp, res);
 		return;
 	}
 
@@ -1714,7 +1714,7 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, unsigned char res
 	     !test_bit(ABORT_ISP_ACTIVE, &vha->dpc_flags) &&
 	     !qla2x00_isp_reg_stat(ha))) {
 		if (sp->comp) {
-			sp->done(sp, res << 16);
+			sp->done(sp, res);
 			return;
 		}
 
@@ -1743,9 +1743,9 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, unsigned char res
 
 		spin_lock_irqsave(qp->qp_lock_ptr, *flags);
 		if (ret_cmd && blk_mq_request_started(cmd->request))
-			sp->done(sp, res << 16);
+			sp->done(sp, res);
 	} else {
-		sp->done(sp, res << 16);
+		sp->done(sp, res);
 	}
 }
 
