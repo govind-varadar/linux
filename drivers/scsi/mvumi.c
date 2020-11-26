@@ -1315,7 +1315,6 @@ static void mvumi_complete_cmd(struct mvumi_hba *mhba, struct mvumi_cmd *cmd,
 		if (ob_frame->rsp_flag & CL_RSP_FLAG_SENSEDATA) {
 			memcpy(cmd->scmd->sense_buffer, ob_frame->payload,
 				sizeof(struct mvumi_sense_data));
-			set_driver_byte(scmd, DRIVER_SENSE);
 		}
 		break;
 	default:
@@ -2067,7 +2066,6 @@ static unsigned char mvumi_build_frame(struct mvumi_hba *mhba,
 
 error:
 	set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-	set_driver_byte(scmd, DRIVER_SENSE);
 	scsi_build_sense_buffer(0, scmd->sense_buffer, ILLEGAL_REQUEST, 0x24,
 									0);
 	return -1;

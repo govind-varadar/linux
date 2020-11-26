@@ -2296,7 +2296,6 @@ megaraid_mbox_dpc(unsigned long devp)
 		case 0x02:
 
 			/* set sense_buffer and result fields */
-			set_driver_byte(scp, DRIVER_SENSE);
 			set_host_byte(scp, DID_OK);
 			set_status_byte(scp, SAM_STAT_CHECK_CONDITION);
 			if (mbox->cmd == MBOXCMD_PASSTHRU ||
@@ -2304,7 +2303,6 @@ megaraid_mbox_dpc(unsigned long devp)
 
 				memcpy(scp->sense_buffer, pthru->reqsensearea,
 						14);
-
 			} else {
 				if (mbox->cmd == MBOXCMD_EXTPTHRU) {
 

@@ -398,7 +398,6 @@ static struct status_msg *stex_get_status(struct st_hba *hba)
 static void stex_invalid_field(struct scsi_cmnd *cmd,
 			       void (*done)(struct scsi_cmnd *))
 {
-	set_driver_byte(cmd, DRIVER_SENSE);
 	set_host_byte(cmd, DID_OK);
 	set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
@@ -746,7 +745,6 @@ static void stex_scsi_done(struct st_ccb *ccb)
 			break;
 		}
 	} else if (ccb->srb_status & SRB_SEE_SENSE) {
-		set_driver_byte(cmd, DRIVER_SENSE);
 		set_host_byte(cmd, DID_OK);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 	} else switch (ccb->srb_status) {

@@ -848,14 +848,12 @@ static struct device_driver sdebug_driverfs_driver = {
 
 static inline void check_condition_result(struct scsi_cmnd *scp)
 {
-	set_driver_byte(scp, DRIVER_SENSE);
 	set_host_byte(scp, DID_OK);
 	set_status_byte(scp, SAM_STAT_CHECK_CONDITION);
 }
 
 static inline void illegal_condition_result(struct scsi_cmnd *scp)
 {
-	set_driver_byte(scp, DRIVER_SENSE);
 	set_host_byte(scp, DID_ABORT);
 	set_status_byte(scp, SAM_STAT_CHECK_CONDITION);
 }

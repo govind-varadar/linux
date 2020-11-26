@@ -6004,12 +6004,12 @@ static void adv_isr_callback(ADV_DVC_VAR *adv_dvc_varp, ADV_SCSI_REQ_Q *scsiqp)
 		ASC_DBG(2, "QD_WITH_ERROR\n");
 		switch (scsiqp->host_status) {
 		case QHSTA_NO_ERROR:
+			set_host_byte(scp, DID_OK);
 			set_status_byte(scp, scsiqp->scsi_status);
 			if (scsiqp->scsi_status == SAM_STAT_CHECK_CONDITION) {
 				ASC_DBG(2, "SAM_STAT_CHECK_CONDITION\n");
 				ASC_DBG_PRT_SENSE(2, scp->sense_buffer,
 						  SCSI_SENSE_BUFFERSIZE);
-				set_driver_byte(scp, DRIVER_SENSE);
 			}
 			break;
 

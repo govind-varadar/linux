@@ -1928,7 +1928,6 @@ ahd_linux_handle_scsi_status(struct ahd_softc *ahd,
 			memcpy(cmd->sense_buffer,
 			       ahd_get_sense_buf(ahd, scb)
 			       + sense_offset, sense_size);
-			set_driver_byte(cmd, DRIVER_SENSE);
 
 #ifdef AHD_DEBUG
 			if (ahd_debug & AHD_SHOW_SENSE) {
@@ -2041,7 +2040,7 @@ ahd_linux_queue_cmd_complete(struct ahd_softc *ahd, struct scsi_cmnd *cmd)
 		switch(scsi_status) {
 		case SAM_STAT_COMMAND_TERMINATED:
 		case SAM_STAT_CHECK_CONDITION:
-			if (get_driver_byte(cmd) != DRIVER_SENSE) {
+			if (scsi_sense_buffer_valid(cmd->sense_buffer)) {
 				do_fallback = 1;
 			} else {
 				struct scsi_sense_data *sense;

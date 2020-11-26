@@ -5070,7 +5070,6 @@ _scsih_eedp_error_handling(struct scsi_cmnd *scmd, u16 ioc_status)
 	    ascq);
 	set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
 	set_host_byte(scmd, DID_ABORT);
-	set_driver_byte(scmd, DRIVER_SENSE);
 }
 
 /**
@@ -5833,7 +5832,6 @@ _scsih_io_done(struct MPT3SAS_ADAPTER *ioc, u16 smid, u8 msix_index, u32 reply)
 			mpi_reply->SCSIStatus = SAM_STAT_CHECK_CONDITION;
 			set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
 			set_host_byte(scmd, DID_OK);
-			set_driver_byte(scmd, DRIVER_SENSE);
 			scmd->sense_buffer[0] = 0x70;
 			scmd->sense_buffer[2] = ILLEGAL_REQUEST;
 			scmd->sense_buffer[12] = 0x20;

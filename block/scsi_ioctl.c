@@ -266,6 +266,8 @@ static int blk_complete_sghdr_rq(struct request *rq, struct sg_io_hdr *hdr,
 	if (req->sense_len && hdr->sbp) {
 		int len = min((unsigned int) hdr->mx_sb_len, req->sense_len);
 
+		if (scsi_sense_buffer_valid(req->sense))
+			hdr->driver_status = DRIVER_SENSE;
 		if (!copy_to_user(hdr->sbp, req->sense, len))
 			hdr->sb_len_wr = len;
 		else

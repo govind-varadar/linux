@@ -1452,7 +1452,6 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 			scsi_build_sense_buffer(0, scmd->sense_buffer,
 						ILLEGAL_REQUEST, 0x24, 0);
 			set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-			set_driver_byte(scmd, DRIVER_SENSE);
 		} else {
 			myrb_inquiry(cb, scmd);
 		}
@@ -1468,7 +1467,6 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 			scsi_build_sense_buffer(0, scmd->sense_buffer,
 						ILLEGAL_REQUEST, 0x24, 0);
 			set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-			set_driver_byte(scmd, DRIVER_SENSE);
 		} else {
 			myrb_mode_sense(cb, scmd, ldev_info);
 		}
@@ -1481,7 +1479,6 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 			scsi_build_sense_buffer(0, scmd->sense_buffer,
 						ILLEGAL_REQUEST, 0x24, 0);
 			set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-			set_driver_byte(scmd, DRIVER_SENSE);
 			scmd->scsi_done(scmd);
 			return 0;
 		}
@@ -1491,7 +1488,6 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 			scsi_build_sense_buffer(0, scmd->sense_buffer,
 						ILLEGAL_REQUEST, 0x24, 0);
 			set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-			set_driver_byte(scmd, DRIVER_SENSE);
 			scmd->scsi_done(scmd);
 			return 0;
 		}
@@ -1507,7 +1503,6 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 			scsi_build_sense_buffer(0, scmd->sense_buffer,
 						ILLEGAL_REQUEST, 0x24, 0);
 			set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-			set_driver_byte(scmd, DRIVER_SENSE);
 		}
 		scmd->scsi_done(scmd);
 		return 0;
@@ -1517,7 +1512,6 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 			scsi_build_sense_buffer(0, scmd->sense_buffer,
 						DATA_PROTECT, 0x21, 0x06);
 			set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-			set_driver_byte(scmd, DRIVER_SENSE);
 			scmd->scsi_done(scmd);
 			return 0;
 		}
@@ -1534,7 +1528,6 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 			scsi_build_sense_buffer(0, scmd->sense_buffer,
 						DATA_PROTECT, 0x21, 0x06);
 			set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-			set_driver_byte(scmd, DRIVER_SENSE);
 			scmd->scsi_done(scmd);
 			return 0;
 		}
@@ -1551,7 +1544,6 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 			scsi_build_sense_buffer(0, scmd->sense_buffer,
 						DATA_PROTECT, 0x21, 0x06);
 			set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-			set_driver_byte(scmd, DRIVER_SENSE);
 			scmd->scsi_done(scmd);
 			return 0;
 		}
@@ -1567,7 +1559,6 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 		scsi_build_sense_buffer(0, scmd->sense_buffer,
 					ILLEGAL_REQUEST, 0x20, 0);
 		set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
-		set_driver_byte(scmd, DRIVER_SENSE);
 		scmd->scsi_done(scmd);
 		return 0;
 	}

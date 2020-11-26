@@ -505,10 +505,12 @@ sg_read(struct file *filp, char __user *buf, size_t count, loff_t * ppos)
 	old_hdr->target_status = hp->masked_status;
 	old_hdr->host_status = hp->host_status;
 	old_hdr->driver_status = hp->driver_status;
-	if ((SAM_STAT_CHECK_CONDITION & hp->status) ||
-	    (DRIVER_SENSE & hp->driver_status))
-		memcpy(old_hdr->sense_buffer, srp->sense_b,
-		       sizeof (old_hdr->sense_buffer));
+	if (scsi_sense_buffer_valid(srp->sense_b)) {
+		old_hdr->driver_status = DRIVER_SENSE;
+		if (SAM_STAT_CHECK_CONDITION & hp->status)
+			memcpy(old_hdr->sense_buffer, srp->sense_b,
+			       sizeof (old_hdr->sense_buffer));
+	}
 	switch (hp->host_status) {
 	/* This setup of 'result' is for backward compatibility and is best
 	   ignored by the user who should use target, host + driver status */
@@ -580,9 +582,10 @@ sg_new_read(Sg_fd * sfp, char __user *buf, size_t count, Sg_request * srp)
 		goto err_out;
 	}
 	hp->sb_len_wr = 0;
-	if ((hp->mx_sb_len > 0) && hp->sbp) {
-		if ((SAM_STAT_CHECK_CONDITION & hp->status) ||
-		    (DRIVER_SENSE & hp->driver_status)) {
+	if ((hp->mx_sb_len > 0) && hp->sbp &&
+	    scsi_sense_buffer_valid(srp->sense_b)) {
+		hp->driver_status = DRIVER_SENSE;
+		if (SAM_STAT_CHECK_CONDITION & hp->status) {
 			int sb_len = SCSI_SENSE_BUFFERSIZE;
 			sb_len = (hp->mx_sb_len > sb_len) ? sb_len : hp->mx_sb_len;
 			len = 8 + (int) srp->sense_b[7];	/* Additional sense length field */

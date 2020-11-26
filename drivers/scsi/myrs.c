@@ -1618,7 +1618,6 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 					ILLEGAL_REQUEST, 0x24, 0);
 				set_status_byte(scmd,
 						SAM_STAT_CHECK_CONDITION);
-				set_driver_byte(scmd, DRIVER_SENSE);
 			} else {
 				myrs_mode_sense(cs, scmd, ldev_info);
 				scsi_result_set_good(scmd);

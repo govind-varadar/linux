@@ -2859,7 +2859,6 @@ out:
 					0x10, 0x1);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_host_byte(cmd, DID_ABORT);
-		set_driver_byte(cmd, DRIVER_SENSE);
 		phba->bg_guard_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
 				"9069 BLKGRD: LBA %lx grd_tag error %x != %x\n",
@@ -2871,7 +2870,6 @@ out:
 					0x10, 0x3);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_host_byte(cmd, DID_ABORT);
-		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_reftag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -2884,7 +2882,6 @@ out:
 					0x10, 0x2);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_host_byte(cmd, DID_ABORT);
-		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_apptag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -2947,7 +2944,6 @@ lpfc_sli4_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 					0x10, 0x1);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_host_byte(cmd, DID_ABORT);
-		set_driver_byte(cmd, DRIVER_SENSE);
 		phba->bg_guard_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
 				"9059 BLKGRD: Guard Tag error in cmd"
@@ -2964,7 +2960,6 @@ lpfc_sli4_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 					0x10, 0x3);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_host_byte(cmd, DID_ABORT);
-		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_reftag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -2982,7 +2977,6 @@ lpfc_sli4_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 					0x10, 0x2);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_host_byte(cmd, DID_ABORT);
-		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_apptag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -3096,7 +3090,6 @@ lpfc_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 				0x10, 0x1);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_host_byte(cmd, DID_ABORT);
-		set_driver_byte(cmd, DRIVER_SENSE);
 		phba->bg_guard_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
 				"9055 BLKGRD: Guard Tag error in cmd"
@@ -3113,7 +3106,6 @@ lpfc_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 				0x10, 0x3);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_host_byte(cmd, DID_ABORT);
-		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_reftag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -3131,7 +3123,6 @@ lpfc_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 				0x10, 0x2);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_host_byte(cmd, DID_ABORT);
-		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_apptag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,

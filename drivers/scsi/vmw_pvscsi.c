@@ -578,9 +578,6 @@ static void pvscsi_complete_request(struct pvscsi_adapter *adapter,
 			set_host_byte(cmd, DID_RESET);
 		} else {
 			set_status_byte(cmd, sdstat);
-			if (sdstat == SAM_STAT_CHECK_CONDITION &&
-			    cmd->sense_buffer)
-				set_driver_byte(cmd, DRIVER_SENSE);
 		}
 	} else
 		switch (btstat) {

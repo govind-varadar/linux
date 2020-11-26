@@ -3227,11 +3227,9 @@ static void srb_done(struct AdapterCtlBlk *acb, struct DeviceCtlBlk *dcb,
 
 		if (srb->total_xfer_length
 		    && srb->total_xfer_length >= cmd->underflow) {
-			set_driver_byte(cmd, DRIVER_SENSE);
 			set_msg_byte(cmd, srb->end_message);
 			set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		} else {
-			set_driver_byte(cmd, DRIVER_SENSE);
 			set_msg_byte(cmd, srb->end_message);
 			set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		}

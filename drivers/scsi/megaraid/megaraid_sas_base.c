@@ -3582,8 +3582,6 @@ megasas_complete_cmd(struct megasas_instance *instance, struct megasas_cmd *cmd,
 				       SCSI_SENSE_BUFFERSIZE);
 				memcpy(cmd->scmd->sense_buffer, cmd->sense,
 				       hdr->sense_len);
-
-				set_driver_byte(cmd->scmd, DRIVER_SENSE);
 			}
 
 			break;

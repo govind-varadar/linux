@@ -571,10 +571,9 @@ static int tcm_loop_queue_data_or_status(const char *func,
 
 		memcpy(sc->sense_buffer, se_cmd->sense_buffer,
 				SCSI_SENSE_BUFFERSIZE);
-		sc->result = SAM_STAT_CHECK_CONDITION;
-		set_driver_byte(sc, DRIVER_SENSE);
+		set_status_byte(sc, SAM_STAT_CHECK_CONDITION);
 	} else
-		sc->result = scsi_status;
+		set_status_byte(sc, scsi_status);
 
 	set_host_byte(sc, DID_OK);
 	if ((se_cmd->se_cmd_flags & SCF_OVERFLOW_BIT) ||

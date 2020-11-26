@@ -66,6 +66,14 @@ static inline bool scsi_sense_valid(const struct scsi_sense_hdr *sshdr)
 	return (sshdr->response_code & 0x70) == 0x70;
 }
 
+static inline bool scsi_sense_buffer_valid(const u8 *sense_buffer)
+{
+	if (!sense_buffer)
+		return false;
+
+	return (sense_buffer[0] & 0x70) == 70;
+}
+
 extern bool scsi_normalize_sense(const u8 *sense_buffer, int sb_len,
 				 struct scsi_sense_hdr *sshdr);
 

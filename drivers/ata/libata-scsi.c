@@ -196,7 +196,6 @@ void ata_scsi_set_sense(struct ata_device *dev, struct scsi_cmnd *cmd,
 	if (!cmd)
 		return;
 
-	set_driver_byte(cmd, DRIVER_SENSE);
 	set_host_byte(cmd, DID_OK);
 	set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
@@ -411,9 +410,8 @@ int ata_cmd_ioctl(struct scsi_device *scsidev, void __user *arg)
 	cmd_result = scsi_execute(scsidev, scsi_cmd, data_dir, argbuf, argsize,
 				  sensebuf, &sshdr, (10*HZ), 5, 0, 0, NULL);
 
-	if (driver_byte(cmd_result) == DRIVER_SENSE) {/* sense data available */
+	if (scsi_sense_valid(&sshdr)) {/* sense data available */
 		u8 *desc = sensebuf + 8;
-		cmd_result &= ~(0xFF<<24); /* DRIVER_SENSE is not an error */
 
 		/* If we set cc then ATA pass-through will cause a
 		 * check condition even if no error. Filter that. */
@@ -492,9 +490,8 @@ int ata_task_ioctl(struct scsi_device *scsidev, void __user *arg)
 	cmd_result = scsi_execute(scsidev, scsi_cmd, DMA_NONE, NULL, 0,
 				sensebuf, &sshdr, (10*HZ), 5, 0, 0, NULL);
 
-	if (driver_byte(cmd_result) == DRIVER_SENSE) {/* sense data available */
+	if (scsi_sense_valid(&sshdr)) {/* sense data available */
 		u8 *desc = sensebuf + 8;
-		cmd_result &= ~(0xFF<<24); /* DRIVER_SENSE is not an error */
 
 		/* If we set cc then ATA pass-through will cause a
 		 * check condition even if no error. Filter that. */
@@ -861,7 +858,6 @@ static void ata_gen_passthru_sense(struct ata_queued_cmd *qc)
 
 	memset(sb, 0, SCSI_SENSE_BUFFERSIZE);
 
-	set_driver_byte(cmd, DRIVER_SENSE);
 	set_host_byte(cmd, DID_OK);
 	set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
@@ -962,7 +958,6 @@ static void ata_gen_ata_sense(struct ata_queued_cmd *qc)
 
 	memset(sb, 0, SCSI_SENSE_BUFFERSIZE);
 
-	set_driver_byte(cmd, DRIVER_SENSE);
 	set_host_byte(cmd, DID_OK);
 	set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
@@ -4207,7 +4202,6 @@ void ata_scsi_simulate(struct ata_device *dev, struct scsi_cmnd *cmd)
 
 	case REQUEST_SENSE:
 		ata_scsi_set_sense(dev, cmd, 0, 0, 0);
-		set_driver_byte(cmd, DRIVER_SENSE);
 		break;
 
 	/* if we reach this, then writeback caching is disabled,

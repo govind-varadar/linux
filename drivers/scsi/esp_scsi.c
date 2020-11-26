@@ -919,7 +919,6 @@ static void esp_cmd_is_done(struct esp *esp, struct esp_cmd_entry *ent,
 		 * saw originally.  Also, report that we are providing
 		 * the sense data.
 		 */
-		set_driver_byte(cmd, DRIVER_SENSE);
 		set_host_byte(cmd, DID_OK);
 		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 

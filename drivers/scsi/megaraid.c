@@ -1592,13 +1592,11 @@ mega_cmd_done(adapter_t *adapter, u8 completed[], int nstatus, int status)
 
 					set_status_byte(cmd,
 							SAM_STAT_CHECK_CONDITION);
-					set_driver_byte(cmd, DRIVER_SENSE);
 				} else {
 					cmd->sense_buffer[0] = 0x70;
 					cmd->sense_buffer[2] = ABORTED_COMMAND;
 					set_status_byte(cmd,
 							SAM_STAT_CHECK_CONDITION);
-					set_driver_byte(cmd, DRIVER_SENSE);
 				}
 			}
 			break;
