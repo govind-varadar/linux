@@ -747,11 +747,11 @@ struct fc_function_template {
  * fc_remote_port_chkready - called to validate the remote port state
  *   prior to initiating io to the port.
  *
- * Returns a scsi result code that can be returned by the LLDD.
+ * Returns a scsi host byte that can be returned by the LLDD.
  *
  * @rport:	remote port to be checked
  **/
-static inline int
+static inline unsigned char
 fc_remote_port_chkready(struct fc_rport *rport)
 {
 	int result;
@@ -759,20 +759,20 @@ fc_remote_port_chkready(struct fc_rport *rport)
 	switch (rport->port_state) {
 	case FC_PORTSTATE_ONLINE:
 		if (rport->roles & FC_PORT_ROLE_FCP_TARGET)
-			result = 0;
+			result = DID_OK;
 		else if (rport->flags & FC_RPORT_DEVLOSS_PENDING)
-			result = DID_IMM_RETRY << 16;
+			result = DID_IMM_RETRY;
 		else
-			result = DID_NO_CONNECT << 16;
+			result = DID_NO_CONNECT;
 		break;
 	case FC_PORTSTATE_BLOCKED:
 		if (rport->flags & FC_RPORT_FAST_FAIL_TIMEDOUT)
-			result = DID_TRANSPORT_FAILFAST << 16;
+			result = DID_TRANSPORT_FAILFAST;
 		else
-			result = DID_IMM_RETRY << 16;
+			result = DID_IMM_RETRY;
 		break;
 	default:
-		result = DID_NO_CONNECT << 16;
+		result = DID_NO_CONNECT;
 		break;
 	}
 	return result;

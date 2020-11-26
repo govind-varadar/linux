@@ -761,7 +761,7 @@ static int qedf_eh_abort(struct scsi_cmnd *sc_cmd)
 		goto drop_rdata_kref;
 	}
 
-	if (fc_remote_port_chkready(rport)) {
+	if (fc_remote_port_chkready(rport) != DID_OK) {
 		refcount = kref_read(&io_req->refcount);
 		QEDF_ERR(&qedf->dbg_ctx,
 			 "rport not ready, io_req=%p, xid=0x%x sc_cmd=%p op=0x%02x, refcount=%d, port_id=%06x\n",

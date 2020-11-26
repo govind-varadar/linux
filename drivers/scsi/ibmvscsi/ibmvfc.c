@@ -1625,21 +1625,20 @@ static void ibmvfc_scsi_done(struct ibmvfc_event *evt)
  **/
 static inline int ibmvfc_host_chkready(struct ibmvfc_host *vhost)
 {
-	int result = 0;
+	int result = DID_OK;
 
 	switch (vhost->state) {
 	case IBMVFC_LINK_DEAD:
 	case IBMVFC_HOST_OFFLINE:
-		result = DID_NO_CONNECT << 16;
+		result = DID_NO_CONNECT;
 		break;
 	case IBMVFC_NO_CRQ:
 	case IBMVFC_INITIALIZING:
 	case IBMVFC_HALTED:
 	case IBMVFC_LINK_DOWN:
-		result = DID_REQUEUE << 16;
+		result = DID_REQUEUE;
 		break;
 	case IBMVFC_ACTIVE:
-		result = 0;
 		break;
 	}
 
@@ -1663,9 +1662,9 @@ static int ibmvfc_queuecommand_lck(struct scsi_cmnd *cmnd,
 	struct ibmvfc_event *evt;
 	int rc;
 
-	if (unlikely((rc = fc_remote_port_chkready(rport))) ||
-	    unlikely((rc = ibmvfc_host_chkready(vhost)))) {
-		cmnd->result = rc;
+	if (unlikely((rc = fc_remote_port_chkready(rport)) != DID_OK) ||
+	    unlikely((rc = ibmvfc_host_chkready(vhost)) != DID_OK)) {
+		set_host_byte(cmnd, rc);
 		done(cmnd);
 		return 0;
 	}
@@ -1819,8 +1818,10 @@ static int ibmvfc_bsg_plogi(struct ibmvfc_host *vhost, unsigned int port_id)
 
 	if (!issue_login)
 		goto unlock_out;
-	if (unlikely((rc = ibmvfc_host_chkready(vhost))))
+	if (unlikely(ibmvfc_host_chkready(vhost) != DID_OK)) {
+		rc = -EBUSY;
 		goto unlock_out;
+	}
 
 	evt = ibmvfc_get_event(vhost);
 	ibmvfc_init_event(evt, ibmvfc_sync_completion, IBMVFC_MAD_FORMAT);
@@ -1934,8 +1935,9 @@ static int ibmvfc_bsg_request(struct bsg_job *job)
 
 	spin_lock_irqsave(vhost->host->host_lock, flags);
 
-	if (unlikely(rc || (rport && (rc = fc_remote_port_chkready(rport)))) ||
-	    unlikely((rc = ibmvfc_host_chkready(vhost)))) {
+	if (unlikely(rc || (rport &&
+			    (rc = fc_remote_port_chkready(rport)) != DID_OK)) ||
+	    unlikely((rc = ibmvfc_host_chkready(vhost)) != DID_OK)) {
 		spin_unlock_irqrestore(vhost->host->host_lock, flags);
 		goto out;
 	}
@@ -2910,7 +2912,7 @@ static int ibmvfc_slave_alloc(struct scsi_device *sdev)
 	struct ibmvfc_host *vhost = shost_priv(shost);
 	unsigned long flags = 0;
 
-	if (!rport || fc_remote_port_chkready(rport))
+	if (!rport || fc_remote_port_chkready(rport) != DID_OK)
 		return -ENXIO;
 
 	spin_lock_irqsave(shost->host_lock, flags);

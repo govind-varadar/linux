@@ -5165,8 +5165,8 @@ lpfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 		goto out_fail_command;
 
 	err = fc_remote_port_chkready(rport);
-	if (err) {
-		cmnd->result = err;
+	if (err != DID_OK) {
+		set_host_byte(cmnd, err);
 		goto out_fail_command;
 	}
 	ndlp = rdata->pnode;
@@ -6133,7 +6133,7 @@ lpfc_slave_alloc(struct scsi_device *sdev)
 	unsigned long flags;
 	struct lpfc_name target_wwpn;
 
-	if (!rport || fc_remote_port_chkready(rport))
+	if (!rport || fc_remote_port_chkready(rport) != DID_OK)
 		return -ENXIO;
 
 	if (phba->cfg_fof) {

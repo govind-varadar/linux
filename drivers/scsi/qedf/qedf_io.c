@@ -976,11 +976,11 @@ qedf_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *sc_cmd)
 	}
 
 	rval = fc_remote_port_chkready(rport);
-	if (rval) {
+	if (rval != DID_OK) {
 		QEDF_INFO(&qedf->dbg_ctx, QEDF_LOG_IO,
 			  "fc_remote_port_chkready failed=0x%x for port_id=0x%06x.\n",
 			  rval, rport->port_id);
-		sc_cmd->result = rval;
+		set_host_byte(sc_cmd, rval);
 		sc_cmd->scsi_done(sc_cmd);
 		return 0;
 	}
@@ -2439,7 +2439,7 @@ int qedf_initiate_tmf(struct scsi_cmnd *sc_cmd, u8 tm_flags)
 	}
 
 	rval = fc_remote_port_chkready(rport);
-	if (rval) {
+	if (rval != DID_OK) {
 		QEDF_ERR(NULL, "device_reset rport not ready\n");
 		rc = FAILED;
 		goto tmf_err;

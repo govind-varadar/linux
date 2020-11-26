@@ -453,11 +453,11 @@ static int fnic_queuecommand_lck(struct scsi_cmnd *sc, void (*done)(struct scsi_
 	}
 
 	ret = fc_remote_port_chkready(rport);
-	if (ret) {
+	if (ret != DID_OK) {
 		FNIC_SCSI_DBG(KERN_DEBUG, fnic->lport->host,
 				"rport is not ready\n");
 		atomic64_inc(&fnic_stats->misc_stats.rport_not_ready);
-		sc->result = ret;
+		set_host_byte(sc, ret);
 		done(sc);
 		return 0;
 	}
@@ -1938,7 +1938,7 @@ int fnic_abort_cmd(struct scsi_cmnd *sc)
 	 * port is up, then send abts to the remote port to terminate
 	 * the IO. Else, just locally terminate the IO in the firmware
 	 */
-	if (fc_remote_port_chkready(rport) == 0)
+	if (fc_remote_port_chkready(rport) == DID_OK)
 		task_req = FCPIO_ITMF_ABT_TASK;
 	else {
 		atomic64_inc(&fnic_stats->misc_stats.rport_not_ready);
@@ -2364,7 +2364,7 @@ int fnic_device_reset(struct scsi_cmnd *sc)
 		goto fnic_device_reset_end;
 
 	/* Check if remote port up */
-	if (fc_remote_port_chkready(rport)) {
+	if (fc_remote_port_chkready(rport) != DID_OK) {
 		atomic64_inc(&fnic_stats->misc_stats.rport_not_ready);
 		goto fnic_device_reset_end;
 	}

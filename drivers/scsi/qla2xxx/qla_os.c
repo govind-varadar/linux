@@ -867,8 +867,8 @@ qla2xxx_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 	}
 
 	rval = fc_remote_port_chkready(rport);
-	if (rval) {
-		cmd->result = rval;
+	if (rval != DID_OK) {
+		set_host_byte(cmd, rval);
 		ql_dbg(ql_dbg_io + ql_dbg_verbose, vha, 0x3003,
 		    "fc_remote_port_chkready failed for cmd=%p, rval=0x%x.\n",
 		    cmd, rval);
@@ -957,9 +957,9 @@ qla2xxx_mqueuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd,
 	srb_t *sp;
 	int rval;
 
-	rval = rport ? fc_remote_port_chkready(rport) : (DID_NO_CONNECT << 16);
-	if (rval) {
-		cmd->result = rval;
+	rval = rport ? fc_remote_port_chkready(rport) : DID_NO_CONNECT;
+	if (rval != DID_OK) {
+		set_host_byte(cmd, rval);
 		ql_dbg(ql_dbg_io + ql_dbg_verbose, vha, 0x3076,
 		    "fc_remote_port_chkready failed for cmd=%p, rval=0x%x.\n",
 		    cmd, rval);
@@ -1846,7 +1846,7 @@ qla2xxx_slave_alloc(struct scsi_device *sdev)
 {
 	struct fc_rport *rport = starget_to_rport(scsi_target(sdev));
 
-	if (!rport || fc_remote_port_chkready(rport))
+	if (!rport || fc_remote_port_chkready(rport) != DID_OK)
 		return -ENXIO;
 
 	sdev->hostdata = *(fc_port_t **)rport->dd_data;

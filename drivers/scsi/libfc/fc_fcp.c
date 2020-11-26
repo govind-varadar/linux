@@ -1868,8 +1868,8 @@ int fc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *sc_cmd)
 	struct fc_stats *stats;
 
 	rval = fc_remote_port_chkready(rport);
-	if (rval) {
-		sc_cmd->result = rval;
+	if (rval != DID_OK) {
+		set_host_byte(sc_cmd, rval);
 		sc_cmd->scsi_done(sc_cmd);
 		return 0;
 	}
@@ -2239,7 +2239,7 @@ int fc_slave_alloc(struct scsi_device *sdev)
 {
 	struct fc_rport *rport = starget_to_rport(scsi_target(sdev));
 
-	if (!rport || fc_remote_port_chkready(rport))
+	if (!rport || fc_remote_port_chkready(rport) != DID_OK)
 		return -ENXIO;
 
 	scsi_change_queue_depth(sdev, FC_FCP_DFLT_QUEUE_DEPTH);

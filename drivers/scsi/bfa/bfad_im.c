@@ -1209,13 +1209,13 @@ bfad_im_queuecommand_lck(struct scsi_cmnd *cmnd, void (*done) (struct scsi_cmnd 
 	struct bfad_itnim_s   *itnim;
 	struct bfa_ioim_s *hal_io;
 	unsigned long   flags;
-	int             rc;
+	unsigned char   rc;
 	int       sg_cnt = 0;
 	struct fc_rport *rport = starget_to_rport(scsi_target(cmnd->device));
 
 	rc = fc_remote_port_chkready(rport);
 	if (rc) {
-		cmnd->result = rc;
+		set_host_byte(cmnd, rc);
 		done(cmnd);
 		return 0;
 	}

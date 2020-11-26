@@ -1847,11 +1847,11 @@ int bnx2fc_queuecommand(struct Scsi_Host *host,
 	struct bnx2fc_rport *tgt;
 	struct bnx2fc_cmd *io_req;
 	int rc = 0;
-	int rval;
+	unsigned char rval;
 
 	rval = fc_remote_port_chkready(rport);
-	if (rval) {
-		sc_cmd->result = rval;
+	if (rval != DID_OK) {
+		set_host_byte(sc_cmd, rval);
 		sc_cmd->scsi_done(sc_cmd);
 		return 0;
 	}

@@ -36,7 +36,7 @@ static int qedf_initiate_els(struct qedf_rport *fcport, unsigned int op,
 	QEDF_INFO(&(qedf->dbg_ctx), QEDF_LOG_ELS, "Sending ELS\n");
 
 	rc = fc_remote_port_chkready(fcport->rport);
-	if (rc) {
+	if (rc != DID_OK) {
 		QEDF_ERR(&(qedf->dbg_ctx), "els 0x%x: rport not ready\n", op);
 		rc = -EAGAIN;
 		goto els_err;

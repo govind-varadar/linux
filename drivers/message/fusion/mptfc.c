@@ -192,14 +192,14 @@ mptfc_block_error_handler(struct scsi_cmnd *SCpnt,
 	struct Scsi_Host	*shost = sdev->host;
 	struct fc_rport		*rport = starget_to_rport(scsi_target(sdev));
 	unsigned long		flags;
-	int			ready;
+	unsigned char		ready;
 	MPT_ADAPTER 		*ioc;
 	int			loops = 40;	/* seconds */
 
 	hd = shost_priv(SCpnt->device->host);
 	ioc = hd->ioc;
 	spin_lock_irqsave(shost->host_lock, flags);
-	while ((ready = fc_remote_port_chkready(rport) >> 16) == DID_IMM_RETRY
+	while ((ready = fc_remote_port_chkready(rport)) == DID_IMM_RETRY
 	 || (loops > 0 && ioc->active == 0)) {
 		spin_unlock_irqrestore(shost->host_lock, flags);
 		dfcprintk (ioc, printk(MYIOC_s_DEBUG_FMT
@@ -606,7 +606,7 @@ mptfc_slave_alloc(struct scsi_device *sdev)
 	starget = scsi_target(sdev);
 	rport = starget_to_rport(starget);
 
-	if (!rport || fc_remote_port_chkready(rport))
+	if (!rport || fc_remote_port_chkready(rport) != DID_OK)
 		return -ENXIO;
 
 	hd = shost_priv(sdev->host);
@@ -654,8 +654,8 @@ mptfc_qcmd(struct Scsi_Host *shost, struct scsi_cmnd *SCpnt)
 	}
 
 	err = fc_remote_port_chkready(rport);
-	if (unlikely(err)) {
-		SCpnt->result = err;
+	if (unlikely(err != DID_OK)) {
+		set_host_byte(SCpnt, err);
 		SCpnt->scsi_done(SCpnt);
 		return 0;
 	}

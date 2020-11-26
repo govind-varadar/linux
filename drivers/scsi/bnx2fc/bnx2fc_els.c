@@ -687,7 +687,7 @@ static int bnx2fc_initiate_els(struct bnx2fc_rport *tgt, unsigned int op,
 	u16 xid;
 
 	rc = fc_remote_port_chkready(rport);
-	if (rc) {
+	if (rc != DID_OK) {
 		printk(KERN_ERR PFX "els 0x%x: rport not ready\n", op);
 		rc = -EINVAL;
 		goto els_err;

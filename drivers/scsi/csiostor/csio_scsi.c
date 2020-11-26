@@ -1789,8 +1789,8 @@ csio_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmnd)
 	sqset = &hw->sqset[ln->portid][blk_mq_rq_cpu(cmnd->request)];
 
 	nr = fc_remote_port_chkready(rport);
-	if (nr) {
-		cmnd->result = nr;
+	if (nr != DID_OK) {
+		set_host_byte(cmnd, nr);
 		CSIO_INC_STATS(scsim, n_rn_nr_error);
 		goto err_done;
 	}
@@ -2095,7 +2095,7 @@ csio_eh_lun_reset_handler(struct scsi_cmnd *cmnd)
 	 * the former case, since LUN reset is a TMF I/O on the wire, and we
 	 * need a valid session to issue it.
 	 */
-	if (fc_remote_port_chkready(rn->rport)) {
+	if (fc_remote_port_chkready(rn->rport) != DID_OK) {
 		csio_err(hw,
 			 "LUN reset cannot be issued on non-ready"
 			 " remote node ssni:0x%x (LUN:%llu)\n",
@@ -2223,7 +2223,7 @@ csio_slave_alloc(struct scsi_device *sdev)
 {
 	struct fc_rport *rport = starget_to_rport(scsi_target(sdev));
 
-	if (!rport || fc_remote_port_chkready(rport))
+	if (!rport || fc_remote_port_chkready(rport) != DID_OK)
 		return -ENXIO;
 
 	sdev->hostdata = *((struct csio_lnode **)(rport->dd_data));

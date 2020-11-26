@@ -68,15 +68,16 @@ int zfcp_scsi_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *scpnt)
 {
 	struct zfcp_scsi_dev *zfcp_sdev = sdev_to_zfcp(scpnt->device);
 	struct fc_rport *rport = starget_to_rport(scsi_target(scpnt->device));
-	int    status, scsi_result, ret;
+	int    status, ret;
+	unsigned char scsi_result;
 
 	/* reset the status for this request */
 	scpnt->result = 0;
 	scpnt->host_scribble = NULL;
 
 	scsi_result = fc_remote_port_chkready(rport);
-	if (unlikely(scsi_result)) {
-		scpnt->result = scsi_result;
+	if (unlikely(scsi_result != DID_OK)) {
+		set_host_byte(scpnt, scsi_result);
 		zfcp_dbf_scsi_fail_send(scpnt);
 		scpnt->scsi_done(scpnt);
 		return 0;
