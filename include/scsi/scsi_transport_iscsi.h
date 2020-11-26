@@ -417,7 +417,7 @@ struct iscsi_bus_flash_session {
 #define iscsi_cls_conn_printk(prefix, _cls_conn, fmt, a...) \
 	dev_printk(prefix, &(_cls_conn)->dev, fmt, ##a)
 
-extern int iscsi_session_chkready(struct iscsi_cls_session *session);
+extern unsigned char iscsi_session_chkready(struct iscsi_cls_session *session);
 extern int iscsi_is_session_online(struct iscsi_cls_session *session);
 extern struct iscsi_cls_session *iscsi_alloc_session(struct Scsi_Host *shost,
 				struct iscsi_transport *transport, int dd_size);

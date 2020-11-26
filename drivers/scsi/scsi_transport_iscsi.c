@@ -1699,7 +1699,7 @@ static const char *iscsi_session_state_name(int state)
 	return name;
 }
 
-int iscsi_session_chkready(struct iscsi_cls_session *session)
+unsigned char iscsi_session_chkready(struct iscsi_cls_session *session)
 {
 	unsigned long flags;
 	int err;
@@ -1707,16 +1707,16 @@ int iscsi_session_chkready(struct iscsi_cls_session *session)
 	spin_lock_irqsave(&session->lock, flags);
 	switch (session->state) {
 	case ISCSI_SESSION_LOGGED_IN:
-		err = 0;
+		err = DID_OK;
 		break;
 	case ISCSI_SESSION_FAILED:
-		err = DID_IMM_RETRY << 16;
+		err = DID_IMM_RETRY;
 		break;
 	case ISCSI_SESSION_FREE:
-		err = DID_TRANSPORT_FAILFAST << 16;
+		err = DID_TRANSPORT_FAILFAST;
 		break;
 	default:
-		err = DID_NO_CONNECT << 16;
+		err = DID_NO_CONNECT;
 		break;
 	}
 	spin_unlock_irqrestore(&session->lock, flags);

@@ -1651,8 +1651,9 @@ int iscsi_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *sc)
 	spin_lock_bh(&session->frwd_lock);
 
 	reason = iscsi_session_chkready(cls_session);
-	if (reason) {
-		sc->result = reason;
+	if (reason != DID_OK) {
+		set_host_byte(sc, reason);
+		reason = FAILURE_SESSION_FAILED;
 		goto fault;
 	}
 

@@ -841,7 +841,7 @@ static int __qla4xxx_is_chap_active(struct device *dev, void *data)
 	sess = cls_session->dd_data;
 	ddb_entry = sess->dd_data;
 
-	if (iscsi_session_chkready(cls_session))
+	if (iscsi_session_chkready(cls_session) != DID_OK)
 		goto exit_is_chap_active;
 
 	if (ddb_entry->chap_tbl_idx == *chap_tbl_idx)
@@ -4119,7 +4119,7 @@ static int qla4xxx_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 
 	rval = iscsi_session_chkready(sess);
 	if (rval) {
-		cmd->result = rval;
+		set_host_byte(cmd, rval);
 		goto qc_fail_command;
 	}
 
