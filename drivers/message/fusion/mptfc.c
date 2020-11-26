@@ -199,7 +199,7 @@ mptfc_block_error_handler(struct scsi_cmnd *SCpnt,
 	hd = shost_priv(SCpnt->device->host);
 	ioc = hd->ioc;
 	spin_lock_irqsave(shost->host_lock, flags);
-	while ((ready = fc_remote_port_chkready(rport) >> 16) == DID_IMM_RETRY
+	while ((ready = fc_remote_port_chkready(rport)) == DID_IMM_RETRY
 	 || (loops > 0 && ioc->active == 0)) {
 		spin_unlock_irqrestore(shost->host_lock, flags);
 		dfcprintk (ioc, printk(MYIOC_s_DEBUG_FMT
@@ -655,7 +655,7 @@ mptfc_qcmd(struct Scsi_Host *shost, struct scsi_cmnd *SCpnt)
 
 	err = fc_remote_port_chkready(rport);
 	if (unlikely(err)) {
-		SCpnt->result = err;
+		SCpnt->result = err << 16;
 		SCpnt->scsi_done(SCpnt);
 		return 0;
 	}

@@ -1850,7 +1850,7 @@ static inline int ibmvfc_host_chkready(struct ibmvfc_host *vhost)
 	switch (vhost->state) {
 	case IBMVFC_LINK_DEAD:
 	case IBMVFC_HOST_OFFLINE:
-		result = DID_NO_CONNECT << 16;
+		result = DID_NO_CONNECT;
 		break;
 	case IBMVFC_NO_CRQ:
 	case IBMVFC_INITIALIZING:
@@ -1915,7 +1915,7 @@ static int ibmvfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 
 	if (unlikely((rc = fc_remote_port_chkready(rport))) ||
 	    unlikely((rc = ibmvfc_host_chkready(vhost)))) {
-		cmnd->result = rc;
+		cmnd->result = rc << 16;
 		cmnd->scsi_done(cmnd);
 		return 0;
 	}
@@ -2186,6 +2186,7 @@ static int ibmvfc_bsg_request(struct bsg_job *job)
 	if (unlikely(rc || (rport && (rc = fc_remote_port_chkready(rport)))) ||
 	    unlikely((rc = ibmvfc_host_chkready(vhost)))) {
 		spin_unlock_irqrestore(vhost->host->host_lock, flags);
+		rc = rc << 16;
 		goto out;
 	}
 

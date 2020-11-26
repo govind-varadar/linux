@@ -5165,7 +5165,7 @@ lpfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 
 	err = fc_remote_port_chkready(rport);
 	if (err) {
-		cmnd->result = err;
+		cmnd->result = err << 16;
 		goto out_fail_command;
 	}
 	ndlp = rdata->pnode;

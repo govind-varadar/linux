@@ -980,7 +980,7 @@ qedf_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *sc_cmd)
 		QEDF_INFO(&qedf->dbg_ctx, QEDF_LOG_IO,
 			  "fc_remote_port_chkready failed=0x%x for port_id=0x%06x.\n",
 			  rval, rport->port_id);
-		sc_cmd->result = rval;
+		sc_cmd->result = rval << 16;
 		sc_cmd->scsi_done(sc_cmd);
 		return 0;
 	}

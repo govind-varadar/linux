@@ -1851,7 +1851,7 @@ int bnx2fc_queuecommand(struct Scsi_Host *host,
 
 	rval = fc_remote_port_chkready(rport);
 	if (rval) {
-		sc_cmd->result = rval;
+		sc_cmd->result = rval << 16;
 		sc_cmd->scsi_done(sc_cmd);
 		return 0;
 	}

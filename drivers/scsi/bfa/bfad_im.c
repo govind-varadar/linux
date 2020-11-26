@@ -1215,7 +1215,7 @@ bfad_im_queuecommand_lck(struct scsi_cmnd *cmnd, void (*done) (struct scsi_cmnd 
 
 	rc = fc_remote_port_chkready(rport);
 	if (rc) {
-		cmnd->result = rc;
+		cmnd->result = rc << 16;
 		done(cmnd);
 		return 0;
 	}

@@ -1869,7 +1869,7 @@ int fc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *sc_cmd)
 
 	rval = fc_remote_port_chkready(rport);
 	if (rval) {
-		sc_cmd->result = rval;
+		sc_cmd->result = rval << 16;
 		sc_cmd->scsi_done(sc_cmd);
 		return 0;
 	}

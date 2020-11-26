@@ -76,7 +76,7 @@ int zfcp_scsi_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *scpnt)
 
 	scsi_result = fc_remote_port_chkready(rport);
 	if (unlikely(scsi_result)) {
-		scpnt->result = scsi_result;
+		scpnt->result = scsi_result << 16;
 		zfcp_dbf_scsi_fail_send(scpnt);
 		scpnt->scsi_done(scpnt);
 		return 0;
