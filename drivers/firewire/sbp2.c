@@ -1285,17 +1285,20 @@ static void sbp2_unmap_scatterlist(struct device *card_device,
 				 sizeof(orb->page_table), DMA_TO_DEVICE);
 }
 
-static unsigned int sbp2_status_to_sense_data(u8 *sbp2_status, u8 *sense_data)
+static void sbp2_status_to_sense_data(u8 *sbp2_status,
+				      struct scsi_cmnd *cmd)
 {
 	int sam_status;
 	int sfmt = (sbp2_status[0] >> 6) & 0x03;
+	u8 *sense_data = cmd->sense_buffer;
 
 	if (sfmt == 2 || sfmt == 3) {
 		/*
 		 * Reserved for future standardization (2) or
 		 * Status block format vendor-dependent (3)
 		 */
-		return DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
+		return;
 	}
 
 	sense_data[0] = 0x70 | sfmt | (sbp2_status[1] & 0x80);
@@ -1324,10 +1327,13 @@ static unsigned int sbp2_status_to_sense_data(u8 *sbp2_status, u8 *sense_data)
 	case SAM_STAT_BUSY:
 	case SAM_STAT_RESERVATION_CONFLICT:
 	case SAM_STAT_COMMAND_TERMINATED:
-		return DID_OK << 16 | sam_status;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, sam_status);
+		break;
 
 	default:
-		return DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
+		break;
 	}
 }
 
@@ -1337,36 +1343,37 @@ static void complete_command_orb(struct sbp2_orb *base_orb,
 	struct sbp2_command_orb *orb =
 		container_of(base_orb, struct sbp2_command_orb, base);
 	struct fw_device *device = target_parent_device(base_orb->lu->tgt);
-	int result;
 
+	scsi_result_set_good(orb->cmd);
 	if (status != NULL) {
 		if (STATUS_GET_DEAD(*status))
 			sbp2_agent_reset_no_wait(base_orb->lu);
 
 		switch (STATUS_GET_RESPONSE(*status)) {
 		case SBP2_STATUS_REQUEST_COMPLETE:
-			result = DID_OK << 16;
+			set_host_byte(orb->cmd, DID_OK);
 			break;
 		case SBP2_STATUS_TRANSPORT_FAILURE:
-			result = DID_BUS_BUSY << 16;
+			set_host_byte(orb->cmd, DID_BUS_BUSY);
 			break;
 		case SBP2_STATUS_ILLEGAL_REQUEST:
 		case SBP2_STATUS_VENDOR_DEPENDENT:
 		default:
-			result = DID_ERROR << 16;
+			set_host_byte(orb->cmd, DID_ERROR);
 			break;
 		}
 
-		if (result == DID_OK << 16 && STATUS_GET_LEN(*status) > 1)
-			result = sbp2_status_to_sense_data(STATUS_GET_DATA(*status),
-							   orb->cmd->sense_buffer);
+		if (get_host_byte(orb->cmd) == DID_OK &&
+		    STATUS_GET_LEN(*status) > 1)
+			sbp2_status_to_sense_data(STATUS_GET_DATA(*status),
+						  orb->cmd);
 	} else {
 		/*
 		 * If the orb completes with status == NULL, something
 		 * went wrong, typically a bus reset happened mid-orb
 		 * or when sending the write (less likely).
 		 */
-		result = DID_BUS_BUSY << 16;
+		set_host_byte(orb->cmd, DID_BUS_BUSY);
 		sbp2_conditionally_block(base_orb->lu);
 	}
 
@@ -1374,7 +1381,6 @@ static void complete_command_orb(struct sbp2_orb *base_orb,
 			 sizeof(orb->request), DMA_TO_DEVICE);
 	sbp2_unmap_scatterlist(device->card->device, orb);
 
-	orb->cmd->result = result;
 	orb->cmd->scsi_done(orb->cmd);
 }
 
