@@ -1279,13 +1279,13 @@ static void srp_free_req(struct srp_rdma_ch *ch, struct srp_request *req,
 }
 
 static void srp_finish_req(struct srp_rdma_ch *ch, struct srp_request *req,
-			   struct scsi_device *sdev, int result)
+			   struct scsi_device *sdev, unsigned char host_byte)
 {
 	struct scsi_cmnd *scmnd = srp_claim_req(ch, req, sdev, NULL);
 
 	if (scmnd) {
 		srp_free_req(ch, req, scmnd, 0);
-		scmnd->result = result;
+		set_host_byte(scmnd, host_byte);
 		scmnd->scsi_done(scmnd);
 	}
 }
@@ -1303,7 +1303,7 @@ static void srp_terminate_io(struct srp_rport *rport)
 			struct srp_request *req = &ch->req_ring[j];
 
 			srp_finish_req(ch, req, NULL,
-				       DID_TRANSPORT_FAILFAST << 16);
+				       DID_TRANSPORT_FAILFAST);
 		}
 	}
 }
@@ -1366,7 +1366,7 @@ static int srp_rport_reconnect(struct srp_rport *rport)
 		for (j = 0; j < target->req_ring_size; ++j) {
 			struct srp_request *req = &ch->req_ring[j];
 
-			srp_finish_req(ch, req, NULL, DID_RESET << 16);
+			srp_finish_req(ch, req, NULL, DID_RESET);
 		}
 	}
 	for (i = 0; i < target->ch_count; i++) {
@@ -1980,7 +1980,8 @@ static void srp_process_rsp(struct srp_rdma_ch *ch, struct srp_rsp *rsp)
 
 			return;
 		}
-		scmnd->result = rsp->status;
+		set_host_byte(scmnd, DID_OK);
+		set_status_byte(scmnd, rsp->status);
 
 		if (rsp->flags & SRP_RSP_FLAG_SNSVALID) {
 			memcpy(scmnd->sense_buffer, rsp->data +
@@ -2179,7 +2180,7 @@ static int srp_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *scmnd)
 	int len, ret;
 
 	set_host_byte(scmnd, srp_chkready(target->rport));
-	if (unlikely(host_byte(scmnd->result) != DID_OK)
+	if (unlikely(get_host_byte(scmnd) != DID_OK))
 		goto err;
 
 	WARN_ON_ONCE(scmnd->request->tag < 0);
@@ -2231,8 +2232,11 @@ static int srp_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *scmnd)
 		 * max_pages_per_mr sg-list elements, tell the SCSI mid-layer
 		 * to reduce queue depth temporarily.
 		 */
-		scmnd->result = len == -ENOMEM ?
-			DID_OK << 16 | QUEUE_FULL << 1 : DID_ERROR << 16;
+		if (len == -ENOMEM) {
+			set_host_byte(scmnd, DID_OK);
+			set_status_byte(scmnd, SAM_STAT_TASK_SET_FULL);
+		} else
+			set_host_byte(scmnd, DID_ERROR);
 		goto err_iu;
 	}
 
@@ -2241,7 +2245,7 @@ static int srp_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *scmnd)
 
 	if (srp_post_send(ch, iu, len)) {
 		shost_printk(KERN_ERR, target->scsi_host, PFX "Send failed\n");
-		scmnd->result = DID_ERROR << 16;
+		set_host_byte(scmnd, DID_ERROR);
 		goto err_unmap;
 	}
 
@@ -2260,7 +2264,7 @@ err_iu:
 	req->scmnd = NULL;
 
 err:
-	if (scmnd->result) {
+	if (!scsi_result_is_good(scmnd)) {
 		scmnd->scsi_done(scmnd);
 		ret = 0;
 	} else {
@@ -2832,7 +2836,7 @@ static int srp_abort(struct scsi_cmnd *scmnd)
 		ret = FAILED;
 	if (ret == SUCCESS) {
 		srp_free_req(ch, req, scmnd, 0);
-		scmnd->result = DID_ABORT << 16;
+		set_host_byte(scmnd, DID_ABORT);
 		scmnd->scsi_done(scmnd);
 	}
 
