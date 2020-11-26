@@ -124,7 +124,7 @@ enum blk_eh_timer_return srp_timed_out(struct scsi_cmnd *scmd);
  * srp_chkready() - evaluate the transport layer state before I/O
  * @rport: SRP target port pointer.
  *
- * Returns a SCSI result code that can be returned by the LLD queuecommand()
+ * Returns a SCSI host byte code that can be returned by the LLD queuecommand()
  * implementation. The role of this function is similar to that of
  * fc_remote_port_chkready().
  */
@@ -134,11 +134,11 @@ static inline int srp_chkready(struct srp_rport *rport)
 	case SRP_RPORT_RUNNING:
 	case SRP_RPORT_BLOCKED:
 	default:
-		return 0;
+		return DID_OK;
 	case SRP_RPORT_FAIL_FAST:
-		return DID_TRANSPORT_FAILFAST << 16;
+		return DID_TRANSPORT_FAILFAST;
 	case SRP_RPORT_LOST:
-		return DID_NO_CONNECT << 16;
+		return DID_NO_CONNECT;
 	}
 }
 
