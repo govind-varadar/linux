@@ -2178,8 +2178,8 @@ static int srp_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *scmnd)
 	u16 idx;
 	int len, ret;
 
-	scmnd->result = srp_chkready(target->rport);
-	if (unlikely(scmnd->result))
+	set_host_byte(scmnd, srp_chkready(target->rport));
+	if (unlikely(host_byte(scmnd->result) != DID_OK)
 		goto err;
 
 	WARN_ON_ONCE(scmnd->request->tag < 0);
