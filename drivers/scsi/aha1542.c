@@ -132,7 +132,7 @@ static int aha1542_in(unsigned int base, u8 *buf, int len, int timeout)
 	return 0;
 }
 
-static int makecode(unsigned hosterr, unsigned scsierr)
+static unsigned char makecode(unsigned char hosterr)
 {
 	switch (hosterr) {
 	case 0x0:
@@ -185,9 +185,10 @@ static int makecode(unsigned hosterr, unsigned scsierr)
 		break;
 	default:
 		printk(KERN_ERR "aha1542: makecode: unknown hoststatus %x\n", hosterr);
+		hosterr = DID_ERROR;
 		break;
 	}
-	return scsierr | (hosterr << 16);
+	return hosterr;
 }
 
 static int aha1542_test_port(struct Scsi_Host *sh)
@@ -261,7 +262,7 @@ static irqreturn_t aha1542_interrupt(int irq, void *dev_id)
 	struct Scsi_Host *sh = dev_id;
 	struct aha1542_hostdata *aha1542 = shost_priv(sh);
 	void (*my_done)(struct scsi_cmnd *) = NULL;
-	int errstatus, mbi, mbo, mbistatus;
+	int mbi, mbo, mbistatus;
 	int number_serviced;
 	unsigned long flags;
 	struct scsi_cmnd *tmp_cmd;
@@ -366,22 +367,23 @@ static irqreturn_t aha1542_interrupt(int irq, void *dev_id)
 		/* is there mail :-) */
 
 		/* more error checking left out here */
-		if (mbistatus != 1)
+		if (mbistatus != 1) {
 			/* This is surely wrong, but I don't know what's right */
-			errstatus = makecode(ccb[mbo].hastat, ccb[mbo].tarstat);
-		else
-			errstatus = 0;
+			set_status_byte(tmp_cmd, ccb[mbo].tarstat);
+			set_host_byte(tmp_cmd, makecode(ccb[mbo].hastat));
+		} else
+			scsi_result_set_good(tmp_cmd);
 
 #ifdef DEBUG
-		if (errstatus)
+		if (!scsi_result_is_good(tmp_cmd))
 			shost_printk(KERN_DEBUG, sh, "(aha1542 error:%x %x %x) ", errstatus,
 			       ccb[mbo].hastat, ccb[mbo].tarstat);
 		if (ccb[mbo].tarstat == 2)
 			print_hex_dump_bytes("sense: ", DUMP_PREFIX_NONE, &ccb[mbo].cdb[ccb[mbo].cdblen], 12);
-		if (errstatus)
-			printk("aha1542_intr_handle: returning %6x\n", errstatus);
+		if (!scsi_result_is_good(tmp_cmd))
+			printk("aha1542_intr_handle: returning %6x\n",
+			       scsi_get_result(tmp_cmd));
 #endif
-		tmp_cmd->result = errstatus;
 		aha1542->int_cmds[mbo] = NULL;	/* This effectively frees up the mailbox slot, as
 						   far as queuecommand is concerned */
 		my_done(tmp_cmd);
