@@ -399,7 +399,7 @@ static void print_debug_list(void)
 	printk("\n");
 }
 
-static void fas216_done(FAS216_Info *info, unsigned int result);
+static void fas216_done(FAS216_Info *info, unsigned char result);
 
 /**
  * fas216_get_last_msg - retrive last message from the list
@@ -2004,10 +2004,10 @@ static void fas216_devicereset_done(FAS216_Info *info, struct scsi_cmnd *SCpnt,
  * Finish processing automatic request sense command
  */
 static void fas216_rq_sns_done(FAS216_Info *info, struct scsi_cmnd *SCpnt,
-			       unsigned int result)
+			       unsigned char result)
 {
 	fas216_log_target(info, LOG_CONNECT, SCpnt->device->id,
-		   "request sense complete, result=0x%04x%02x%02x",
+		   "request sense complete, result=0x%02x%02x%02x",
 		   result, SCpnt->SCp.Message, SCpnt->SCp.Status);
 
 	if (result != DID_OK || SCpnt->SCp.Status != GOOD)
@@ -2038,36 +2038,38 @@ static void fas216_rq_sns_done(FAS216_Info *info, struct scsi_cmnd *SCpnt,
  * Finish processing of standard command
  */
 static void
-fas216_std_done(FAS216_Info *info, struct scsi_cmnd *SCpnt, unsigned int result)
+fas216_std_done(FAS216_Info *info, struct scsi_cmnd *SCpnt, unsigned char result)
 {
 	info->stats.fins += 1;
 
-	SCpnt->result = result << 16 | info->scsi.SCp.Message << 8 |
-			info->scsi.SCp.Status;
+	set_host_byte(SCpnt, result);
+	set_msg_byte(SCpnt, info->scsi.SCp.Message);
+	set_status_byte(SCpnt, info->scsi.SCp.Status);
 
 	fas216_log_command(info, LOG_CONNECT, SCpnt,
-		"command complete, result=0x%08x", SCpnt->result);
+		"command complete, result=0x%08x",
+		scsi_get_resultSCpnt));
 
 	/*
 	 * If the driver detected an error, we're all done.
 	 */
-	if (host_byte(SCpnt->result) != DID_OK ||
-	    msg_byte(SCpnt->result) != COMMAND_COMPLETE)
+	if (get_host_byte(SCpnt) != DID_OK ||
+	    get_msg_byte(SCpnt) != COMMAND_COMPLETE)
 		goto done;
 
 	/*
 	 * If the command returned CHECK_CONDITION or COMMAND_TERMINATED
 	 * status, request the sense information.
 	 */
-	if (status_byte(SCpnt->result) == CHECK_CONDITION ||
-	    status_byte(SCpnt->result) == COMMAND_TERMINATED)
+	if (get_status_byte(SCpnt) == SAM_STAT_CHECK_CONDITION ||
+	    get_status_byte(SCpnt) == SAM_STAT_COMMAND_TERMINATED)
 		goto request_sense;
 
 	/*
 	 * If the command did not complete with GOOD status,
 	 * we are all done here.
 	 */
-	if (status_byte(SCpnt->result) != GOOD)
+	if (get_status_byte(SCpnt) != SAM_STAT_GOOD)
 		goto done;
 
 	/*
@@ -2087,7 +2089,7 @@ fas216_std_done(FAS216_Info *info, struct scsi_cmnd *SCpnt, unsigned int result)
 		default:
 			scmd_printk(KERN_ERR, SCpnt,
 				    "incomplete data transfer detected: res=%08X ptr=%p len=%X\n",
-				    SCpnt->result, info->scsi.SCp.ptr,
+				    scsi_get_result(SCpnt), info->scsi.SCp.ptr,
 				    info->scsi.SCp.this_residual);
 			scsi_print_command(SCpnt);
 			set_host_byte(SCpnt, DID_ERROR);
@@ -2136,7 +2138,7 @@ request_sense:
  *
  * Complete processing for current command
  */
-static void fas216_done(FAS216_Info *info, unsigned int result)
+static void fas216_done(FAS216_Info *info, unsigned char result)
 {
 	void (*fn)(FAS216_Info *, struct scsi_cmnd *, unsigned int);
 	struct scsi_cmnd *SCpnt;
@@ -2149,7 +2151,7 @@ static void fas216_done(FAS216_Info *info, unsigned int result)
 
 	SCpnt = info->SCpnt;
 	info->SCpnt = NULL;
-    	info->scsi.phase = PHASE_IDLE;
+	info->scsi.phase = PHASE_IDLE;
 
 	if (info->scsi.aborting) {
 		fas216_log(info, 0, "uncaught abort - returning DID_ABORT");
