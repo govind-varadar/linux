@@ -4771,14 +4771,14 @@ int megasas_check_mpio_paths(struct megasas_instance *instance,
 	struct scsi_cmnd *scmd)
 {
 	struct megasas_instance *peer_instance = NULL;
-	int retval = (DID_REQUEUE << 16);
+	int retval = DID_REQUEUE;
 
 	if (instance->peerIsPresent) {
 		peer_instance = megasas_get_peer_instance(instance);
 		if ((peer_instance) &&
 			(atomic_read(&peer_instance->adprecovery) ==
 			MEGASAS_HBA_OPERATIONAL))
-			retval = (DID_NO_CONNECT << 16);
+			retval = DID_NO_CONNECT;
 	}
 	return retval;
 }
@@ -4889,9 +4889,9 @@ int megasas_reset_fusion(struct Scsi_Host *shost, int reason)
 					MPI2_FUNCTION_SCSI_IO_REQUEST)
 					fpio_count++;
 
-				scmd_local->result =
-					megasas_check_mpio_paths(instance,
-							scmd_local);
+				set_host_byte(scmd_local,
+					      megasas_check_mpio_paths(instance,
+								       scmd_local));
 				if (instance->ldio_threshold &&
 					megasas_cmd_type(scmd_local) == READ_WRITE_LDIO)
 					atomic_dec(&instance->ldio_outstanding);

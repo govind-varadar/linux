@@ -1785,8 +1785,7 @@ megasas_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 
 	/* Check for an mpio path and adjust behavior */
 	if (atomic_read(&instance->adprecovery) == MEGASAS_ADPRESET_SM_INFAULT) {
-		if (megasas_check_mpio_paths(instance, scmd) ==
-		    (DID_REQUEUE << 16)) {
+		if (megasas_check_mpio_paths(instance, scmd) == DID_REQUEUE) {
 			return SCSI_MLQUEUE_HOST_BUSY;
 		} else {
 			scmd->result = DID_NO_CONNECT << 16;
