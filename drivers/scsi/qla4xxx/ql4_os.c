@@ -4788,14 +4788,15 @@ int qla4xxx_soft_reset(struct scsi_qla_host *ha)
 /**
  * qla4xxx_abort_active_cmds - returns all outstanding i/o requests to O.S.
  * @ha: Pointer to host adapter structure.
- * @res: returned scsi status
+ * @res: returned scsi host byte
  *
  * This routine is called just prior to a HARD RESET to return all
  * outstanding commands back to the Operating System.
  * Caller should make sure that the following locks are released
  * before this calling routine: Hardware lock, and io_request_lock.
  **/
-static void qla4xxx_abort_active_cmds(struct scsi_qla_host *ha, int res)
+static void qla4xxx_abort_active_cmds(struct scsi_qla_host *ha,
+				      unsigned char res)
 {
 	struct srb *srb;
 	int i;
@@ -4805,7 +4806,7 @@ static void qla4xxx_abort_active_cmds(struct scsi_qla_host *ha, int res)
 	for (i = 0; i < ha->host->can_queue; i++) {
 		srb = qla4xxx_del_from_active_array(ha, i);
 		if (srb != NULL) {
-			srb->cmd->result = res;
+			set_host_byte(srb->cmd, res);
 			kref_put(&srb->srb_ref, qla4xxx_srb_compl);
 		}
 	}
@@ -4819,7 +4820,7 @@ void qla4xxx_dead_adapter_cleanup(struct scsi_qla_host *ha)
 	/* Disable the board */
 	ql4_printk(KERN_INFO, ha, "Disabling the board\n");
 
-	qla4xxx_abort_active_cmds(ha, DID_NO_CONNECT << 16);
+	qla4xxx_abort_active_cmds(ha, DID_NO_CONNECT);
 	qla4xxx_mark_all_devices_missing(ha);
 	clear_bit(AF_INIT_DONE, &ha->flags);
 }
@@ -4892,7 +4893,7 @@ static int qla4xxx_recover_adapter(struct scsi_qla_host *ha)
 		if (status == QLA_SUCCESS) {
 			ha->isp_ops->disable_intrs(ha);
 			qla4xxx_process_aen(ha, FLUSH_DDB_CHANGED_AENS);
-			qla4xxx_abort_active_cmds(ha, DID_RESET << 16);
+			qla4xxx_abort_active_cmds(ha, DID_RESET);
 		} else {
 			/* If the stop_firmware fails then
 			 * reset the entire chip */
@@ -4934,7 +4935,7 @@ chip_reset:
 		    "scsi%ld: %s - Performing chip reset..\n",
 		    ha->host_no, __func__));
 		status = ha->isp_ops->reset_chip(ha);
-		qla4xxx_abort_active_cmds(ha, DID_RESET << 16);
+		qla4xxx_abort_active_cmds(ha, DID_RESET);
 	}
 
 	/* Flush any pending ddb changed AENs */
@@ -5410,7 +5411,7 @@ static void qla4xxx_do_dpc(struct work_struct *work)
 				DEBUG2(printk("scsi%ld: %s: SR|FSR "
 					      "bit not cleared-- resetting\n",
 					      ha->host_no, __func__));
-			qla4xxx_abort_active_cmds(ha, DID_RESET << 16);
+			qla4xxx_abort_active_cmds(ha, DID_RESET);
 			if (ql4xxx_lock_drvr_wait(ha) == QLA_SUCCESS) {
 				qla4xxx_process_aen(ha, FLUSH_DDB_CHANGED_AENS);
 				status = qla4xxx_recover_adapter(ha);
@@ -5470,7 +5471,7 @@ dpc_post_reset_ha:
  **/
 static void qla4xxx_free_adapter(struct scsi_qla_host *ha)
 {
-	qla4xxx_abort_active_cmds(ha, DID_NO_CONNECT << 16);
+	qla4xxx_abort_active_cmds(ha, DID_NO_CONNECT);
 
 	/* Turn-off interrupts on the card. */
 	ha->isp_ops->disable_intrs(ha);
@@ -9446,7 +9447,7 @@ static int qla4xxx_eh_host_reset(struct scsi_cmnd *cmd)
 
 		/* Clear outstanding srb in queues */
 		if (qla4xxx_is_eh_active(cmd->device->host))
-			qla4xxx_abort_active_cmds(ha, DID_ABORT << 16);
+			qla4xxx_abort_active_cmds(ha, DID_ABORT);
 
 		return FAILED;
 	}
@@ -9621,12 +9622,12 @@ qla4xxx_pci_error_detected(struct pci_dev *pdev, pci_channel_state_t state)
 		qla4xxx_free_irqs(ha);
 		pci_disable_device(pdev);
 		/* Return back all IOs */
-		qla4xxx_abort_active_cmds(ha, DID_RESET << 16);
+		qla4xxx_abort_active_cmds(ha, DID_RESET);
 		return PCI_ERS_RESULT_NEED_RESET;
 	case pci_channel_io_perm_failure:
 		set_bit(AF_EEH_BUSY, &ha->flags);
 		set_bit(AF_PCI_CHANNEL_IO_PERM_FAILURE, &ha->flags);
-		qla4xxx_abort_active_cmds(ha, DID_NO_CONNECT << 16);
+		qla4xxx_abort_active_cmds(ha, DID_NO_CONNECT);
 		return PCI_ERS_RESULT_DISCONNECT;
 	}
 	return PCI_ERS_RESULT_NEED_RESET;

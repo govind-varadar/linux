@@ -529,7 +529,7 @@ void qla4xxx_process_response_queue(struct scsi_qla_host *ha)
 
 			/* ETRY normally by sending it back with
 			 * DID_BUS_BUSY */
-			srb->cmd->result = DID_BUS_BUSY << 16;
+			set_host_byte(srb->cmd, DID_BUS_BUSY);
 			kref_put(&srb->srb_ref, qla4xxx_srb_compl);
 			break;
 
