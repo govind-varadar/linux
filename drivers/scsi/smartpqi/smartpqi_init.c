@@ -3001,7 +3001,7 @@ static void pqi_process_raid_io_error(struct pqi_io_request *io_request)
 			sense_data_length);
 	}
 
-	scmd->result = scsi_status;
+	set_status_byte(scmd, scsi_status);
 	set_host_byte(scmd, host_byte);
 }
 
@@ -3090,7 +3090,7 @@ static void pqi_process_aio_io_error(struct pqi_io_request *io_request)
 	if (device_offline && sense_data_length == 0)
 		scsi_build_sense(scmd, 0, HARDWARE_ERROR, 0x3e, 0x1);
 
-	scmd->result = scsi_status;
+	set_status_byte(scmd, scsi_status);
 	set_host_byte(scmd, host_byte);
 }
 
@@ -3186,8 +3186,10 @@ static int pqi_process_io_intr(struct pqi_ctrl_info *ctrl_info, struct pqi_queue
 		switch (response->header.iu_type) {
 		case PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS:
 		case PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS:
-			if (io_request->scmd)
-				io_request->scmd->result = 0;
+			if (io_request->scmd) {
+				set_host_byte(io_request->scmd, DID_OK);
+				set_status_byte(io_request->scmd, SAM_STAT_GOOD);
+			}
 			fallthrough;
 		case PQI_RESPONSE_IU_GENERAL_MANAGEMENT:
 			break;
@@ -5332,9 +5334,9 @@ static bool pqi_raid_bypass_retry_needed(struct pqi_io_request *io_request)
 		return false;
 
 	scmd = io_request->scmd;
-	if ((scmd->result & 0xff) == SAM_STAT_GOOD)
+	if (get_status_byte(scmd) == SAM_STAT_GOOD)
 		return false;
-	if (host_byte(scmd->result) == DID_NO_CONNECT)
+	if (get_host_byte(scmd) == DID_NO_CONNECT)
 		return false;
 
 	device = scmd->device->hostdata;
@@ -5718,7 +5720,8 @@ static int pqi_scsi_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scm
 	 * This is necessary because the SML doesn't zero out this field during
 	 * error recovery.
 	 */
-	scmd->result = 0;
+	set_host_byte(scmd, DID_OK);
+	set_status_byte(scmd, SAM_STAT_GOOD);
 
 	hw_queue = pqi_get_hw_queue(ctrl_info, scmd);
 	queue_group = &ctrl_info->queue_groups[hw_queue];
