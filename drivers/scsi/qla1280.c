@@ -488,7 +488,6 @@ __setup("qla1280=", qla1280_setup);
 #define	CMD_CDBP(Cmnd)		Cmnd->cmnd
 #define	CMD_SNSP(Cmnd)		Cmnd->sense_buffer
 #define	CMD_SNSLEN(Cmnd)	SCSI_SENSE_BUFFERSIZE
-#define	CMD_RESULT(Cmnd)	Cmnd->result
 #define	CMD_HANDLE(Cmnd)	Cmnd->host_scribble
 #define CMD_REQUEST(Cmnd)	Cmnd->request->cmd
 
@@ -1252,12 +1251,12 @@ qla1280_done(struct scsi_qla_host *ha)
 		sp = list_entry(done_q->next, struct srb, list);
 
 		list_del(&sp->list);
-	
+
 		cmd = sp->cmd;
 		bus = SCSI_BUS_32(cmd);
 		target = SCSI_TCN_32(cmd);
 
-		switch ((CMD_RESULT(cmd) >> 16)) {
+		switch (get_host_byte(cmd)) {
 		case DID_RESET:
 			/* Issue marker command. */
 			if (!ha->flags.abort_isp_active)
@@ -1288,14 +1287,13 @@ qla1280_done(struct scsi_qla_host *ha)
 /*
  * Translates a ISP error to a Linux SCSI error
  */
-static int
+static void
 qla1280_return_status(struct response * sts, struct scsi_cmnd *cp)
 {
 	int host_status = DID_ERROR;
 	uint16_t comp_status = le16_to_cpu(sts->comp_status);
 	uint16_t state_flags = le16_to_cpu(sts->state_flags);
 	uint32_t residual_length = le32_to_cpu(sts->residual_length);
-	uint16_t scsi_status = le16_to_cpu(sts->scsi_status);
 #if DEBUG_QLA1280_INTR
 	static char *reason[] = {
 		"DID_OK",
@@ -1384,7 +1382,7 @@ qla1280_return_status(struct response * sts, struct scsi_cmnd *cp)
 
 	LEAVE("qla1280_return_status");
 
-	return (scsi_status & 0xff) | (host_status << 16);
+	set_host_byte(cp, host_status);
 }
 
 /****************************************************************************/
@@ -3410,7 +3408,7 @@ qla1280_isr(struct scsi_qla_host *ha, struct list_head *done_q)
 					ha->outstanding_cmds[index] = NULL;
 
 					/* Save ISP completion status */
-					CMD_RESULT(sp->cmd) = 0;
+					scsi_result_set_good(sp->cmd);
 					CMD_HANDLE(sp->cmd) = COMPLETED_HANDLE;
 
 					/* Place block on done queue */
@@ -3633,13 +3631,12 @@ qla1280_status_entry(struct scsi_qla_host *ha, struct response *pkt,
 	}
 
 	/* Target busy or queue full */
-	if ((scsi_status & 0xFF) == SAM_STAT_TASK_SET_FULL ||
-	    (scsi_status & 0xFF) == SAM_STAT_BUSY) {
-		CMD_RESULT(cmd) = scsi_status & 0xff;
-	} else {
+	set_status_byte(cmd, scsi_status);
+	if (get_status_byte(cmd) != SAM_STAT_TASK_SET_FULL &&
+	    get_status_byte(cmd) != SAM_STAT_BUSY) {
 
 		/* Save ISP completion status */
-		CMD_RESULT(cmd) = qla1280_return_status(pkt, cmd);
+		qla1280_return_status(pkt, cmd);
 
 		if (scsi_status & SAM_STAT_CHECK_CONDITION) {
 			if (comp_status != CS_ARS_FAILED) {
@@ -3722,12 +3719,12 @@ qla1280_error_entry(struct scsi_qla_host *ha, struct response *pkt,
 		if (pkt->entry_status & (BIT_3 + BIT_2)) {
 			/* Bad payload or header, set error status. */
 			/* CMD_RESULT(sp->cmd) = CS_BAD_PAYLOAD; */
-			CMD_RESULT(sp->cmd) = DID_ERROR << 16;
+			set_host_byte(sp->cmd, DID_ERROR);
 		} else if (pkt->entry_status & BIT_1) {	/* FULL flag */
-			CMD_RESULT(sp->cmd) = DID_BUS_BUSY << 16;
+			set_host_byte(sp->cmd, DID_BUS_BUSY);
 		} else {
 			/* Set error status. */
-			CMD_RESULT(sp->cmd) = DID_ERROR << 16;
+			set_host_byte(sp->cmd, DID_ERROR);
 		}
 
 		CMD_HANDLE(sp->cmd) = COMPLETED_HANDLE;
@@ -3783,7 +3780,7 @@ qla1280_abort_isp(struct scsi_qla_host *ha)
 		sp = ha->outstanding_cmds[cnt];
 		if (sp) {
 			cmd = sp->cmd;
-			CMD_RESULT(cmd) = DID_RESET << 16;
+			set_host_byte(cmd, DID_RESET);
 			CMD_HANDLE(cmd) = COMPLETED_HANDLE;
 			ha->outstanding_cmds[cnt] = NULL;
 			list_add_tail(&sp->list, &ha->done_q);
