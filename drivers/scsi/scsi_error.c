@@ -974,7 +974,10 @@ void scsi_eh_prep_cmnd(struct scsi_cmnd *scmd, struct scsi_eh_save *ses,
 	ses->cmnd = scmd->cmnd;
 	ses->data_direction = scmd->sc_data_direction;
 	ses->sdb = scmd->sdb;
-	ses->result = scmd->result;
+	ses->driver_byte = get_driver_byte(scmd);
+	ses->host_byte = get_host_byte(scmd);
+	ses->msg_byte = get_msg_byte(scmd);
+	ses->status_byte = get_status_byte(scmd);
 	ses->resid_len = scmd->req.resid_len;
 	ses->underflow = scmd->underflow;
 	ses->prot_op = scmd->prot_op;
@@ -1038,7 +1041,10 @@ void scsi_eh_restore_cmnd(struct scsi_cmnd* scmd, struct scsi_eh_save *ses)
 	scmd->cmnd = ses->cmnd;
 	scmd->sc_data_direction = ses->data_direction;
 	scmd->sdb = ses->sdb;
-	scmd->result = ses->result;
+	set_driver_byte(scmd, ses->driver_byte);
+	set_host_byte(scmd, ses->host_byte);
+	set_msg_byte(scmd, ses->msg_byte);
+	set_status_byte(scmd, ses->status_byte);
 	scmd->req.resid_len = ses->resid_len;
 	scmd->underflow = ses->underflow;
 	scmd->prot_op = ses->prot_op;
