@@ -514,8 +514,7 @@ void ahd_set_transaction_status(struct scb *scb, uint8_t status)
 static inline
 void ahd_cmd_set_scsi_status(struct scsi_cmnd *cmd, uint32_t status)
 {
-	cmd->result &= ~0xFFFF;
-	cmd->result |= status;
+	set_status_byte(cmd, status);
 }
 
 static inline
@@ -539,7 +538,7 @@ uint8_t ahd_get_transaction_status(struct scb *scb)
 static inline
 uint32_t ahd_cmd_get_scsi_status(struct scsi_cmnd *cmd)
 {
-	return (cmd->result & 0xFFFF);
+	return get_status_byte(cmd);
 }
 
 static inline
