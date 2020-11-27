@@ -6004,7 +6004,7 @@ static void adv_isr_callback(ADV_DVC_VAR *adv_dvc_varp, ADV_SCSI_REQ_Q *scsiqp)
 		ASC_DBG(2, "QD_WITH_ERROR\n");
 		switch (scsiqp->host_status) {
 		case QHSTA_NO_ERROR:
-			scp->result = scsiqp->scsi_status;
+			set_status_byte(scp, scsiqp->scsi_status);
 			if (scsiqp->scsi_status == SAM_STAT_CHECK_CONDITION) {
 				ASC_DBG(2, "SAM_STAT_CHECK_CONDITION\n");
 				ASC_DBG_PRT_SENSE(2, scp->sense_buffer,
@@ -6023,13 +6023,13 @@ static void adv_isr_callback(ADV_DVC_VAR *adv_dvc_varp, ADV_SCSI_REQ_Q *scsiqp)
 
 	case QD_ABORTED_BY_HOST:
 		ASC_DBG(1, "QD_ABORTED_BY_HOST\n");
-		scp->result = scsiqp->scsi_status;
+		set_status_byte(scp, scsiqp->scsi_status);
 		set_host_byte(scp, DID_ABORT);
 		break;
 
 	default:
 		ASC_DBG(1, "done_status 0x%x\n", scsiqp->done_status);
-		scp->result = scsiqp->scsi_status;
+		set_status_byte(scp, scsiqp->scsi_status);
 		set_host_byte(scp, DID_ERROR);
 		break;
 	}
@@ -6735,7 +6735,7 @@ static void asc_isr_callback(ASC_DVC_VAR *asc_dvc_varp, ASC_QDONE_INFO *qdonep)
 	switch (qdonep->d3.done_stat) {
 	case QD_NO_ERROR:
 		ASC_DBG(2, "QD_NO_ERROR\n");
-		scsi_result_set_good(scp);
+		set_status_byte(scp, 0);
 
 		/*
 		 * Check for an underrun condition.
@@ -6755,13 +6755,12 @@ static void asc_isr_callback(ASC_DVC_VAR *asc_dvc_varp, ASC_QDONE_INFO *qdonep)
 		ASC_DBG(2, "QD_WITH_ERROR\n");
 		switch (qdonep->d3.host_stat) {
 		case QHSTA_NO_ERROR:
-			scp->result = qdonep->d3.scsi_stat;
 			if (qdonep->d3.scsi_stat == SAM_STAT_CHECK_CONDITION) {
 				ASC_DBG(2, "SAM_STAT_CHECK_CONDITION\n");
 				ASC_DBG_PRT_SENSE(2, scp->sense_buffer,
 						  SCSI_SENSE_BUFFERSIZE);
-				set_driver_byte(scp, DRIVER_SENSE);
 			}
+			set_status_byte(scp, qdonep->d3.scsi_stat);
 			break;
 
 		default:
@@ -6774,14 +6773,14 @@ static void asc_isr_callback(ASC_DVC_VAR *asc_dvc_varp, ASC_QDONE_INFO *qdonep)
 
 	case QD_ABORTED_BY_HOST:
 		ASC_DBG(1, "QD_ABORTED_BY_HOST\n");
-		scp->result = qdonep->d3.scsi_stat;
+		set_status_byte(scp, qdonep->d3.scsi_stat);
 		set_msg_byte(scp, qdonep->d3.scsi_msg);
 		set_host_byte(scp, DID_ABORT);
 		break;
 
 	default:
 		ASC_DBG(1, "done_stat 0x%x\n", qdonep->d3.done_stat);
-		scp->result = qdonep->d3.scsi_stat;
+		set_status_byte(scp, qdonep->d3.scsi_stat);
 		set_msg_byte(scp, qdonep->d3.scsi_msg);
 		set_host_byte(scp, DID_ERROR);
 		break;
