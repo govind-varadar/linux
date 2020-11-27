@@ -260,7 +260,7 @@ static const char *ibmvfc_get_cmd_error(u16 status, u16 error)
  * Return value:
  *	SCSI result value to return for completed command
  **/
-static int ibmvfc_get_err_result(struct ibmvfc_cmd *vfc_cmd)
+static unsigned char ibmvfc_get_err_result(struct ibmvfc_cmd *vfc_cmd)
 {
 	int err;
 	struct ibmvfc_fcp_rsp *rsp = &vfc_cmd->rsp;
@@ -269,12 +269,12 @@ static int ibmvfc_get_err_result(struct ibmvfc_cmd *vfc_cmd)
 	if ((rsp->flags & FCP_RSP_LEN_VALID) &&
 	    ((fc_rsp_len && fc_rsp_len != 4 && fc_rsp_len != 8) ||
 	     rsp->data.info.rsp_code))
-		return DID_ERROR << 16;
+		return DID_ERROR;
 
 	err = ibmvfc_get_err_index(be16_to_cpu(vfc_cmd->status), be16_to_cpu(vfc_cmd->error));
 	if (err >= 0)
-		return rsp->scsi_status | (cmd_status[err].result << 16);
-	return rsp->scsi_status | (DID_ERROR << 16);
+		return cmd_status[err].result;
+	return DID_ERROR;
 }
 
 /**
@@ -848,7 +848,7 @@ static void ibmvfc_scsi_eh_done(struct ibmvfc_event *evt)
 static void ibmvfc_fail_request(struct ibmvfc_event *evt, int error_code)
 {
 	if (evt->cmnd) {
-		evt->cmnd->result = (error_code << 16);
+		set_host_byte(evt->cmnd, error_code);
 		evt->done = ibmvfc_scsi_eh_done;
 	} else
 		evt->xfer_iu->mad_common.status = cpu_to_be16(IBMVFC_MAD_DRIVER_FAILED);
@@ -1495,7 +1495,7 @@ static int ibmvfc_send_event(struct ibmvfc_event *evt,
 
 		dev_err(vhost->dev, "Send error (rc=%d)\n", rc);
 		if (evt->cmnd) {
-			evt->cmnd->result = DID_ERROR << 16;
+			set_host_byte(evt->cmnd, DID_ERROR);
 			evt->done = ibmvfc_scsi_eh_done;
 		} else
 			evt->xfer_iu->mad_common.status = cpu_to_be16(IBMVFC_MAD_CRQ_ERROR);
@@ -1584,7 +1584,8 @@ static void ibmvfc_scsi_done(struct ibmvfc_event *evt)
 			scsi_set_resid(cmnd, 0);
 
 		if (vfc_cmd->status) {
-			cmnd->result = ibmvfc_get_err_result(vfc_cmd);
+			set_status_byte(cmnd, rsp->scsi_status);
+			set_host_byte(cmnd, ibmvfc_get_err_result(vfc_cmd));
 
 			if (rsp->flags & FCP_RSP_LEN_VALID)
 				rsp_len = be32_to_cpu(rsp->fcp_rsp_len);
@@ -1597,14 +1598,14 @@ static void ibmvfc_scsi_done(struct ibmvfc_event *evt)
 				ibmvfc_relogin(cmnd->device);
 
 			if (scsi_result_is_good(cmnd) && (!scsi_get_resid(cmnd) || (rsp->flags & FCP_RESID_OVER)))
-				cmnd->result = (DID_ERROR << 16);
+				set_host_byte(cmnd, DID_ERROR);
 
 			ibmvfc_log_error(evt);
 		}
 
 		if (scsi_result_is_good(cmnd) &&
 		    (scsi_bufflen(cmnd) - scsi_get_resid(cmnd) < cmnd->underflow))
-			cmnd->result = (DID_ERROR << 16);
+			set_host_byte(cmnd, DID_ERROR);
 
 		scsi_dma_unmap(cmnd);
 		cmnd->scsi_done(cmnd);
@@ -1703,7 +1704,7 @@ static int ibmvfc_queuecommand_lck(struct scsi_cmnd *cmnd,
 		scmd_printk(KERN_ERR, cmnd,
 			    "Failed to map DMA buffer for command. rc=%d\n", rc);
 
-	cmnd->result = DID_ERROR << 16;
+	set_host_byte(cmnd, DID_ERROR);
 	done(cmnd);
 	return 0;
 }
@@ -2056,8 +2057,10 @@ static int ibmvfc_reset_device(struct scsi_device *sdev, int type, char *desc)
 	sdev_printk(KERN_INFO, sdev, "Resetting %s\n", desc);
 	wait_for_completion(&evt->comp);
 
-	if (rsp_iu.cmd.status)
-		rsp_code = ibmvfc_get_err_result(&rsp_iu.cmd);
+	if (rsp_iu.cmd.status) {
+		rsp_code = (ibmvfc_get_err_result(&rsp_iu.cmd) << 16);
+		rsp_code |= fc_rsp->scsi_status;
+	}
 
 	if (rsp_code) {
 		if (fc_rsp->flags & FCP_RSP_LEN_VALID)
@@ -2415,8 +2418,10 @@ static int ibmvfc_abort_task_set(struct scsi_device *sdev)
 		}
 	}
 
-	if (rsp_iu.cmd.status)
-		rsp_code = ibmvfc_get_err_result(&rsp_iu.cmd);
+	if (rsp_iu.cmd.status) {
+		rsp_code = ibmvfc_get_err_result(&rsp_iu.cmd) << 16;
+		rsp_code |= fc_rsp->scsi_status;
+	}
 
 	if (rsp_code) {
 		if (fc_rsp->flags & FCP_RSP_LEN_VALID)
