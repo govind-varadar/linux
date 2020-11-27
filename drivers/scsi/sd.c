@@ -3810,7 +3810,7 @@ void sd_print_sense_hdr(struct scsi_disk *sdkp, struct scsi_sense_hdr *sshdr)
 
 void sd_print_result(const struct scsi_disk *sdkp, const char *msg, int result)
 {
-	const char *hb_string = scsi_hostbyte_string(result);
+	const char *hb_string = scsi_hostbyte_string(host_byte(result));
 
 	if (hb_string)
 		sd_printk(KERN_INFO, sdkp,

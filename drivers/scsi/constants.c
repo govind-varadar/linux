@@ -406,10 +406,9 @@ static const char * const hostbyte_table[]={
 "DID_TRANSPORT_DISRUPTED", "DID_TRANSPORT_FAILFAST", "DID_TARGET_FAILURE",
 "DID_NEXUS_FAILURE", "DID_ALLOC_FAILURE", "DID_MEDIUM_ERROR" };
 
-const char *scsi_hostbyte_string(int result)
+const char *scsi_hostbyte_string(unsigned char hb)
 {
 	const char *hb_string = NULL;
-	int hb = host_byte(result);
 
 	if (hb < ARRAY_SIZE(hostbyte_table))
 		hb_string = hostbyte_table[hb];
