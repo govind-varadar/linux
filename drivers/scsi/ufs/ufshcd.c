@@ -4777,43 +4777,41 @@ static void ufshcd_slave_destroy(struct scsi_device *sdev)
  * @lrbp: pointer to local reference block of completed command
  * @scsi_status: SCSI command status
  *
- * Returns value base on SCSI command status
+ * Returns host byte value based on SCSI command status
  */
-static inline int
+static inline unsigned char
 ufshcd_scsi_cmd_status(struct ufshcd_lrb *lrbp, int scsi_status)
 {
-	int result = 0;
-
 	switch (scsi_status) {
 	case SAM_STAT_CHECK_CONDITION:
 		ufshcd_copy_sense_data(lrbp);
 		fallthrough;
 	case SAM_STAT_GOOD:
-		result |= DID_OK << 16 | scsi_status;
 		break;
 	case SAM_STAT_TASK_SET_FULL:
 	case SAM_STAT_BUSY:
 	case SAM_STAT_TASK_ABORTED:
 		ufshcd_copy_sense_data(lrbp);
-		result |= scsi_status;
 		break;
 	default:
-		result |= DID_ERROR << 16;
+		return DID_ERROR;
 		break;
 	} /* end of switch */
 
-	return result;
+	return DID_OK;
 }
 
 /**
  * ufshcd_transfer_rsp_status - Get overall status of the response
  * @hba: per adapter instance
  * @lrbp: pointer to local reference block of completed command
+ * @cmd: scsi command
  *
- * Returns result of the command to notify SCSI midlayer
+ * Transfers the response status from @lrpb to @cmd.
  */
-static inline int
-ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
+static inline void
+ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp,
+			   struct scsi_cmnd *cmd)
 {
 	int result = 0;
 	int scsi_status;
@@ -4846,6 +4844,8 @@ ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 			 */
 			scsi_status = result & MASK_SCSI_STATUS;
 			result = ufshcd_scsi_cmd_status(lrbp, scsi_status);
+			set_status_byte(cmd, scsi_status);
+			set_host_byte(cmd, result);
 
 			/*
 			 * Currently we are only supporting BKOPs exception
@@ -4872,7 +4872,7 @@ ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 			break;
 		case UPIU_TRANSACTION_REJECT_UPIU:
 			/* TODO: handle Reject UPIU Response */
-			result = DID_ERROR << 16;
+			set_host_byte(cmd, DID_ERROR);
 			dev_err(hba->dev,
 				"Reject UPIU not fully implemented\n");
 			break;
@@ -4880,15 +4880,15 @@ ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 			dev_err(hba->dev,
 				"Unexpected request response code = %x\n",
 				result);
-			result = DID_ERROR << 16;
+			set_host_byte(cmd, DID_ERROR);
 			break;
 		}
 		break;
 	case OCS_ABORTED:
-		result |= DID_ABORT << 16;
+		set_host_byte(cmd, DID_ABORT);
 		break;
 	case OCS_INVALID_COMMAND_STATUS:
-		result |= DID_REQUEUE << 16;
+		set_host_byte(cmd, DID_REQUEUE);
 		break;
 	case OCS_INVALID_CMD_TABLE_ATTR:
 	case OCS_INVALID_PRDT_ATTR:
@@ -4900,7 +4900,7 @@ ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 	case OCS_INVALID_CRYPTO_CONFIG:
 	case OCS_GENERAL_CRYPTO_ERROR:
 	default:
-		result |= DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		dev_err(hba->dev,
 				"OCS error from controller = %x for tag %d\n",
 				ocs, lrbp->task_tag);
@@ -4909,9 +4909,8 @@ ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 		break;
 	} /* end of switch */
 
-	if ((host_byte(result) != DID_OK) && !hba->silence_err_logs)
+	if ((get_host_byte(cmd) != DID_OK) && !hba->silence_err_logs)
 		ufshcd_print_trs(hba, 1 << lrbp->task_tag, true);
-	return result;
 }
 
 /**
@@ -4957,7 +4956,6 @@ static void __ufshcd_transfer_req_compl(struct ufs_hba *hba,
 {
 	struct ufshcd_lrb *lrbp;
 	struct scsi_cmnd *cmd;
-	int result;
 	int index;
 
 	for_each_set_bit(index, &completed_reqs, hba->nutrs) {
@@ -4966,9 +4964,8 @@ static void __ufshcd_transfer_req_compl(struct ufs_hba *hba,
 		cmd = lrbp->cmd;
 		if (cmd) {
 			ufshcd_add_command_trace(hba, index, "complete");
-			result = ufshcd_transfer_rsp_status(hba, lrbp);
+			ufshcd_transfer_rsp_status(hba, lrbp, cmd);
 			scsi_dma_unmap(cmd);
-			cmd->result = result;
 			/* Mark completed command as NULL in LRB */
 			lrbp->cmd = NULL;
 			/* Do not touch lrbp after scsi done */
