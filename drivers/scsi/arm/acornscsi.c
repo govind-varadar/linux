@@ -794,7 +794,9 @@ static void acornscsi_done(AS_Host *host, struct scsi_cmnd **SCpntp,
 
 	acornscsi_dma_cleanup(host);
 
-	SCpnt->result = result << 16 | host->scsi.SCp.Message << 8 | host->scsi.SCp.Status;
+	set_status_byte(SCpnt, host->scsi.SCp.Status);
+	set_msg_byte(SCpnt, host->scsi.SCp.Message);
+	set_host_byte(SCpnt, result);
 
 	/*
 	 * In theory, this should not happen.  In practice, it seems to.
@@ -844,7 +846,8 @@ static void acornscsi_done(AS_Host *host, struct scsi_cmnd **SCpntp,
 		    default:
 			scmd_printk(KERN_ERR, SCpnt,
 				    "incomplete data transfer detected: "
-				    "result=%08X", SCpnt->result);
+				    "result=%08X",
+				    scsi_get_result(SCpnt));
 			scsi_print_command(SCpnt);
 			acornscsi_dumpdma(host, "done");
 			acornscsi_dumplog(host, SCpnt->device->id);
@@ -2470,7 +2473,7 @@ static int acornscsi_queuecmd_lck(struct scsi_cmnd *SCpnt,
     if (acornscsi_cmdtype(SCpnt->cmnd[0]) == CMD_WRITE && (NO_WRITE & (1 << SCpnt->device->id))) {
 	printk(KERN_CRIT "scsi%d.%c: WRITE attempted with NO_WRITE flag set\n",
 	    host->host->host_no, '0' + SCpnt->device->id);
-	SCpnt->result = DID_NO_CONNECT << 16;
+	set_host_byte(SCpnt, DID_NO_CONNECT);
 	done(SCpnt);
 	return 0;
     }
@@ -2492,7 +2495,7 @@ static int acornscsi_queuecmd_lck(struct scsi_cmnd *SCpnt,
 	unsigned long flags;
 
 	if (!queue_add_cmd_ordered(&host->queues.issue, SCpnt)) {
-	    SCpnt->result = DID_ERROR << 16;
+	    set_host_byte(SCpnt, DID_ERROR);
 	    done(SCpnt);
 	    return 0;
 	}
