@@ -497,7 +497,7 @@ sg_read(struct file *filp, char __user *buf, size_t count, loff_t * ppos)
 	old_hdr->target_status = hp->masked_status;
 	old_hdr->host_status = hp->host_status;
 	old_hdr->driver_status = hp->driver_status;
-	if ((CHECK_CONDITION & hp->masked_status) ||
+	if ((SAM_STAT_CHECK_CONDITION & hp->status) ||
 	    (DRIVER_SENSE & hp->driver_status))
 		memcpy(old_hdr->sense_buffer, srp->sense_b,
 		       sizeof (old_hdr->sense_buffer));
@@ -523,7 +523,7 @@ sg_read(struct file *filp, char __user *buf, size_t count, loff_t * ppos)
 		break;
 	case DID_ERROR:
 		old_hdr->result = (srp->sense_b[0] == 0 && 
-				  hp->masked_status == GOOD) ? 0 : EIO;
+				  hp->status == SAM_STAT_GOOD) ? 0 : EIO;
 		break;
 	default:
 		old_hdr->result = EIO;
@@ -573,7 +573,7 @@ sg_new_read(Sg_fd * sfp, char __user *buf, size_t count, Sg_request * srp)
 	}
 	hp->sb_len_wr = 0;
 	if ((hp->mx_sb_len > 0) && hp->sbp) {
-		if ((CHECK_CONDITION & hp->masked_status) ||
+		if ((SAM_STAT_CHECK_CONDITION & hp->status) ||
 		    (DRIVER_SENSE & hp->driver_status)) {
 			int sb_len = SCSI_SENSE_BUFFERSIZE;
 			sb_len = (hp->mx_sb_len > sb_len) ? sb_len : hp->mx_sb_len;
@@ -586,7 +586,7 @@ sg_new_read(Sg_fd * sfp, char __user *buf, size_t count, Sg_request * srp)
 			hp->sb_len_wr = len;
 		}
 	}
-	if (hp->masked_status || hp->host_status || hp->driver_status)
+	if (hp->status || hp->host_status || hp->driver_status)
 		hp->info |= SG_INFO_CHECK;
 	err = put_sg_io_hdr(hp, buf);
 err_out:
@@ -867,7 +867,7 @@ sg_fill_request_table(Sg_fd *sfp, sg_req_info_t *rinfo)
 			break;
 		rinfo[val].req_state = srp->done + 1;
 		rinfo[val].problem =
-			srp->header.masked_status &
+			srp->header.status &
 			srp->header.host_status &
 			srp->header.driver_status;
 		if (srp->done)
@@ -1378,8 +1378,8 @@ sg_rq_end_io(struct request *rq, blk_status_t status)
 		srp->header.host_status = host_byte(result);
 		srp->header.driver_status = driver_byte(result);
 		if ((sdp->sgdebug > 0) &&
-		    ((CHECK_CONDITION == srp->header.masked_status) ||
-		     (COMMAND_TERMINATED == srp->header.masked_status)))
+		    ((SAM_STAT_CHECK_CONDITION == srp->header.status) ||
+		     (SAM_STAT_COMMAND_TERMINATED == srp->header.status)))
 			__scsi_print_sense(sdp->device, __func__, sense,
 					   SCSI_SENSE_BUFFERSIZE);
 
