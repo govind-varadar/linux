@@ -1596,13 +1596,13 @@ static void ibmvfc_scsi_done(struct ibmvfc_event *evt)
 			    (be16_to_cpu(vfc_cmd->error) == IBMVFC_PLOGI_REQUIRED))
 				ibmvfc_relogin(cmnd->device);
 
-			if (!cmnd->result && (!scsi_get_resid(cmnd) || (rsp->flags & FCP_RESID_OVER)))
+			if (scsi_result_is_good(cmnd) && (!scsi_get_resid(cmnd) || (rsp->flags & FCP_RESID_OVER)))
 				cmnd->result = (DID_ERROR << 16);
 
 			ibmvfc_log_error(evt);
 		}
 
-		if (!cmnd->result &&
+		if (scsi_result_is_good(cmnd) &&
 		    (scsi_bufflen(cmnd) - scsi_get_resid(cmnd) < cmnd->underflow))
 			cmnd->result = (DID_ERROR << 16);
 

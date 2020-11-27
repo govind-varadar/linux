@@ -5457,9 +5457,9 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 		cmnd->result &= ~SDEG_RES_IMMED_MASK;
 		delta_jiff = ndelay = 0;
 	}
-	if (cmnd->result == 0 && scsi_result != 0)
+	if (scsi_result_is_good(cmnd) && scsi_result != 0)
 		cmnd->result = scsi_result;
-	if (cmnd->result == 0 && unlikely(sdebug_opts & SDEBUG_OPT_TRANSPORT_ERR)) {
+	if (scsi_result_is_good(cmnd) && unlikely(sdebug_opts & SDEBUG_OPT_TRANSPORT_ERR)) {
 		if (atomic_read(&sdeb_inject_pending)) {
 			mk_sense_buffer(cmnd, ABORTED_COMMAND, TRANSPORT_PROBLEM, ACK_NAK_TO);
 			atomic_set(&sdeb_inject_pending, 0);
@@ -5467,7 +5467,7 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 		}
 	}
 
-	if (unlikely(sdebug_verbose && cmnd->result))
+	if (unlikely(sdebug_verbose && !scsi_result_is_good(cmnd)))
 		sdev_printk(KERN_INFO, sdp, "%s: non-zero result=0x%x\n",
 			    __func__, cmnd->result);
 
@@ -5552,7 +5552,7 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 respond_in_thread:	/* call back to mid-layer using invocation thread */
 	cmnd->result = pfp != NULL ? pfp(cmnd, devip) : 0;
 	cmnd->result &= ~SDEG_RES_IMMED_MASK;
-	if (cmnd->result == 0 && scsi_result != 0)
+	if (scsi_result_is_good(cmnd) && scsi_result != 0)
 		cmnd->result = scsi_result;
 	cmnd->scsi_done(cmnd);
 	return 0;

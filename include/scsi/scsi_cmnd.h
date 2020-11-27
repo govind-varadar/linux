@@ -323,6 +323,11 @@ static inline void set_driver_byte(struct scsi_cmnd *cmd, char status)
 	cmd->result = (cmd->result & 0x00ffffff) | (status << 24);
 }
 
+static inline bool scsi_result_is_good(struct scsi_cmnd *cmd)
+{
+	return cmd->result == 0;
+}
+
 static inline void scsi_result_set_good(struct scsi_cmnd *cmd)
 {
 	cmd->result = 0;

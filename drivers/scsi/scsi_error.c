@@ -2117,7 +2117,7 @@ void scsi_eh_flush_done_q(struct list_head *done_q)
 			 * scsi_eh_get_sense), scmd->result is already
 			 * set, do not set DRIVER_TIMEOUT.
 			 */
-			if (!scmd->result)
+			if (scsi_result_is_good(scmd))
 				scmd->result |= (DRIVER_TIMEOUT << 24);
 			SCSI_LOG_ERROR_RECOVERY(3,
 				scmd_printk(KERN_INFO, scmd,

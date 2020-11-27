@@ -440,7 +440,6 @@ static bool sd_zbc_need_zone_wp_update(struct request *rq)
 static unsigned int sd_zbc_zone_wp_update(struct scsi_cmnd *cmd,
 					  unsigned int good_bytes)
 {
-	int result = cmd->result;
 	struct request *rq = cmd->request;
 	struct scsi_disk *sdkp = scsi_disk(rq->rq_disk);
 	unsigned int zno = blk_rq_zone_no(rq);
@@ -454,7 +453,7 @@ static unsigned int sd_zbc_zone_wp_update(struct scsi_cmnd *cmd,
 	 */
 	spin_lock_bh(&sdkp->zones_wp_offset_lock);
 
-	if (result && op != REQ_OP_ZONE_RESET_ALL) {
+	if (!scsi_result_is_good(cmd) && op != REQ_OP_ZONE_RESET_ALL) {
 		if (op == REQ_OP_ZONE_APPEND) {
 			/* Force complete completion (no retry) */
 			good_bytes = 0;
@@ -513,11 +512,10 @@ unlock_wp_offset:
 unsigned int sd_zbc_complete(struct scsi_cmnd *cmd, unsigned int good_bytes,
 		     struct scsi_sense_hdr *sshdr)
 {
-	int result = cmd->result;
 	struct request *rq = cmd->request;
 
 	if (op_is_zone_mgmt(req_op(rq)) &&
-	    result &&
+	    !scsi_result_is_good(cmd) &&
 	    sshdr->sense_key == ILLEGAL_REQUEST &&
 	    sshdr->asc == 0x24) {
 		/*

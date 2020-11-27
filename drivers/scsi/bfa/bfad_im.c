@@ -86,7 +86,7 @@ bfa_cb_ioim_done(void *drv, struct bfad_ioim_s *dio,
 	itnim_data = cmnd->device->hostdata;
 	if (itnim_data) {
 		itnim = itnim_data->itnim;
-		if (!cmnd->result && itnim &&
+		if (scsi_result_is_good(cmnd) && itnim &&
 			 (bfa_lun_queue_depth > cmnd->device->queue_depth)) {
 			/* Queue depth adjustment for good status completion */
 			bfad_ramp_up_qdepth(itnim, cmnd->device);

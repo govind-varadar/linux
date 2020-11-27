@@ -154,7 +154,7 @@ lpfc_update_stats(struct lpfc_vport *vport, struct lpfc_io_buf *lpfc_cmd)
 
 	if (!vport->stat_data_enabled ||
 	    vport->stat_data_blocked ||
-	    (cmd->result))
+	    !scsi_result_is_good(cmd))
 		return;
 
 	latency = jiffies_to_msecs((long)jiffies - (long)lpfc_cmd->start_time);
@@ -4271,7 +4271,7 @@ lpfc_fcp_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
 				 wcqe->parameter,
 				 wcqe->total_data_placed);
 	}
-	if (cmd->result || lpfc_cmd->fcp_rsp->rspSnsLen) {
+	if (!scsi_result_is_good(cmd) || lpfc_cmd->fcp_rsp->rspSnsLen) {
 		u32 *lp = (u32 *)cmd->sense_buffer;
 
 		lpfc_printf_vlog(vport, KERN_INFO, LOG_FCP,
@@ -4541,7 +4541,7 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 	} else
 		scsi_result_set_good(cmd);
 
-	if (cmd->result || lpfc_cmd->fcp_rsp->rspSnsLen) {
+	if (!scsi_result_is_good(cmd) || lpfc_cmd->fcp_rsp->rspSnsLen) {
 		uint32_t *lp = (uint32_t *)cmd->sense_buffer;
 
 		lpfc_printf_vlog(vport, KERN_INFO, LOG_FCP,

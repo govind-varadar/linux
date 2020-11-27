@@ -2019,7 +2019,8 @@ static unsigned int sd_completed_bytes(struct scsi_cmnd *scmd)
 static int sd_done(struct scsi_cmnd *SCpnt)
 {
 	int result = SCpnt->result;
-	unsigned int good_bytes = result ? 0 : scsi_bufflen(SCpnt);
+	unsigned int good_bytes =
+		scsi_result_is_good(SCpnt) ? 0 : scsi_bufflen(SCpnt);
 	unsigned int sector_size = SCpnt->device->sector_size;
 	unsigned int resid;
 	struct scsi_sense_hdr sshdr;
@@ -2037,7 +2038,7 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 	case REQ_OP_ZONE_OPEN:
 	case REQ_OP_ZONE_CLOSE:
 	case REQ_OP_ZONE_FINISH:
-		if (!result) {
+		if (scsi_result_is_good(SCpnt)) {
 			good_bytes = blk_rq_bytes(req);
 			scsi_set_resid(SCpnt, 0);
 		} else {
@@ -2063,7 +2064,7 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 		}
 	}
 
-	if (result) {
+	if (!scsi_result_is_good(SCpnt)) {
 		sense_valid = scsi_command_normalize_sense(SCpnt, &sshdr);
 		if (sense_valid)
 			sense_deferred = scsi_sense_is_deferred(&sshdr);

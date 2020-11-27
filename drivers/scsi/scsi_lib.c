@@ -1432,7 +1432,7 @@ static void scsi_softirq_done(struct request *rq)
 	INIT_LIST_HEAD(&cmd->eh_entry);
 
 	atomic_inc(&cmd->device->iodone_cnt);
-	if (cmd->result)
+	if (!scsi_result_is_good(cmd))
 		atomic_inc(&cmd->device->ioerr_cnt);
 
 	disposition = scsi_decide_disposition(cmd);

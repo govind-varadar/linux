@@ -5871,7 +5871,7 @@ _scsih_io_done(struct MPT3SAS_ADAPTER *ioc, u16 smid, u8 msix_index, u32 reply)
 
 	}
 
-	if (scmd->result && (ioc->logging_level & MPT_DEBUG_REPLY))
+	if (!scsi_result_is_good(scmd) && (ioc->logging_level & MPT_DEBUG_REPLY))
 		_scsih_scsi_ioc_info(ioc , scmd, mpi_reply, smid);
 
  out:
