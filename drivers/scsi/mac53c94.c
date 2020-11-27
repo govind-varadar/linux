@@ -63,9 +63,12 @@ static void mac53c94_init(struct fsc_state *);
 static void mac53c94_start(struct fsc_state *);
 static void mac53c94_interrupt(int, void *);
 static irqreturn_t do_mac53c94_interrupt(int, void *);
-static void cmd_done(struct fsc_state *, int result);
+static void cmd_done(struct fsc_state *, unsigned char scsi_status,
+		     unsigned char host_byte);
 static void set_dma_cmds(struct fsc_state *, struct scsi_cmnd *);
 
+#define cmd_done_with_hostbyte(s,h)				\
+	cmd_done((s),SAM_STAT_GOOD, (h));
 
 static int mac53c94_queue_lck(struct scsi_cmnd *cmd, void (*done)(struct scsi_cmnd *))
 {
@@ -218,13 +221,13 @@ static void mac53c94_interrupt(int irq, void *dev_id)
 		printk(KERN_INFO "external SCSI bus reset detected\n");
 		writeb(CMD_NOP, &regs->command);
 		writel(RUN << 16, &dma->control);	/* stop dma */
-		cmd_done(state, DID_RESET << 16);
+		cmd_done_with_hostbyte(state, DID_RESET);
 		return;
 	}
 	if (intr & INTR_ILL_CMD) {
 		printk(KERN_ERR "53c94: invalid cmd, intr=%x stat=%x seq=%x phase=%d\n",
 		       intr, stat, seq, state->phase);
-		cmd_done(state, DID_ERROR << 16);
+		cmd_done_with_hostbyte(state, DID_ERROR);
 		return;
 	}
 	if (stat & STAT_ERROR) {
@@ -242,24 +245,24 @@ static void mac53c94_interrupt(int irq, void *dev_id)
 	}
 	if (stat & STAT_PARITY) {
 		printk(KERN_ERR "mac53c94: parity error\n");
-		cmd_done(state, DID_PARITY << 16);
+		cmd_done_with_hostbytee(state, DID_PARITY);
 		return;
 	}
 	switch (state->phase) {
 	case selecting:
 		if (intr & INTR_DISCONNECT) {
 			/* selection timed out */
-			cmd_done(state, DID_BAD_TARGET << 16);
+			cmd_done_with_hostbyte(state, DID_BAD_TARGET);
 			return;
 		}
 		if (intr != INTR_BUS_SERV + INTR_DONE) {
 			printk(KERN_DEBUG "got intr %x during selection\n", intr);
-			cmd_done(state, DID_ERROR << 16);
+			cmd_done_with_hostbyte(state, DID_ERROR);
 			return;
 		}
 		if ((seq & SS_MASK) != SS_DONE) {
 			printk(KERN_DEBUG "seq step %x after command\n", seq);
-			cmd_done(state, DID_ERROR << 16);
+			cmd_done_with_hostbyte(state, DID_ERROR);
 			return;
 		}
 		writeb(CMD_NOP, &regs->command);
@@ -285,7 +288,7 @@ static void mac53c94_interrupt(int irq, void *dev_id)
 		} else {
 			printk(KERN_DEBUG "in unexpected phase %x after cmd\n",
 			       stat & STAT_PHASE);
-			cmd_done(state, DID_ERROR << 16);
+			cmd_done_with_hostbyte(state, DID_ERROR);
 			return;
 		}
 		break;
@@ -293,7 +296,7 @@ static void mac53c94_interrupt(int irq, void *dev_id)
 	case dataing:
 		if (intr != INTR_BUS_SERV) {
 			printk(KERN_DEBUG "got intr %x before status\n", intr);
-			cmd_done(state, DID_ERROR << 16);
+			cmd_done_with_hostbyte(state, DID_ERROR);
 			return;
 		}
 		if (cmd->SCp.this_residual != 0
@@ -321,7 +324,7 @@ static void mac53c94_interrupt(int irq, void *dev_id)
 	case completing:
 		if (intr != INTR_DONE) {
 			printk(KERN_DEBUG "got intr %x on completion\n", intr);
-			cmd_done(state, DID_ERROR << 16);
+			cmd_done_with_hostbyte(state, DID_ERROR);
 			return;
 		}
 		cmd->SCp.Status = readb(&regs->fifo);
@@ -331,23 +334,40 @@ static void mac53c94_interrupt(int irq, void *dev_id)
 		break;
 	case busfreeing:
 		if (intr != INTR_DISCONNECT) {
+			int result = DID_OK;
+
 			printk(KERN_DEBUG "got intr %x when expected disconnect\n", intr);
+			switch (info->scsi.SCp.Message) {
+			    case COMMAND_COMPLETE:
+				break;
+			    case ABORT_TASK_SET:
+				result = DID_ABORT;
+				break;
+			    case TARGET_RESET:
+				result = DID_RESET;
+				break;
+			    default:
+				result = DID_ERROR;
+				break;
+			}
+
+			cmd_done(state, cmd->SCp.Status, result);
 		}
-		cmd_done(state, (DID_OK << 16) + (cmd->SCp.Message << 8)
-			 + cmd->SCp.Status);
 		break;
 	default:
 		printk(KERN_DEBUG "don't know about phase %d\n", state->phase);
 	}
 }
 
-static void cmd_done(struct fsc_state *state, int result)
+static void cmd_done(struct fsc_state *state, unsigned char scsi_status,
+		     unsigned char host_byte)
 {
 	struct scsi_cmnd *cmd;
 
 	cmd = state->current_req;
 	if (cmd) {
-		cmd->result = result;
+		set_status_byte(cmd, scsi_status);
+		set_host_byte(cmd, host_byte);
 		(*cmd->scsi_done)(cmd);
 		state->current_req = NULL;
 	}
