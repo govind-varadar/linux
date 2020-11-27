@@ -341,7 +341,7 @@ snic_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *sc)
 	if (ret) {
 		SNIC_HOST_ERR(shost, "Tgt %p id %d Not Ready.\n", tgt, tgt->id);
 		atomic64_inc(&snic->s_stats.misc.tgt_not_rdy);
-		sc->result = ret;
+		set_host_byte(sc, ret);
 		sc->scsi_done(sc);
 
 		return 0;
@@ -411,43 +411,44 @@ snic_process_io_failed_state(struct snic *snic,
 			     struct scsi_cmnd *sc,
 			     u8 cmpl_stat)
 {
-	int res = 0;
+	/* Set sc->result */
+	set_status_byte(sc, icmnd_cmpl->scsi_status);
 
 	switch (cmpl_stat) {
 	case SNIC_STAT_TIMEOUT:		/* Req was timedout */
 		atomic64_inc(&snic->s_stats.misc.io_tmo);
-		res = DID_TIME_OUT;
+		set_host_byte(sc, DID_TIME_OUT);
 		break;
 
 	case SNIC_STAT_ABORTED:		/* Req was aborted */
 		atomic64_inc(&snic->s_stats.misc.io_aborted);
-		res = DID_ABORT;
+		set_host_byte(sc, DID_ABORT);
 		break;
 
 	case SNIC_STAT_DATA_CNT_MISMATCH:/* Recv/Sent more/less data than exp */
 		atomic64_inc(&snic->s_stats.misc.data_cnt_mismat);
 		scsi_set_resid(sc, le32_to_cpu(icmnd_cmpl->resid));
-		res = DID_ERROR;
+		set_host_byte(sc, DID_ERROR);
 		break;
 
 	case SNIC_STAT_OUT_OF_RES: /* Out of resources to complete request */
 		atomic64_inc(&snic->s_stats.fw.out_of_res);
-		res = DID_REQUEUE;
+		set_host_byte(sc, DID_REQUEUE);
 		break;
 
 	case SNIC_STAT_IO_NOT_FOUND:	/* Requested I/O was not found */
 		atomic64_inc(&snic->s_stats.io.io_not_found);
-		res = DID_ERROR;
+		set_host_byte(sc, DID_ERROR);
 		break;
 
 	case SNIC_STAT_SGL_INVALID:	/* Req was aborted to due to sgl error*/
 		atomic64_inc(&snic->s_stats.misc.sgl_inval);
-		res = DID_ERROR;
+		set_host_byte(sc, DID_ERROR);
 		break;
 
 	case SNIC_STAT_FW_ERR:		/* Req terminated due to FW Error */
 		atomic64_inc(&snic->s_stats.fw.io_errs);
-		res = DID_ERROR;
+		set_host_byte(sc, DID_ERROR);
 		break;
 
 	case SNIC_STAT_SCSI_ERR:	/* FW hits SCSI Error */
@@ -456,7 +457,7 @@ snic_process_io_failed_state(struct snic *snic,
 
 	case SNIC_STAT_NOT_READY:	/* XPT yet to initialize */
 	case SNIC_STAT_DEV_OFFLINE:	/* Device offline */
-		res = DID_NO_CONNECT;
+		set_host_byte(sc, DID_NO_CONNECT);
 		break;
 
 	case SNIC_STAT_INVALID_HDR:	/* Hdr contains invalid data */
@@ -467,15 +468,13 @@ snic_process_io_failed_state(struct snic *snic,
 	default:
 		SNIC_SCSI_DBG(snic->shost,
 			      "Invalid Hdr/Param or Req Not Supported or Cmnd Rejected or Device Offline. or Unknown\n");
-		res = DID_ERROR;
+		set_host_byte(sc, DID_ERROR);
 		break;
 	}
 
 	SNIC_HOST_ERR(snic->shost, "fw returns failed status %s flags 0x%llx\n",
 		      snic_io_status_to_str(cmpl_stat), CMD_FLAGS(sc));
 
-	/* Set sc->result */
-	sc->result = (res << 16) | icmnd_cmpl->scsi_status;
 } /* end of snic_process_io_failed_state */
 
 /*
@@ -508,7 +507,8 @@ snic_process_icmnd_cmpl_status(struct snic *snic,
 	CMD_STATE(sc) = SNIC_IOREQ_COMPLETE;
 
 	if (likely(cmpl_stat == SNIC_STAT_IO_SUCCESS)) {
-		sc->result = (DID_OK << 16) | scsi_stat;
+		set_host_byte(sc, DID_OK);
+		set_status_byte(sc, scsi_stat);
 
 		xfer_len = scsi_bufflen(sc);
 
@@ -846,7 +846,7 @@ snic_process_itmf_cmpl(struct snic *snic,
 		}
 
 		CMD_SP(sc) = NULL;
-		sc->result = (DID_ERROR << 16);
+		set_host_byte(sc, DID_ERROR);
 		SNIC_SCSI_DBG(snic->shost,
 			      "itmf_cmpl: Completing IO. sc %p flags 0x%llx\n",
 			      sc, CMD_FLAGS(sc));
@@ -1474,7 +1474,7 @@ snic_abort_finish(struct snic *snic, struct scsi_cmnd *sc)
 		 * the # IO timeouts == 2, will cause the LUN offline.
 		 * Call scsi_done to complete the IO.
 		 */
-		sc->result = (DID_ERROR << 16);
+		set_host_byte(sc, DID_ERROR);
 		sc->scsi_done(sc);
 		break;
 
@@ -1854,7 +1854,7 @@ snic_dr_clean_single_req(struct snic *snic,
 
 	snic_release_req_buf(snic, rqi, sc);
 
-	sc->result = (DID_ERROR << 16);
+	set_host_byte(sc, DID_ERROR);
 	sc->scsi_done(sc);
 
 	ret = 0;
@@ -2491,7 +2491,7 @@ snic_scsi_cleanup(struct snic *snic, int ex_tag)
 		snic_release_req_buf(snic, rqi, sc);
 
 cleanup:
-		sc->result = DID_TRANSPORT_DISRUPTED << 16;
+		set_host_byte(sc, DID_TRANSPORT_DISRUPTED);
 		SNIC_HOST_INFO(snic->shost,
 			       "sc_clean: DID_TRANSPORT_DISRUPTED for sc %p, Tag %d flags 0x%llx rqi %p duration %u msecs\n",
 			       sc, sc->request->tag, CMD_FLAGS(sc), rqi,

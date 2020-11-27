@@ -116,7 +116,7 @@ snic_tgt_chkready(struct snic_tgt *tgt)
 	if (tgt->state == SNIC_TGT_STAT_ONLINE)
 		return 0;
 	else
-		return DID_NO_CONNECT << 16;
+		return DID_NO_CONNECT;
 }
 
 const char *snic_tgt_state_to_str(int);
