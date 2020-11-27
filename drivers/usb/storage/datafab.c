@@ -702,7 +702,7 @@ static int datafab_transport(struct scsi_cmnd *srb, struct us_data *us)
 		rc = datafab_id_device(us, info);
 		if (rc == USB_STOR_TRANSPORT_GOOD) {
 			info->sense_key = NO_SENSE;
-			srb->result = SUCCESS;
+			srb->result = SAM_STAT_GOOD;
 		} else {
 			info->sense_key = UNIT_ATTENTION;
 			srb->result = SAM_STAT_CHECK_CONDITION;
