@@ -5980,7 +5980,8 @@ static void adv_isr_callback(ADV_DVC_VAR *adv_dvc_varp, ADV_SCSI_REQ_Q *scsiqp)
 	/*
 	 * 'done_status' contains the command's ending status.
 	 */
-	scp->result = 0;
+	set_host_byte(scp, DID_OK);
+	set_status_byte(scp, SAM_STAT_GOOD);
 	switch (scsiqp->done_status) {
 	case QD_NO_ERROR:
 		ASC_DBG(2, "QD_NO_ERROR\n");
@@ -6731,7 +6732,8 @@ static void asc_isr_callback(ASC_DVC_VAR *asc_dvc_varp, ASC_QDONE_INFO *qdonep)
 	/*
 	 * 'qdonep' contains the command's ending status.
 	 */
-	scp->result = 0;
+	set_host_byte(scp, DID_OK);
+	set_status_byte(scp, SAM_STAT_GOOD);
 	switch (qdonep->d3.done_stat) {
 	case QD_NO_ERROR:
 		ASC_DBG(2, "QD_NO_ERROR\n");
@@ -6760,6 +6762,7 @@ static void asc_isr_callback(ASC_DVC_VAR *asc_dvc_varp, ASC_QDONE_INFO *qdonep)
 				ASC_DBG_PRT_SENSE(2, scp->sense_buffer,
 						  SCSI_SENSE_BUFFERSIZE);
 			}
+			set_status_byte(scp, qdonep->d3.scsi_stat);
 			break;
 
 		default:
