@@ -116,31 +116,29 @@ static int aha1740_show_info(struct seq_file *m, struct Scsi_Host *shpnt)
 	return 0;
 }
 
-static int aha1740_makecode(unchar *sense, unchar *status)
+static void aha1740_makecode(struct scsi_cmnd *SC, unchar *status)
 {
 	struct statusword
 	{
 		ushort	don:1,	/* Command Done - No Error */
 			du:1,	/* Data underrun */
 		    :1,	qf:1,	/* Queue full */
-		        sc:1,	/* Specification Check */
-		        dor:1,	/* Data overrun */
-		        ch:1,	/* Chaining Halted */
-		        intr:1,	/* Interrupt issued */
-		        asa:1,	/* Additional Status Available */
-		        sns:1,	/* Sense information Stored */
+			sc:1,	/* Specification Check */
+			dor:1,	/* Data overrun */
+			ch:1,	/* Chaining Halted */
+			intr:1,	/* Interrupt issued */
+			asa:1,	/* Additional Status Available */
+			sns:1,	/* Sense information Stored */
 		    :1,	ini:1,	/* Initialization Required */
 			me:1,	/* Major error or exception */
 		    :1,	eca:1,  /* Extended Contingent alliance */
 		    :1;
 	} status_word;
-	int retval = DID_OK;
 
 	status_word = * (struct statusword *) status;
 #ifdef DEBUG
-	printk("makecode from %x,%x,%x,%x %x,%x,%x,%x",
-	       status[0], status[1], status[2], status[3],
-	       sense[0], sense[1], sense[2], sense[3]);
+	printk("makecode from %x,%x,%x,%x",
+	       status[0], status[1], status[2], status[3]);
 #endif
 	if (!status_word.don) { /* Anything abnormal was detected */
 		if ( (status[1]&0x18) || status_word.sc ) {
@@ -149,7 +147,7 @@ static int aha1740_makecode(unchar *sense, unchar *status)
 			switch ( status[2] ) {
 			case 0x12:
 				if ( status_word.dor )
-					retval=DID_ERROR; /* It's an Overrun */
+					set_host_byte(SC, DID_ERROR); /* It's an Overrun */
 				/* If not overrun, assume underrun and
 				 * ignore it! */
 				break;
@@ -158,33 +156,33 @@ static int aha1740_makecode(unchar *sense, unchar *status)
 				break;
 			case 0x11:
 			case 0x21:
-				retval=DID_TIME_OUT;
+				set_host_byte(SC, DID_TIME_OUT);
 				break;
 			case 0x0a:
-				retval=DID_BAD_TARGET;
+				set_host_byte(SC, DID_BAD_TARGET);
 				break;
 			case 0x04:
 			case 0x05:
-				retval=DID_ABORT;
+				set_host_byte(SC, DID_ABORT);
 				/* Either by this driver or the
 				 * AHA1740 itself */
 				break;
 			default:
-				retval=DID_ERROR; /* No further
+				set_host_byte(SC, DID_ERROR); /* No further
 						   * diagnostics
 						   * possible */
 			}
 		} else {
 			/* Michael suggests, and Brad concurs: */
 			if ( status_word.qf ) {
-				retval = DID_TIME_OUT; /* forces a redo */
+				set_host_byte(SC, DID_TIME_OUT); /* forces a redo */
 				/* I think this specific one should
 				 * not happen -Brad */
 				printk("aha1740.c: WARNING: AHA1740 queue overflow!\n");
 			} else
 				if ( status[0]&0x60 ) {
 					 /* Didn't find a better error */
-					retval = DID_ERROR;
+					set_host_byte(SC, DID_ERROR);
 				}
 			/* In any other case return DID_OK so for example
 			   CONDITION_CHECKS make it through to the appropriate
@@ -192,14 +190,14 @@ static int aha1740_makecode(unchar *sense, unchar *status)
 		}
 	}
 	/* Under all circumstances supply the target status -Michael */
-	return status[3] | retval << 16;
+	set_status_byte(SC, status[3]);
 }
 
 static int aha1740_test_port(unsigned int base)
 {
 	if ( inb(PORTADR(base)) & PORTADDR_ENH )
 		return 1;   /* Okay, we're all set */
-	
+
 	printk("aha174x: Board detected, but not in enhanced mode, so disabled it.\n");
 	return 0;
 }
@@ -208,8 +206,8 @@ static int aha1740_test_port(unsigned int base)
 static irqreturn_t aha1740_intr_handle(int irq, void *dev_id)
 {
 	struct Scsi_Host *host = (struct Scsi_Host *) dev_id;
-        void (*my_done)(struct scsi_cmnd *);
-	int errstatus, adapstat;
+	void (*my_done)(struct scsi_cmnd *);
+	int adapstat;
 	int number_serviced;
 	struct ecb *ecbptr;
 	struct scsi_cmnd *SCtmp;
@@ -218,7 +216,7 @@ static irqreturn_t aha1740_intr_handle(int irq, void *dev_id)
 	int handled = 0;
 	struct aha1740_sg *sgptr;
 	struct eisa_device *edev;
-	
+
 	if (!host)
 		panic("aha1740.c: Irq from unknown host!\n");
 	spin_lock_irqsave(host->host_lock, flags);
@@ -232,7 +230,7 @@ static irqreturn_t aha1740_intr_handle(int irq, void *dev_id)
 		adapstat = inb(G2INTST(base));
 		ecbptr = ecb_dma_to_cpu (host, inl(MBOXIN0(base)));
 		outb(G2CNTRL_IRST,G2CNTRL(base)); /* interrupt reset */
-      
+
 		switch ( adapstat & G2INTST_MASK ) {
 		case	G2INTST_CCBRETRY:
 		case	G2INTST_CCBERROR:
@@ -260,32 +258,31 @@ static irqreturn_t aha1740_intr_handle(int irq, void *dev_id)
 					   sizeof (struct aha1740_sg),
 					   SCtmp->host_scribble,
 					   sgptr->sg_dma_addr);
-	    
+
 			/* Fetch the sense data, and tuck it away, in
 			   the required slot.  The Adaptec
 			   automatically fetches it, and there is no
 			   guarantee that we will still have it in the
 			   cdb when we come back */
 			if ( (adapstat & G2INTST_MASK) == G2INTST_CCBERROR ) {
-				memcpy(SCtmp->sense_buffer, ecbptr->sense, 
+				memcpy(SCtmp->sense_buffer, ecbptr->sense,
 				       SCSI_SENSE_BUFFERSIZE);
-				errstatus = aha1740_makecode(ecbptr->sense,ecbptr->status);
+				aha1740_makecode(SCtmp, ecbptr->status);
 			} else
-				errstatus = 0;
-			DEB(if (errstatus)
+				scsi_result_set_good(SCtmp);
+			DEB(if (!scsi_result_is_good(SCtmp))
 			    printk("aha1740_intr_handle: returning %6x\n",
-				   errstatus));
-			SCtmp->result = errstatus;
+				   scsi_get_result(SCtmp)));
 			my_done = ecbptr->done;
-			memset(ecbptr,0,sizeof(struct ecb)); 
+			memset(ecbptr,0,sizeof(struct ecb));
 			if ( my_done )
 				my_done(SCtmp);
 			break;
-			
+
 		case	G2INTST_HARDFAIL:
 			printk(KERN_ALERT "aha1740 hardware failure!\n");
 			panic("aha1740.c");	/* Goodbye */
-			
+
 		case	G2INTST_ASNEVENT:
 			printk("aha1740 asynchronous event: %02x %02x %02x %02x %02x\n",
 			       adapstat,
@@ -296,11 +293,11 @@ static irqreturn_t aha1740_intr_handle(int irq, void *dev_id)
 			/* Host Ready -> Mailbox in complete */
 			outb(G2CNTRL_HRDY,G2CNTRL(base));
 			break;
-			
+
 		case	G2INTST_CMDGOOD:
 			/* set immediate command success flag here: */
 			break;
-			
+
 		case	G2INTST_CMDERROR:
 			/* Set immediate command failure flag here: */
 			break;
@@ -326,7 +323,8 @@ static int aha1740_queuecommand_lck(struct scsi_cmnd * SCpnt,
 	DEB(int i);
 
 	if(*cmd == REQUEST_SENSE) {
-		SCpnt->result = 0;
+		set_host_byte(SCpnt, DID_OK);
+		set_status_byte(SCpnt, SAM_STAT_GOOD);
 		done(SCpnt); 
 		return 0;
 	}
