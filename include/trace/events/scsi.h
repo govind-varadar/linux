@@ -295,7 +295,10 @@ DECLARE_EVENT_CLASS(scsi_cmd_done_timeout_template,
 		__field( unsigned int,	channel	)
 		__field( unsigned int,	id	)
 		__field( unsigned int,	lun	)
-		__field( int,		result	)
+		__field( unsigned char,	driver_byte	)
+		__field( unsigned char,	host_byte	)
+		__field( unsigned char,	msg_byte	)
+		__field( unsigned char,	status_byte	)
 		__field( unsigned int,	opcode	)
 		__field( unsigned int,	cmd_len )
 		__field( unsigned int,	data_sglen )
@@ -309,7 +312,10 @@ DECLARE_EVENT_CLASS(scsi_cmd_done_timeout_template,
 		__entry->channel	= cmd->device->channel;
 		__entry->id		= cmd->device->id;
 		__entry->lun		= cmd->device->lun;
-		__entry->result		= cmd->result;
+		__entry->driver_byte	= get_driver_byte(cmd);
+		__entry->host_byte	= get_host_byte(cmd);
+		__entry->msg_byte	= get_msg_byte(cmd);
+		__entry->status_byte	= get_status_byte(cmd);
 		__entry->opcode		= cmd->cmnd[0];
 		__entry->cmd_len	= cmd->cmd_len;
 		__entry->data_sglen	= scsi_sg_count(cmd);
@@ -327,10 +333,10 @@ DECLARE_EVENT_CLASS(scsi_cmd_done_timeout_template,
 		  show_opcode_name(__entry->opcode),
 		  __parse_cdb(__get_dynamic_array(cmnd), __entry->cmd_len),
 		  __print_hex(__get_dynamic_array(cmnd), __entry->cmd_len),
-		  show_driverbyte_name(((__entry->result) >> 24) & 0xff),
-		  show_hostbyte_name(((__entry->result) >> 16) & 0xff),
-		  show_msgbyte_name(((__entry->result) >> 8) & 0xff),
-		  show_statusbyte_name(__entry->result & 0xff))
+		  show_driverbyte_name(__entry->driver_byte),
+		  show_hostbyte_name(__entry->host_byte),
+		  show_msgbyte_name(__entry->msg_byte),
+		  show_statusbyte_name(__entry->status_byte))
 );
 
 DEFINE_EVENT(scsi_cmd_done_timeout_template, scsi_dispatch_cmd_done,
