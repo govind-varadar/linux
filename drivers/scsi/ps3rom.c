@@ -81,8 +81,8 @@ static int ps3rom_slave_configure(struct scsi_device *scsi_dev)
 	return 0;
 }
 
-static int ps3rom_atapi_request(struct ps3_storage_device *dev,
-				struct scsi_cmnd *cmd)
+static u8 ps3rom_atapi_request(struct ps3_storage_device *dev,
+			       struct scsi_cmnd *cmd)
 {
 	struct lv1_atapi_cmnd_block atapi_cmnd;
 	unsigned char opcode = cmd->cmnd[0];
@@ -132,14 +132,14 @@ static int ps3rom_atapi_request(struct ps3_storage_device *dev,
 		dev_dbg(&dev->sbd.core,
 			"%s:%u: ATAPI command 0x%02x denied by policy\n",
 			__func__, __LINE__, opcode);
-		return DID_ERROR << 16;
+		return DID_ERROR;
 	}
 
 	if (res) {
 		dev_err(&dev->sbd.core,
 			"%s:%u: ATAPI command 0x%02x failed %d\n", __func__,
 			__LINE__, opcode, res);
-		return DID_ERROR << 16;
+		return DID_ERROR;
 	}
 
 	return 0;
@@ -156,9 +156,9 @@ static inline unsigned int srb10_len(const struct scsi_cmnd *cmd)
 	return cmd->cmnd[7] << 8 | cmd->cmnd[8];
 }
 
-static int ps3rom_read_request(struct ps3_storage_device *dev,
-			       struct scsi_cmnd *cmd, u32 start_sector,
-			       u32 sectors)
+static u8 ps3rom_read_request(struct ps3_storage_device *dev,
+			      struct scsi_cmnd *cmd, u32 start_sector,
+			      u32 sectors)
 {
 	int res;
 
@@ -171,14 +171,14 @@ static int ps3rom_read_request(struct ps3_storage_device *dev,
 	if (res) {
 		dev_err(&dev->sbd.core, "%s:%u: read failed %d\n", __func__,
 			__LINE__, res);
-		return DID_ERROR << 16;
+		return DID_ERROR;
 	}
 
 	return 0;
 }
 
-static int ps3rom_write_request(struct ps3_storage_device *dev,
-				struct scsi_cmnd *cmd, u32 start_sector,
+static u8 ps3rom_write_request(struct ps3_storage_device *dev,
+			       struct scsi_cmnd *cmd, u32 start_sector,
 				u32 sectors)
 {
 	int res;
@@ -194,7 +194,7 @@ static int ps3rom_write_request(struct ps3_storage_device *dev,
 	if (res) {
 		dev_err(&dev->sbd.core, "%s:%u: write failed %d\n", __func__,
 			__LINE__, res);
-		return DID_ERROR << 16;
+		return DID_ERROR;
 	}
 
 	return 0;
@@ -235,7 +235,7 @@ static int ps3rom_queuecommand_lck(struct scsi_cmnd *cmd,
 
 	if (res) {
 		memset(cmd->sense_buffer, 0, SCSI_SENSE_BUFFERSIZE);
-		cmd->result = res;
+		set_host_byte(cmd, res);
 		cmd->sense_buffer[0] = 0x70;
 		cmd->sense_buffer[2] = ILLEGAL_REQUEST;
 		priv->curr_cmd = NULL;
@@ -310,17 +310,19 @@ static irqreturn_t ps3rom_interrupt(int irq, void *data)
 		/* SCSI spec says request sense should never get error */
 		dev_err(&dev->sbd.core, "%s:%u: end error without autosense\n",
 			__func__, __LINE__);
-		cmd->result = DID_ERROR << 16 | SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ERROR);
 		goto done;
 	}
 
 	if (decode_lv1_status(status, &sense_key, &asc, &ascq)) {
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		goto done;
 	}
 
 	scsi_build_sense_buffer(0, cmd->sense_buffer, sense_key, asc, ascq);
-	cmd->result = SAM_STAT_CHECK_CONDITION;
+	set_host_byte(cmd, DID_OK;
+	set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
 done:
 	priv->curr_cmd = NULL;
