@@ -620,7 +620,7 @@ static irqreturn_t intr(int irq, void *dev_id);
 static void reset_ports(struct Scsi_Host *shpnt);
 static void aha152x_error(struct Scsi_Host *shpnt, char *msg);
 static void done(struct Scsi_Host *shpnt, unsigned char status_byte,
-		 unsigned char msg_byte, unsigned char host_byte);
+		 unsigned char host_byte);
 
 /* diagnostics */
 static void show_command(struct scsi_cmnd * ptr);
@@ -914,7 +914,7 @@ static int aha152x_internal_queue(struct scsi_cmnd *SCpnt,
 	SCpnt->scsi_done	= done;
 	SCpnt->SCp.phase	= not_issued | phase;
 	SCpnt->SCp.Status	= 0x1; /* Ilegal status by SCSI standard */
-	SCpnt->SCp.Message	= 0;
+	set_msg_byte(SCpnt, COMMAND_COMPLETE);
 	SCpnt->SCp.have_data_in	= 0;
 	SCpnt->SCp.sent_command	= 0;
 
@@ -1273,7 +1273,7 @@ static int aha152x_biosparam(struct scsi_device *sdev, struct block_device *bdev
  *
  */
 static void done(struct Scsi_Host *shpnt, unsigned char status_byte,
-		 unsigned char msg_byte, unsigned char host_byte)
+		 unsigned char host_byte)
 {
 	if (CURRENT_SC) {
 		if(DONE_SC)
@@ -1283,8 +1283,7 @@ static void done(struct Scsi_Host *shpnt, unsigned char status_byte,
 
 		DONE_SC = CURRENT_SC;
 		CURRENT_SC = NULL;
-		DONE_SC->result = status_byte;
-		set_msg_byte(DONE_SC, msg_byte);
+		DONE_SC->result |= status_byte;
 		set_host_byte(DONE_SC, host_byte);
 	} else
 		printk(KERN_ERR "aha152x: done() called outside of command\n");
@@ -1380,16 +1379,13 @@ static void busfree_run(struct Scsi_Host *shpnt)
 
 		if(CURRENT_SC->SCp.phase & completed) {
 			/* target sent COMMAND COMPLETE */
-			done(shpnt, CURRENT_SC->SCp.Status,
-			     CURRENT_SC->SCp.Message, DID_OK);
+			done(shpnt, CURRENT_SC->SCp.Status, DID_OK);
 
 		} else if(CURRENT_SC->SCp.phase & aborted) {
-			done(shpnt, CURRENT_SC->SCp.Status,
-			     CURRENT_SC->SCp.Message, DID_ABORT);
+			done(shpnt, CURRENT_SC->SCp.Status, DID_ABORT);
 
 		} else if(CURRENT_SC->SCp.phase & resetted) {
-			done(shpnt, CURRENT_SC->SCp.Status,
-			     CURRENT_SC->SCp.Message, DID_RESET);
+			done(shpnt, CURRENT_SC->SCp.Status, DID_RESET);
 
 		} else if(CURRENT_SC->SCp.phase & disconnected) {
 			/* target sent DISCONNECT */
@@ -1401,8 +1397,7 @@ static void busfree_run(struct Scsi_Host *shpnt)
 			CURRENT_SC = NULL;
 
 		} else {
-			done(shpnt, SAM_STAT_GOOD,
-			     COMMAND_COMPLETE, DID_ERROR);
+			done(shpnt, SAM_STAT_GOOD, DID_ERROR);
 		}
 #if defined(AHA152X_STAT)
 	} else {
@@ -1523,8 +1518,7 @@ static void seldo_run(struct Scsi_Host *shpnt)
 	if (TESTLO(SSTAT0, SELDO)) {
 		scmd_printk(KERN_ERR, CURRENT_SC,
 			    "aha152x: passing bus free condition\n");
-		done(shpnt, SAM_STAT_GOOD,
-		     COMMAND_COMPLETE, DID_NO_CONNECT);
+		done(shpnt, SAM_STAT_GOOD, DID_NO_CONNECT);
 		return;
 	}
 
@@ -1561,15 +1555,12 @@ static void selto_run(struct Scsi_Host *shpnt)
 	CURRENT_SC->SCp.phase &= ~selecting;
 
 	if (CURRENT_SC->SCp.phase & aborted)
-		done(shpnt, SAM_STAT_GOOD,
-		     COMMAND_COMPLETE, DID_ABORT);
+		done(shpnt, SAM_STAT_GOOD, DID_ABORT);
 	else if (TESTLO(SSTAT0, SELINGO))
-		done(shpnt, SAM_STAT_GOOD,
-		     COMMAND_COMPLETE, DID_BUS_BUSY);
+		done(shpnt, SAM_STAT_GOOD, DID_BUS_BUSY);
 	else
 		/* ARBITRATION won, but SELECTION failed */
-		done(shpnt, SAM_STAT_GOOD,
-		     COMMAND_COMPLETE, DID_NO_CONNECT);
+		done(shpnt, SAM_STAT_GOOD, DID_NO_CONNECT);
 }
 
 /*
@@ -1685,7 +1676,7 @@ static void msgi_run(struct Scsi_Host *shpnt)
 				continue;
 			}
 
-			CURRENT_SC->SCp.Message = MSGI(0);
+			set_msg_byte(CURRENT_SC, MSGI(0));
 			CURRENT_SC->SCp.phase &= ~disconnected;
 
 			MSGILEN=0;
@@ -1694,7 +1685,7 @@ static void msgi_run(struct Scsi_Host *shpnt)
 			continue;
 		}
 
-		CURRENT_SC->SCp.Message = MSGI(0);
+		set_msg_byte(CURRENT_SC, MSGI(0));
 
 		switch (MSGI(0)) {
 		case DISCONNECT:
@@ -1903,8 +1894,7 @@ static void cmd_init(struct Scsi_Host *shpnt)
 	if (CURRENT_SC->SCp.sent_command) {
 		scmd_printk(KERN_ERR, CURRENT_SC,
 			    "command already sent\n");
-		done(shpnt, SAM_STAT_GOOD,
-		     COMMAND_COMPLETE, DID_ERROR);
+		done(shpnt, SAM_STAT_GOOD, DID_ERROR);
 		return;
 	}
 
@@ -2244,8 +2234,7 @@ static int update_state(struct Scsi_Host *shpnt)
 static void parerr_run(struct Scsi_Host *shpnt)
 {
 	scmd_printk(KERN_ERR, CURRENT_SC, "parity error\n");
-	done(shpnt, SAM_STAT_GOOD,
-	     COMMAND_COMPLETE, DID_PARITY);
+	done(shpnt, SAM_STAT_GOOD, DID_PARITY);
 }
 
 /*
@@ -2276,8 +2265,7 @@ static void rsti_run(struct Scsi_Host *shpnt)
 	}
 
 	if(CURRENT_SC && !CURRENT_SC->device->soft_reset)
-		done(shpnt, SAM_STAT_GOOD,
-		     COMMAND_COMPLETE, DID_RESET);
+		done(shpnt, SAM_STAT_GOOD, DID_RESET);
 }
 
 
