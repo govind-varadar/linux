@@ -64,11 +64,11 @@ static void mac53c94_start(struct fsc_state *);
 static void mac53c94_interrupt(int, void *);
 static irqreturn_t do_mac53c94_interrupt(int, void *);
 static void cmd_done(struct fsc_state *, unsigned char scsi_status,
-		     unsigned char msg_byte, unsigned char host_byte);
+		     unsigned char host_byte);
 static void set_dma_cmds(struct fsc_state *, struct scsi_cmnd *);
 
 #define cmd_done_with_hostbyte(s,h)				\
-	cmd_done((s),SAM_STAT_GOOD, COMMAND_COMPLETE, (h));
+	cmd_done((s),SAM_STAT_GOOD, (h));
 
 static int mac53c94_queue_lck(struct scsi_cmnd *cmd, void (*done)(struct scsi_cmnd *))
 {
@@ -328,7 +328,7 @@ static void mac53c94_interrupt(int irq, void *dev_id)
 			return;
 		}
 		cmd->SCp.Status = readb(&regs->fifo);
-		cmd->SCp.Message = readb(&regs->fifo);
+		set_msg_byte(cmd, readb(&regs->fifo));
 		writeb(CMD_ACCEPT_MSG, &regs->command);
 		state->phase = busfreeing;
 		break;
@@ -336,7 +336,7 @@ static void mac53c94_interrupt(int irq, void *dev_id)
 		if (intr != INTR_DISCONNECT) {
 			printk(KERN_DEBUG "got intr %x when expected disconnect\n", intr);
 		}
-		cmd_done(state, cmd->SCp.Status, cmd->SCp.Message, DID_OK);
+		cmd_done(state, cmd->SCp.Status, DID_OK);
 		break;
 	default:
 		printk(KERN_DEBUG "don't know about phase %d\n", state->phase);
@@ -344,14 +344,13 @@ static void mac53c94_interrupt(int irq, void *dev_id)
 }
 
 static void cmd_done(struct fsc_state *state, unsigned char scsi_status,
-		     unsigned char msg_byte, unsigned char host_byte)
+		     unsigned char host_byte)
 {
 	struct scsi_cmnd *cmd;
 
 	cmd = state->current_req;
 	if (cmd != 0) {
 		set_status_byte(cmd, scsi_status);
-		set_msg_byte(cmd, msg_byte);
 		set_host_byte(cmd, host_byte);
 		(*cmd->scsi_done)(cmd);
 		state->current_req = NULL;
