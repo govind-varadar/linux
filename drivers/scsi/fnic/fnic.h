@@ -94,9 +94,8 @@
  */
 #define CMD_SP(Cmnd)		((Cmnd)->SCp.ptr)
 #define CMD_STATE(Cmnd)		((Cmnd)->SCp.phase)
-#define CMD_ABTS_STATUS(Cmnd)	((Cmnd)->SCp.Message)
+#define CMD_ABTS_STATUS(Cmnd)	((Cmnd)->SCp.sent_command)
 #define CMD_LR_STATUS(Cmnd)	((Cmnd)->SCp.have_data_in)
-#define CMD_TAG(Cmnd)           ((Cmnd)->SCp.sent_command)
 #define CMD_FLAGS(Cmnd)         ((Cmnd)->SCp.Status)
 
 #define FCPIO_INVALID_CODE 0x100 /* hdr_status value unused by firmware */
