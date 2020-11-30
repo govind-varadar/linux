@@ -365,6 +365,7 @@ static int tw_decode_sense(TW_Device_Extension *tw_dev, int request_id, int fill
 {
 	int i;
 	TW_Command *command;
+	struct scsi_cmnd *scmd;
 
 	dprintk(KERN_WARNING "3w-xxxx: tw_decode_sense()\n");
 	command = (TW_Command *)tw_dev->command_packet_virtual_address[request_id];
@@ -376,23 +377,24 @@ static int tw_decode_sense(TW_Device_Extension *tw_dev, int request_id, int fill
 		if ((command->status == 0xc7) || (command->status == 0xcb)) {
 			for (i = 0; i < ARRAY_SIZE(tw_sense_table); i++) {
 				if (command->flags == tw_sense_table[i][0]) {
+					scmd = tw_dev->srb[request_id];
 
 					/* Valid bit and 'current errors' */
-					tw_dev->srb[request_id]->sense_buffer[0] = (0x1 << 7 | 0x70);
+					scmd->sense_buffer[0] = (0x1 << 7 | 0x70);
 
 					/* Sense key */
-					tw_dev->srb[request_id]->sense_buffer[2] = tw_sense_table[i][1];
+					scmd->sense_buffer[2] = tw_sense_table[i][1];
 
 					/* Additional sense length */
-					tw_dev->srb[request_id]->sense_buffer[7] = 0xa; /* 10 bytes */
+					scmd->sense_buffer[7] = 0xa; /* 10 bytes */
 
 					/* Additional sense code */
-					tw_dev->srb[request_id]->sense_buffer[12] = tw_sense_table[i][2];
+					scmd->sense_buffer[12] = tw_sense_table[i][2];
 
 					/* Additional sense code qualifier */
-					tw_dev->srb[request_id]->sense_buffer[13] = tw_sense_table[i][3];
+					scmd->sense_buffer[13] = tw_sense_table[i][3];
 
-					tw_dev->srb[request_id]->result = (DID_OK << 16) | (CHECK_CONDITION << 1);
+					scmd->result = (DID_OK << 16) | (CHECK_CONDITION << 1);
 					return TW_ISR_DONT_RESULT; /* Special case for isr to not over-write result */
 				}
 			}
@@ -1119,11 +1121,13 @@ static int tw_setfeature(TW_Device_Extension *tw_dev, int parm, int param_size,
 
 	param_value = tw_dev->alignment_physical_address[request_id];
 	if (param_value == 0) {
+		struct scsi_cmnd *srb = tw_dev->srb[request_id];
+
 		printk(KERN_WARNING "3w-xxxx: tw_setfeature(): Bad alignment physical address.\n");
 		tw_dev->state[request_id] = TW_S_COMPLETED;
 		tw_state_request_finish(tw_dev, request_id);
-		tw_dev->srb[request_id]->result = (DID_OK << 16);
-		tw_dev->srb[request_id]->scsi_done(tw_dev->srb[request_id]);
+		srb->result = (DID_OK << 16);
+		srb->scsi_done(srb);
 	}
 	command_packet->byte8.param.sgl[0].address = param_value;
 	command_packet->byte8.param.sgl[0].length = sizeof(TW_Sector);
@@ -1423,6 +1427,7 @@ static int tw_scsiop_inquiry_complete(TW_Device_Extension *tw_dev, int request_i
 	unsigned char *is_unit_present;
 	unsigned char request_buffer[36];
 	TW_Param *param;
+	struct scsi_cmnd *srb = tw_dev->srb[request_id];
 
 	dprintk(KERN_NOTICE "3w-xxxx: tw_scsiop_inquiry_complete()\n");
 
@@ -1444,11 +1449,11 @@ static int tw_scsiop_inquiry_complete(TW_Device_Extension *tw_dev, int request_i
 	}
 	is_unit_present = &(param->data[0]);
 
-	if (is_unit_present[tw_dev->srb[request_id]->device->id] & TW_UNIT_ONLINE) {
-		tw_dev->is_unit_present[tw_dev->srb[request_id]->device->id] = 1;
+	if (is_unit_present[srb->device->id] & TW_UNIT_ONLINE) {
+		tw_dev->is_unit_present[srb->device->id] = 1;
 	} else {
-		tw_dev->is_unit_present[tw_dev->srb[request_id]->device->id] = 0;
-		tw_dev->srb[request_id]->result = (DID_BAD_TARGET << 16);
+		tw_dev->is_unit_present[srb->device->id] = 0;
+		srb->result = (DID_BAD_TARGET << 16);
 		return TW_ISR_DONT_RESULT;
 	}
 
@@ -1462,15 +1467,16 @@ static int tw_scsiop_mode_sense(TW_Device_Extension *tw_dev, int request_id)
 	TW_Command *command_packet;
 	unsigned long command_que_value;
 	unsigned long param_value;
+	struct scsi_cmnd *srb = tw_dev->srb[request_id];
 
 	dprintk(KERN_NOTICE "3w-xxxx: tw_scsiop_mode_sense()\n");
 
 	/* Only page control = 0, page code = 0x8 (cache page) supported */
-	if (tw_dev->srb[request_id]->cmnd[2] != 0x8) {
+	if (srb->cmnd[2] != 0x8) {
 		tw_dev->state[request_id] = TW_S_COMPLETED;
 		tw_state_request_finish(tw_dev, request_id);
-		tw_dev->srb[request_id]->result = (DID_OK << 16);
-		tw_dev->srb[request_id]->scsi_done(tw_dev->srb[request_id]);
+		srb->result = (DID_OK << 16);
+		srb->scsi_done(srb);
 		return 0;
 	}
 
@@ -1561,6 +1567,7 @@ static int tw_scsiop_read_capacity(TW_Device_Extension *tw_dev, int request_id)
 	TW_Command *command_packet;
 	unsigned long command_que_value;
 	unsigned long param_value;
+	struct scsi_cmnd *srb = tw_dev->srb[request_id];
 
 	dprintk(KERN_NOTICE "3w-xxxx: tw_scsiop_read_capacity()\n");
 
@@ -1575,7 +1582,7 @@ static int tw_scsiop_read_capacity(TW_Device_Extension *tw_dev, int request_id)
 	command_packet->opcode__sgloffset = TW_OPSGL_IN(2, TW_OP_GET_PARAM);
 	command_packet->size = 4;
 	command_packet->request_id = request_id;
-	command_packet->unit__hostid = TW_UNITHOST_IN(0, tw_dev->srb[request_id]->device->id);
+	command_packet->unit__hostid = TW_UNITHOST_IN(0, srb->device->id);
 	command_packet->status = 0;
 	command_packet->flags = 0;
 	command_packet->byte6.block_count = 1;
@@ -1587,8 +1594,7 @@ static int tw_scsiop_read_capacity(TW_Device_Extension *tw_dev, int request_id)
 	}
 	param = (TW_Param *)tw_dev->alignment_virtual_address[request_id];
 	memset(param, 0, sizeof(TW_Sector));
-	param->table_id = TW_UNIT_INFORMATION_TABLE_BASE +
-		tw_dev->srb[request_id]->device->id;
+	param->table_id = TW_UNIT_INFORMATION_TABLE_BASE + srb->device->id;
 	param->parameter_id = 4;	/* unitcapacity parameter */
 	param->parameter_size_bytes = 4;
 	param_value = tw_dev->alignment_physical_address[request_id];
@@ -1719,14 +1725,14 @@ static int tw_scsiop_read_write(TW_Device_Extension *tw_dev, int request_id)
 	if (use_sg <= 0)
 		return 1;
 
-	scsi_for_each_sg(tw_dev->srb[request_id], sg, use_sg, i) {
+	scsi_for_each_sg(srb, sg, use_sg, i) {
 		command_packet->byte8.io.sgl[i].address = sg_dma_address(sg);
 		command_packet->byte8.io.sgl[i].length = sg_dma_len(sg);
 		command_packet->size+=2;
 	}
 
 	/* Update SG statistics */
-	tw_dev->sgl_entries = scsi_sg_count(tw_dev->srb[request_id]);
+	tw_dev->sgl_entries = scsi_sg_count(srb);
 	if (tw_dev->sgl_entries > tw_dev->max_sgl_entries)
 		tw_dev->max_sgl_entries = tw_dev->sgl_entries;
 
@@ -1746,6 +1752,7 @@ static int tw_scsiop_read_write(TW_Device_Extension *tw_dev, int request_id)
 static int tw_scsiop_request_sense(TW_Device_Extension *tw_dev, int request_id)
 {
 	char request_buffer[18];
+	struct scsi_cmnd *srb = tw_dev->srb[request_id];
 
 	dprintk(KERN_NOTICE "3w-xxxx: tw_scsiop_request_sense()\n");
 
@@ -1760,8 +1767,8 @@ static int tw_scsiop_request_sense(TW_Device_Extension *tw_dev, int request_id)
 	tw_state_request_finish(tw_dev, request_id);
 
 	/* If we got a request_sense, we probably want a reset, return error */
-	tw_dev->srb[request_id]->result = (DID_ERROR << 16);
-	tw_dev->srb[request_id]->scsi_done(tw_dev->srb[request_id]);
+	srb->result = (DID_ERROR << 16);
+	srb->scsi_done(srb);
 
 	return 0;
 } /* End tw_scsiop_request_sense() */
@@ -1771,6 +1778,7 @@ static int tw_scsiop_synchronize_cache(TW_Device_Extension *tw_dev, int request_
 {
 	TW_Command *command_packet;
 	unsigned long command_que_value;
+	struct scsi_cmnd *srb = tw_dev->srb[request_id];
 
 	dprintk(KERN_NOTICE "3w-xxxx: tw_scsiop_synchronize_cache()\n");
 
@@ -1786,7 +1794,7 @@ static int tw_scsiop_synchronize_cache(TW_Device_Extension *tw_dev, int request_
 	command_packet->opcode__sgloffset = TW_OPSGL_IN(0, TW_OP_FLUSH_CACHE);
 	command_packet->size = 2;
 	command_packet->request_id = request_id;
-	command_packet->unit__hostid = TW_UNITHOST_IN(0, tw_dev->srb[request_id]->device->id);
+	command_packet->unit__hostid = TW_UNITHOST_IN(0, srb->device->id);
 	command_packet->status = 0;
 	command_packet->flags = 0;
 	command_packet->byte6.parameter_count = 1;
@@ -1861,6 +1869,7 @@ static int tw_scsiop_test_unit_ready_complete(TW_Device_Extension *tw_dev, int r
 {
 	unsigned char *is_unit_present;
 	TW_Param *param;
+	struct scsi_cmnd *srb = tw_dev->srb[request_id];
 
 	dprintk(KERN_WARNING "3w-xxxx: tw_scsiop_test_unit_ready_complete()\n");
 
@@ -1871,11 +1880,11 @@ static int tw_scsiop_test_unit_ready_complete(TW_Device_Extension *tw_dev, int r
 	}
 	is_unit_present = &(param->data[0]);
 
-	if (is_unit_present[tw_dev->srb[request_id]->device->id] & TW_UNIT_ONLINE) {
-		tw_dev->is_unit_present[tw_dev->srb[request_id]->device->id] = 1;
+	if (is_unit_present[srb->device->id] & TW_UNIT_ONLINE) {
+		tw_dev->is_unit_present[srb->device->id] = 1;
 	} else {
-		tw_dev->is_unit_present[tw_dev->srb[request_id]->device->id] = 0;
-		tw_dev->srb[request_id]->result = (DID_BAD_TARGET << 16);
+		tw_dev->is_unit_present[srb->device->id] = 0;
+		srb->result = (DID_BAD_TARGET << 16);
 		return TW_ISR_DONT_RESULT;
 	}
 
@@ -2083,7 +2092,9 @@ static irqreturn_t tw_interrupt(int irq, void *dev_instance)
 					wake_up(&tw_dev->ioctl_wqueue);
 				}
 			} else {
-				switch (tw_dev->srb[request_id]->cmnd[0]) {
+				struct scsi_cmnd *srb = tw_dev->srb[request_id];
+
+				switch (srb->cmnd[0]) {
 				case READ_10:
 				case READ_6:
 					dprintk(KERN_NOTICE "3w-xxxx: tw_interrupt(): caught READ_10/READ_6\n");
@@ -2118,19 +2129,19 @@ static irqreturn_t tw_interrupt(int irq, void *dev_instance)
 
 				/* If no error command was a success */
 				if (error == 0) {
-					tw_dev->srb[request_id]->result = (DID_OK << 16);
+					srb->result = (DID_OK << 16);
 				}
 
 				/* If error, command failed */
 				if (error == 1) {
 					/* Ask for a host reset */
-					tw_dev->srb[request_id]->result = (DID_OK << 16) | (CHECK_CONDITION << 1);
+					srb->result = (DID_OK << 16) | (CHECK_CONDITION << 1);
 				}
 
 				/* Now complete the io */
 				if ((error != TW_ISR_DONT_COMPLETE)) {
-					scsi_dma_unmap(tw_dev->srb[request_id]);
-					tw_dev->srb[request_id]->scsi_done(tw_dev->srb[request_id]);
+					scsi_dma_unmap(srb);
+					srb->scsi_done(srb);
 					tw_dev->state[request_id] = TW_S_COMPLETED;
 					tw_state_request_finish(tw_dev, request_id);
 					tw_dev->posted_request_count--;
