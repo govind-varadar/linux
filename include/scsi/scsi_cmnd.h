@@ -136,7 +136,8 @@ struct scsi_cmnd {
 					 * obtained by scsi_malloc is guaranteed
 					 * to be at an address < 16Mb). */
 
-	int result;		/* Status code from lower level driver */
+	unsigned char status_byte;	/* SAM status code from the device */
+	unsigned char host_byte;	/* Status code from lower level driver */
 	int flags;		/* Command flags */
 	unsigned long state;	/* Command completion state */
 
@@ -310,7 +311,7 @@ static inline struct scsi_data_buffer *scsi_prot(struct scsi_cmnd *cmd)
 
 static inline void set_status_byte(struct scsi_cmnd *cmd, char status)
 {
-	cmd->result = (cmd->result & 0xffffff00) | status;
+	cmd->status_byte = status;
 }
 
 static inline void set_msg_byte(struct scsi_cmnd *cmd, char status)
@@ -320,12 +321,12 @@ static inline void set_msg_byte(struct scsi_cmnd *cmd, char status)
 
 static inline void set_host_byte(struct scsi_cmnd *cmd, char status)
 {
-	cmd->result = (cmd->result & 0xff00ffff) | (status << 16);
+	cmd->host_byte = status;
 }
 
 static inline unsigned char get_status_byte(struct scsi_cmnd *cmd)
 {
-	return (cmd->result) & 0xff;
+	return cmd->status_byte;
 }
 
 static inline unsigned char get_msg_byte(struct scsi_cmnd *cmd)
@@ -335,25 +336,27 @@ static inline unsigned char get_msg_byte(struct scsi_cmnd *cmd)
 
 static inline unsigned char get_host_byte(struct scsi_cmnd *cmd)
 {
-	return (cmd->result >> 16) & 0xff;
+	return cmd->host_byte;
 }
 
 static inline bool scsi_result_is_good(struct scsi_cmnd *cmd)
 {
-	return (cmd->result == 0) &&
-	    (cmd->SCp.Message == COMMAND_COMPLETE);
+	return (cmd->host_byte == 0) && (cmd->status_byte == 0) &&
+		(cmd->SCp.Message == COMMAND_COMPLETE);
 }
 
 static inline void scsi_result_set_good(struct scsi_cmnd *cmd)
 {
-	cmd->result = 0;
-	cmd->SCp.Message = 0;
+	cmd->host_byte = 0;
+	cmd->status_byte = 0;
+	cmd->SCp.Message = COMMAND_COMPLETE;
 }
 
 static inline int scsi_get_result(struct scsi_cmnd *cmd)
 {
-	return cmd->result & 0x00ff00ff |
-	    ((cmd->SCp.Message & 0xff) << 8);
+	return (cmd->host_byte << 16) |
+		(cmd->SCp.Message << 8) |
+		cmd->status_byte;
 }
 
 static inline unsigned scsi_transfer_length(struct scsi_cmnd *scmd)
