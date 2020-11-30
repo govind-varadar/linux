@@ -4917,7 +4917,8 @@ void ncr_complete (struct ncb *np, struct ccb *cp)
 		 *	CONDITION MET status is returned on
 		 *	`Pre-Fetch' or `Search data' success.
 		 */
-		cmd->result = cp->scsi_status;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, cp->scsi_status);
 
 		/*
 		**	@RESID@
@@ -4952,7 +4953,8 @@ void ncr_complete (struct ncb *np, struct ccb *cp)
 		/*
 		**   Check condition code
 		*/
-		cmd->result = SAM_STAT_CHECK_CONDITION;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
 		/*
 		**	Copy back sense data to caller's buffer.
@@ -4973,7 +4975,8 @@ void ncr_complete (struct ncb *np, struct ccb *cp)
 		/*
 		**   Reservation Conflict condition code
 		*/
-		cmd->result = SAM_STAT_RESERVATION_CONFLICT;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_RESERVATION_CONFLICT);
 
 	} else if ((cp->host_status == HS_COMPLETE)
 		&& (cp->scsi_status == SAM_STAT_BUSY ||
@@ -4982,7 +4985,8 @@ void ncr_complete (struct ncb *np, struct ccb *cp)
 		/*
 		**   Target is busy.
 		*/
-		cmd->result = cp->scsi_status;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, cp->scsi_status);
 
 	} else if ((cp->host_status == HS_SEL_TIMEOUT)
 		|| (cp->host_status == HS_TIMEOUT)) {
@@ -4990,24 +4994,24 @@ void ncr_complete (struct ncb *np, struct ccb *cp)
 		/*
 		**   No response
 		*/
-		cmd->result = cp->scsi_status;
 		set_host_byte(cmd, DID_TIME_OUT);
+		set_status_byte(cmd, cp->scsi_status);
 
 	} else if (cp->host_status == HS_RESET) {
 
 		/*
 		**   SCSI bus reset
 		*/
-		cmd->result = sp->scsi_status;
 		set_host_byte(cmd, DID_RESET);
+		set_status_byte(cmd, cp->scsi_status);
 
 	} else if (cp->host_status == HS_ABORTED) {
 
 		/*
 		**   Transfer aborted
 		*/
-		cmd->result = cp->scsi_status;
 		set_host_byte(cmd, DID_ABORT);
+		set_status_byte(cmd, cp->scsi_status);
 
 	} else {
 
@@ -5017,8 +5021,8 @@ void ncr_complete (struct ncb *np, struct ccb *cp)
 		PRINT_ADDR(cmd, "COMMAND FAILED (%x %x) @%p.\n",
 			cp->host_status, cp->scsi_status, cp);
 
-		cmd->result = cp->scsi_status;
 		set_host_byte(cmd, DID_ERROR);
+		set_status_byte(cmd, cp->scsi_status);
 	}
 
 	/*
