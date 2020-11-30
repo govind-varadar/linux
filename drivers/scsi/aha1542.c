@@ -404,7 +404,7 @@ static int aha1542_queuecommand(struct Scsi_Host *sh, struct scsi_cmnd *cmd)
 
 	if (*cmd->cmnd == REQUEST_SENSE) {
 		/* Don't do the command - we have the sense data already */
-		cmd->result = 0;
+		scsi_result_set_good(cmd);
 		cmd->scsi_done(cmd);
 		return 0;
 	}

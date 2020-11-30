@@ -323,6 +323,11 @@ static inline void set_driver_byte(struct scsi_cmnd *cmd, char status)
 	cmd->result = (cmd->result & 0x00ffffff) | (status << 24);
 }
 
+static inline void scsi_result_set_good(struct scsi_cmnd *cmd)
+{
+	cmd->result = 0;
+}
+
 static inline unsigned scsi_transfer_length(struct scsi_cmnd *scmd)
 {
 	unsigned int xfer_len = scmd->sdb.length;

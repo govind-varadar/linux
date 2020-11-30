@@ -569,7 +569,7 @@ static void pvscsi_complete_request(struct pvscsi_adapter *adapter,
 		return;
 	}
 
-	cmd->result = 0;
+	scsi_result_set_good(cmd);
 	if (sdstat != SAM_STAT_GOOD &&
 	    (btstat == BTSTAT_SUCCESS ||
 	     btstat == BTSTAT_LINKED_COMMAND_COMPLETED ||
@@ -588,7 +588,7 @@ static void pvscsi_complete_request(struct pvscsi_adapter *adapter,
 		case BTSTAT_LINKED_COMMAND_COMPLETED:
 		case BTSTAT_LINKED_COMMAND_COMPLETED_WITH_FLAG:
 			/* If everything went fine, let's move on..  */
-			cmd->result = (DID_OK << 16);
+			scsi_result_set_good(cmd);
 			break;
 
 		case BTSTAT_DATARUN:

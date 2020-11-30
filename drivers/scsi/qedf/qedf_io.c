@@ -1235,7 +1235,7 @@ void qedf_scsi_completion(struct qedf_ctx *qedf, struct fcoe_cqe *cqe,
 	case FC_GOOD:
 		if (io_req->cdb_status == 0) {
 			/* Good I/O completion */
-			sc_cmd->result = DID_OK << 16;
+			scsi_result_set_good(sc_cmd);
 		} else {
 			refcount = kref_read(&io_req->refcount);
 			QEDF_INFO(&(qedf->dbg_ctx), QEDF_LOG_IO,

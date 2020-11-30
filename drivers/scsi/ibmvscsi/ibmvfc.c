@@ -1670,7 +1670,7 @@ static int ibmvfc_queuecommand_lck(struct scsi_cmnd *cmnd,
 		return 0;
 	}
 
-	cmnd->result = (DID_OK << 16);
+	scsi_result_set_good(cmnd);
 	evt = ibmvfc_get_event(vhost);
 	ibmvfc_init_event(evt, ibmvfc_scsi_done, IBMVFC_CMD_FORMAT);
 	evt->cmnd = cmnd;

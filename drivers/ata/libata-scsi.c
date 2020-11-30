@@ -1241,7 +1241,7 @@ static unsigned int ata_scsi_start_stop_xlat(struct ata_queued_cmd *qc)
 	ata_scsi_set_invalid_field(qc->dev, scmd, fp, bp);
 	return 1;
  skip:
-	scmd->result = SAM_STAT_GOOD;
+	scsi_result_set_good(scmd);
 	return 1;
 }
 
@@ -1492,7 +1492,7 @@ out_of_range:
 	return 1;
 
 nothing_to_do:
-	scmd->result = SAM_STAT_GOOD;
+	scsi_result_set_good(scmd);
 	return 1;
 }
 
@@ -1625,7 +1625,7 @@ out_of_range:
 	return 1;
 
 nothing_to_do:
-	scmd->result = SAM_STAT_GOOD;
+	scsi_result_set_good(scmd);
 	return 1;
 }
 
@@ -1662,7 +1662,7 @@ static void ata_scsi_qc_complete(struct ata_queued_cmd *qc)
 	else if (need_sense)
 		ata_gen_ata_sense(qc);
 	else
-		cmd->result = SAM_STAT_GOOD;
+		scsi_result_set_good(cmd);
 
 	if (need_sense && !ap->ops->error_handler)
 		ata_dump_status(ap->print_id, &qc->result_tf);
@@ -1842,7 +1842,7 @@ static void ata_scsi_rbuf_fill(struct ata_scsi_args *args,
 	ata_scsi_rbuf_put(cmd, rc == 0, &flags);
 
 	if (rc == 0)
-		cmd->result = SAM_STAT_GOOD;
+		scsi_result_set_good(cmd);
 }
 
 /**
@@ -2643,7 +2643,7 @@ static void atapi_qc_complete(struct ata_queued_cmd *qc)
 	} else {
 		if (cmd->cmnd[0] == INQUIRY && (cmd->cmnd[1] & 0x03) == 0)
 			atapi_fixup_inquiry(cmd);
-		cmd->result = SAM_STAT_GOOD;
+		scsi_result_set_good(cmd);
 	}
 
 	ata_qc_done(qc);
@@ -3833,7 +3833,7 @@ static unsigned int ata_scsi_mode_select_xlat(struct ata_queued_cmd *qc)
 	return 1;
 
  skip:
-	scmd->result = SAM_STAT_GOOD;
+	scsi_result_set_good(scmd);
 	return 1;
 }
 

@@ -2349,7 +2349,7 @@ static int handle_ioaccel_mode2_error(struct ctlr_info *h,
 		switch (c2->error_data.status) {
 		case IOACCEL2_STATUS_SR_TASK_COMP_GOOD:
 			if (cmd)
-				cmd->result = 0;
+				scsi_result_set_good(cmd);
 			break;
 		case IOACCEL2_STATUS_SR_TASK_COMP_CHK_COND:
 			cmd->result |= SAM_STAT_CHECK_CONDITION;
@@ -2395,7 +2395,7 @@ static int handle_ioaccel_mode2_error(struct ctlr_info *h,
 			retry = 1;
 			break;
 		case IOACCEL2_STATUS_SR_UNDERRUN:
-			cmd->result = (DID_OK << 16);		/* host byte */
+			scsi_result_set_good(cmd);		/* host byte */
 			ioaccel2_resid = get_unaligned_le32(
 						&c2->error_data.resid_cnt[0]);
 			scsi_set_resid(cmd, ioaccel2_resid);
@@ -2499,7 +2499,7 @@ static void process_ioaccel2_completion(struct ctlr_info *h,
 	/* check for good status */
 	if (likely(c2->error_data.serv_response == 0 &&
 			c2->error_data.status == 0)) {
-		cmd->result = 0;
+		scsi_result_set_good(cmd);
 		return hpsa_cmd_free_and_done(h, c, cmd);
 	}
 
@@ -2596,7 +2596,7 @@ static void complete_scsi_command(struct CommandList *cp)
 		(c2->sg[0].chain_indicator == IOACCEL2_CHAIN))
 		hpsa_unmap_ioaccel2_sg_chain_block(h, c2);
 
-	cmd->result = (DID_OK << 16);		/* host byte */
+	scsi_result_set_good(cmd);		/* host byte */
 
 	/* SCSI command has already been cleaned up in SML */
 	if (dev->was_removed) {
@@ -2724,7 +2724,7 @@ static void complete_scsi_command(struct CommandList *cp)
 		break;
 	case CMD_DATA_OVERRUN:
 		dev_warn(&h->pdev->dev,
-			"CDB %16phN data overrun\n", cp->Request.CDB);
+			 "CDB %16phN data overrun\n", cp->Request.CDB);
 		break;
 	case CMD_INVALID: {
 		/* print_bytes(cp, sizeof(*cp), 1, 0);
@@ -5701,7 +5701,7 @@ static int hpsa_scsi_queue_command(struct Scsi_Host *sh, struct scsi_cmnd *cmd)
 	 * This is necessary because the SML doesn't zero out this field during
 	 * error recovery.
 	 */
-	cmd->result = 0;
+	scsi_result_set_good(cmd);
 
 	/*
 	 * Call alternate submit routine for I/O accelerated commands.

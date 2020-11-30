@@ -660,7 +660,7 @@ static int atp870u_queuecommand_lck(struct scsi_cmnd *req_p,
 #ifdef ED_DBGP
 		printk( "atp870u_queuecommand: done can't be NULL\n");
 #endif
-		req_p->result = 0;
+		scsi_result_set_good(req_p);
 		done(req_p);
 		return 0;
 	}

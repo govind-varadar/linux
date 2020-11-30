@@ -636,7 +636,7 @@ mega_build_cmd(adapter_t *adapter, struct scsi_cmnd *cmd, int *busy)
 			 * If no, return success always
 			 */
 			if( !adapter->has_cluster ) {
-				cmd->result = (DID_OK << 16);
+				scsi_result_set_good(cmd);
 				cmd->scsi_done(cmd);
 				return NULL;
 			}
@@ -654,7 +654,7 @@ mega_build_cmd(adapter_t *adapter, struct scsi_cmnd *cmd, int *busy)
 
 			return scb;
 #else
-			cmd->result = (DID_OK << 16);
+			scsi_result_set_good(cmd);
 			cmd->scsi_done(cmd);
 			return NULL;
 #endif
@@ -669,7 +669,7 @@ mega_build_cmd(adapter_t *adapter, struct scsi_cmnd *cmd, int *busy)
 			memset(buf, 0, cmd->cmnd[4]);
 			kunmap_atomic(buf - sg->offset);
 
-			cmd->result = (DID_OK << 16);
+			scsi_result_set_good(cmd);
 			cmd->scsi_done(cmd);
 			return NULL;
 		}
@@ -1565,7 +1565,7 @@ mega_cmd_done(adapter_t *adapter, u8 completed[], int nstatus, int status)
 		}
 
 		/* clear result; otherwise, success returns corrupt value */
-		cmd->result = 0;
+		scsi_result_set_good(cmd);
 
 		/* Convert MegaRAID status to Linux error code */
 		switch (status) {

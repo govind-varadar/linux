@@ -2089,7 +2089,7 @@ static int mvumi_queue_command(struct Scsi_Host *shost,
 	spin_lock_irqsave(shost->host_lock, irq_flags);
 
 	mhba = (struct mvumi_hba *) shost->hostdata;
-	scmd->result = 0;
+	scsi_result_set_good(scmd);
 	cmd = mvumi_get_cmd(mhba);
 	if (unlikely(!cmd)) {
 		spin_unlock_irqrestore(shost->host_lock, irq_flags);

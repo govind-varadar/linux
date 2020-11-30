@@ -629,7 +629,7 @@ void usb_stor_invoke_transport(struct scsi_cmnd *srb, struct us_data *us)
 		return;
 	}
 
-	srb->result = SAM_STAT_GOOD;
+	scsi_result_set_good(srb);
 
 	/*
 	 * Determine if we need to auto-sense
@@ -816,7 +816,7 @@ Retry_Sense:
 			 * won't realize we did an unsolicited auto-sense.
 			 */
 			if (result == USB_STOR_TRANSPORT_GOOD) {
-				srb->result = SAM_STAT_GOOD;
+				scsi_result_set_good(srb);
 				srb->sense_buffer[0] = 0x0;
 			}
 

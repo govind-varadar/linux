@@ -2216,7 +2216,7 @@ static int fas216_queue_command_lck(struct scsi_cmnd *SCpnt,
 
 	SCpnt->scsi_done = done;
 	SCpnt->host_scribble = (void *)fas216_std_done;
-	SCpnt->result = 0;
+	scsi_result_set_good(SCpnt);
 
 	init_SCp(SCpnt);
 

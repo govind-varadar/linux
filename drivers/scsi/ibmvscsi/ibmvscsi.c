@@ -1032,7 +1032,7 @@ static int ibmvscsi_queuecommand_lck(struct scsi_cmnd *cmnd,
 	u16 lun = lun_from_dev(cmnd->device);
 	u8 out_fmt, in_fmt;
 
-	cmnd->result = (DID_OK << 16);
+	scsi_result_set_good(cmnd);
 	evt_struct = get_event_struct(&hostdata->pool);
 	if (!evt_struct)
 		return SCSI_MLQUEUE_HOST_BUSY;

@@ -5677,7 +5677,7 @@ _scsih_io_done(struct MPT3SAS_ADAPTER *ioc, u16 smid, u8 msix_index, u32 reply)
 	mpi_request = mpt3sas_base_get_msg_frame(ioc, smid);
 
 	if (mpi_reply == NULL) {
-		scmd->result = DID_OK << 16;
+		scsi_result_set_good(scmd);
 		goto out;
 	}
 

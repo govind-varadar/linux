@@ -4144,7 +4144,7 @@ lpfc_fcp_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
 
 	switch (lpfc_cmd->status) {
 	case IOSTAT_SUCCESS:
-		cmd->result = DID_OK << 16;
+		scsi_result_set_good(cmd);
 		break;
 	case IOSTAT_FCP_RSP_ERROR:
 		lpfc_handle_fcp_err(vport, lpfc_cmd,
@@ -4539,7 +4539,7 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 			cmd->result = DID_TRANSPORT_DISRUPTED << 16 |
 				      SAM_STAT_BUSY;
 	} else
-		cmd->result = DID_OK << 16;
+		scsi_result_set_good(cmd);
 
 	if (cmd->result || lpfc_cmd->fcp_rsp->rspSnsLen) {
 		uint32_t *lp = (uint32_t *)cmd->sense_buffer;

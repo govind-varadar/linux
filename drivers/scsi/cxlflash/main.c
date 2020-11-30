@@ -167,7 +167,7 @@ static void cmd_complete(struct afu_cmd *cmd)
 		if (unlikely(cmd->sa.ioasc))
 			process_cmd_err(cmd, scp);
 		else
-			scp->result = (DID_OK << 16);
+			scsi_result_set_good(scp);
 
 		dev_dbg_ratelimited(dev, "%s:scp=%p result=%08x ioasc=%08x\n",
 				    __func__, scp, scp->result, cmd->sa.ioasc);

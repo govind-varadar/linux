@@ -1990,7 +1990,7 @@ static void fc_io_compl(struct fc_fcp_pkt *fsp)
 			/*
 			 * good I/O status
 			 */
-			sc_cmd->result = DID_OK << 16;
+			scsi_result_set_good(sc_cmd);
 			if (fsp->scsi_resid)
 				CMD_RESID_LEN(sc_cmd) = fsp->scsi_resid;
 		} else {
@@ -2013,7 +2013,7 @@ static void fc_io_compl(struct fc_fcp_pkt *fsp)
 			 * underrun.
 			 */
 			if (fsp->state & FC_SRB_RCV_STATUS) {
-				sc_cmd->result = DID_OK << 16;
+				scsi_result_set_good(sc_cmd);
 			} else {
 				FC_FCP_DBG(fsp, "Returning DID_ERROR to scsi-ml"
 					   " due to FC_DATA_UNDRUN (trans)\n");

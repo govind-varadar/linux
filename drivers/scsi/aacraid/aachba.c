@@ -556,7 +556,7 @@ static void get_container_name_callback(void *context, struct fib * fibptr)
 		}
 	}
 
-	scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+	scsi_result_set_good(scsicmd);
 
 	aac_fib_complete(fibptr);
 	scsicmd->scsi_done(scsicmd);
@@ -1092,7 +1092,7 @@ static void get_container_serial_callback(void *context, struct fib * fibptr)
 		}
 	}
 
-	scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+	scsi_result_set_good(scsicmd);
 
 	aac_fib_complete(fibptr);
 	scsicmd->scsi_done(scsicmd);
@@ -2363,7 +2363,7 @@ static void io_callback(void *context, struct fib * fibptr)
 	readreply = (struct aac_read_reply *)fib_data(fibptr);
 	switch (le32_to_cpu(readreply->status)) {
 	case ST_OK:
-		scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(scsicmd);
 		dev->fsa_dev[cid].sense_data.sense_key = NO_SENSE;
 		break;
 	case ST_NOT_READY:
@@ -2608,7 +2608,7 @@ static void synchronize_callback(void *context, struct fib *fibptr)
 
 	synchronizereply = fib_data(fibptr);
 	if (le32_to_cpu(synchronizereply->status) == CT_OK)
-		cmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(cmd);
 	else {
 		struct scsi_device *sdev = cmd->device;
 		struct aac_dev *dev = fibptr->dev;
@@ -2690,7 +2690,7 @@ static void aac_start_stop_callback(void *context, struct fib *fibptr)
 
 	BUG_ON(fibptr == NULL);
 
-	scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+	scsi_result_set_good(scsicmd);
 
 	aac_fib_complete(fibptr);
 	aac_fib_free(fibptr);
@@ -2707,7 +2707,7 @@ static int aac_start_stop(struct scsi_cmnd *scsicmd)
 
 	if (!(aac->supplement_adapter_info.supported_options2 &
 	      AAC_OPTION_POWER_MANAGEMENT)) {
-		scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(scsicmd);
 		scsicmd->scsi_done(scsicmd);
 		return 0;
 	}
@@ -2867,7 +2867,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 
 	case SYNCHRONIZE_CACHE:
 		if (((aac_cache & 6) == 6) && dev->cache_protected) {
-			scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+			scsi_result_set_good(scsicmd);
 			break;
 		}
 		/* Issue FIB to tell Firmware to flush it's cache */
@@ -2896,7 +2896,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				arr[1] = scsicmd->cmnd[2];
 				scsi_sg_copy_from_buffer(scsicmd, &inq_data,
 							 sizeof(inq_data));
-				scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+				scsi_result_set_good(scsicmd);
 			} else if (scsicmd->cmnd[2] == 0x80) {
 				/* unit serial number page */
 				arr[3] = setinqserial(dev, &arr[4],
@@ -2907,7 +2907,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				if (aac_wwn != 2)
 					return aac_get_container_serial(
 						scsicmd);
-				scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+				scsi_result_set_good(scsicmd);
 			} else if (scsicmd->cmnd[2] == 0x83) {
 				/* vpd page 0x83 - Device Identification Page */
 				char *sno = (char *)&inq_data;
@@ -2916,7 +2916,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				if (aac_wwn != 2)
 					return aac_get_container_serial(
 						scsicmd);
-				scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+				scsi_result_set_good(scsicmd);
 			} else {
 				/* vpd page not implemented */
 				scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
@@ -2945,7 +2945,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 			inq_data.inqd_pdt = INQD_PDT_PROC;	/* Processor device */
 			scsi_sg_copy_from_buffer(scsicmd, &inq_data,
 						 sizeof(inq_data));
-			scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+			scsi_result_set_good(scsicmd);
 			break;
 		}
 		if (dev->in_reset)
@@ -2994,7 +2994,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		/* Do not cache partition table for arrays */
 		scsicmd->device->removable = 1;
 
-		scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(scsicmd);
 		break;
 	}
 
@@ -3020,7 +3020,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		scsi_sg_copy_from_buffer(scsicmd, cp, sizeof(cp));
 		/* Do not cache partition table for arrays */
 		scsicmd->device->removable = 1;
-		scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(scsicmd);
 		break;
 	}
 
@@ -3099,7 +3099,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		scsi_sg_copy_from_buffer(scsicmd,
 					 (char *)&mpd,
 					 mode_buf_length);
-		scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(scsicmd);
 		break;
 	}
 	case MODE_SENSE_10:
@@ -3176,7 +3176,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 					 (char *)&mpd10,
 					 mode_buf_length);
 
-		scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(scsicmd);
 		break;
 	}
 	case REQUEST_SENSE:
@@ -3185,7 +3185,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				sizeof(struct sense_data));
 		memset(&dev->fsa_dev[cid].sense_data, 0,
 				sizeof(struct sense_data));
-		scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(scsicmd);
 		break;
 
 	case ALLOW_MEDIUM_REMOVAL:
@@ -3195,7 +3195,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		else
 			fsa_dev_ptr[cid].locked = 0;
 
-		scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(scsicmd);
 		break;
 	/*
 	 *	These commands are all No-Ops
@@ -3219,7 +3219,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 	case REZERO_UNIT:
 	case REASSIGN_BLOCKS:
 	case SEEK_10:
-		scsicmd->result = DID_OK << 16 | SAM_STAT_GOOD;
+		scsi_result_set_good(scsicmd);
 		break;
 
 	case START_STOP:
@@ -3424,7 +3424,7 @@ static void aac_srb_callback(void *context, struct fib * fibptr)
 	case SRB_STATUS_ERROR_RECOVERY:
 	case SRB_STATUS_PENDING:
 	case SRB_STATUS_SUCCESS:
-		scsicmd->result = DID_OK << 16;
+		scsi_result_set_good(scsicmd);
 		break;
 	case SRB_STATUS_DATA_OVERRUN:
 		switch (scsicmd->cmnd[0]) {
@@ -3444,10 +3444,10 @@ static void aac_srb_callback(void *context, struct fib * fibptr)
 			scsicmd->result = DID_ERROR << 16;
 			break;
 		case INQUIRY:
-			scsicmd->result = DID_OK << 16;
+			scsi_result_set_good(scsicmd);
 			break;
 		default:
-			scsicmd->result = DID_OK << 16;
+			scsi_result_set_good(scsicmd);
 			break;
 		}
 		break;
@@ -3522,7 +3522,7 @@ static void aac_srb_callback(void *context, struct fib * fibptr)
 			|| (scsicmd->cmnd[0] == ATA_16)) {
 
 			if (scsicmd->cmnd[2] & (0x01 << 5)) {
-				scsicmd->result = DID_OK << 16;
+				scsi_result_set_good(scsicmd);
 			} else {
 				scsicmd->result = DID_ERROR << 16;
 			}
@@ -3623,7 +3623,7 @@ static void hba_resp_task_failure(struct aac_dev *dev,
 		break;
 	case HBA_RESP_STAT_UNDERRUN:
 		/* UNDERRUN is OK */
-		scsicmd->result = DID_OK << 16;
+		scsi_result_set_good(scsicmd);
 		break;
 	case HBA_RESP_STAT_OVERRUN:
 	default:
@@ -3660,7 +3660,7 @@ void aac_hba_callback(void *context, struct fib *fibptr)
 
 	if (fibptr->flags & FIB_CONTEXT_FLAG_FASTRESP) {
 		/* fast response */
-		scsicmd->result = DID_OK << 16;
+		scsi_result_set_good(scsicmd);
 		goto out;
 	}
 
@@ -3679,7 +3679,7 @@ void aac_hba_callback(void *context, struct fib *fibptr)
 		break;
 	case HBA_RESP_SVCRES_TMF_COMPLETE:
 	case HBA_RESP_SVCRES_TMF_SUCCEEDED:
-		scsicmd->result = DID_OK << 16;
+		scsi_result_set_good(scsicmd);
 		break;
 	default:
 		scsicmd->result = DID_ERROR << 16;

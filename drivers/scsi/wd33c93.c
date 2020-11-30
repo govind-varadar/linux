@@ -381,7 +381,7 @@ wd33c93_queuecommand_lck(struct scsi_cmnd *cmd,
  */
 	cmd->host_scribble = NULL;
 	cmd->scsi_done = done;
-	cmd->result = 0;
+	scsi_result_set_good(cmd);
 
 /* We use the Scsi_Pointer structure that's included with each command
  * as a scratchpad (as it's intended to be used!). The handy thing about

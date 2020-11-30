@@ -1178,7 +1178,7 @@ static irqreturn_t twl_interrupt(int irq, void *dev_instance)
 			cmd = tw_dev->srb[request_id];
 
 			if (!error)
-				cmd->result = (DID_OK << 16);
+				scsi_result_set_good(cmd);
 
 			/* Report residual bytes for single sgl */
 			if ((scsi_sg_count(cmd) <= 1) && (full_command_packet->command.newcommand.status == 0)) {

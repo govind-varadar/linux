@@ -735,7 +735,7 @@ static void hptiop_finish_scsi_req(struct hptiop_hba *hba, u32 tag,
 	case IOP_RESULT_SUCCESS:
 		scsi_set_resid(scp,
 			scsi_bufflen(scp) - le32_to_cpu(req->dataxfer_length));
-		scp->result = (DID_OK<<16);
+		scsi_result_set_good(scp);
 		break;
 	case IOP_RESULT_BAD_TARGET:
 		scp->result = (DID_BAD_TARGET<<16);
@@ -1024,7 +1024,7 @@ static int hptiop_queuecommand_lck(struct scsi_cmnd *scp,
 			cpu_to_be32(((u32 *)scp->cmnd)[3]),
 			_req->index, _req->req_virt);
 
-	scp->result = 0;
+	scsi_result_set_good(scp);
 
 	if (scp->device->channel ||
 			(scp->device->id > hba->max_devices) ||

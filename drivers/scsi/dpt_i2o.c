@@ -430,7 +430,7 @@ static int adpt_queue_lck(struct scsi_cmnd * cmd, void (*done) (struct scsi_cmnd
 	 */
 
 	if ((cmd->cmnd[0] == REQUEST_SENSE) && (cmd->sense_buffer[0] != 0)) {
-		cmd->result = (DID_OK << 16);
+		scsi_result_set_good(cmd);
 		cmd->scsi_done(cmd);
 		return 0;
 	}
@@ -2359,7 +2359,7 @@ static void adpt_i2o_scsi_complete(void __iomem *reply, struct scsi_cmnd *cmd)
 	if(!(reply_flags & MSG_FAIL)) {
 		switch(detailed_status & I2O_SCSI_DSC_MASK) {
 		case I2O_SCSI_DSC_SUCCESS:
-			cmd->result = (DID_OK << 16);
+			scsi_result_set_good(cmd);
 			// handle underflow
 			if (readl(reply+20) < cmd->underflow) {
 				cmd->result = (DID_ERROR <<16);

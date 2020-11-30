@@ -196,7 +196,7 @@ static void __scsi_queue_insert(struct scsi_cmnd *cmd, int reason, bool unbusy)
 	 * lock such that the kblockd_schedule_work() call happens
 	 * before blk_cleanup_queue() finishes.
 	 */
-	cmd->result = 0;
+	scsi_result_set_good(cmd);
 
 	blk_mq_requeue_request(cmd->request, true);
 }

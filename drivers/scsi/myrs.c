@@ -1620,7 +1620,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 					SAM_STAT_CHECK_CONDITION;
 			} else {
 				myrs_mode_sense(cs, scmd, ldev_info);
-				scmd->result = (DID_OK << 16);
+				scsi_result_set_good(scmd);
 			}
 			scmd->scsi_done(scmd);
 			return 0;

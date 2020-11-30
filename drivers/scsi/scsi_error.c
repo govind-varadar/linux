@@ -985,7 +985,7 @@ void scsi_eh_prep_cmnd(struct scsi_cmnd *scmd, struct scsi_eh_save *ses,
 	scmd->cmnd = ses->eh_cmnd;
 	memset(scmd->cmnd, 0, BLK_MAX_CDB);
 	memset(&scmd->sdb, 0, sizeof(scmd->sdb));
-	scmd->result = 0;
+	scsi_result_set_good(scmd);
 	scmd->req.resid_len = 0;
 
 	if (sense_bytes) {

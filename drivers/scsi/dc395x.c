@@ -1013,7 +1013,7 @@ static int dc395x_queue_command_lck(struct scsi_cmnd *cmd, void (*done)(struct s
 
 	/* set callback and clear result in the command */
 	cmd->scsi_done = done;
-	cmd->result = 0;
+	scsi_result_set_good(cmd);
 
 	srb = list_first_entry_or_null(&acb->srb_free_list,
 			struct ScsiReqBlk, list);

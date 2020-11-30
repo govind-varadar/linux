@@ -533,7 +533,7 @@ static int scsifront_queuecommand(struct Scsi_Host *shost,
 	unsigned long flags;
 	int err;
 
-	sc->result = 0;
+	scsi_result_set_good(sc);
 
 	shadow->sc  = sc;
 	shadow->act = VSCSIIF_ACT_SCSI_CDB;

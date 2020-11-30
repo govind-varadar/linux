@@ -1126,7 +1126,7 @@ static int tw_setfeature(TW_Device_Extension *tw_dev, int parm, int param_size,
 		printk(KERN_WARNING "3w-xxxx: tw_setfeature(): Bad alignment physical address.\n");
 		tw_dev->state[request_id] = TW_S_COMPLETED;
 		tw_state_request_finish(tw_dev, request_id);
-		srb->result = (DID_OK << 16);
+		scsi_result_set_good(srb);
 		srb->scsi_done(srb);
 	}
 	command_packet->byte8.param.sgl[0].address = param_value;
@@ -1475,7 +1475,7 @@ static int tw_scsiop_mode_sense(TW_Device_Extension *tw_dev, int request_id)
 	if (srb->cmnd[2] != 0x8) {
 		tw_dev->state[request_id] = TW_S_COMPLETED;
 		tw_state_request_finish(tw_dev, request_id);
-		srb->result = (DID_OK << 16);
+		scsi_result_set_good(srb);
 		srb->scsi_done(srb);
 		return 0;
 	}
@@ -2129,7 +2129,7 @@ static irqreturn_t tw_interrupt(int irq, void *dev_instance)
 
 				/* If no error command was a success */
 				if (error == 0) {
-					srb->result = (DID_OK << 16);
+					scsi_result_set_good(srb);
 				}
 
 				/* If error, command failed */

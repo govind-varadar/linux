@@ -6571,7 +6571,7 @@ static int ipr_queuecommand(struct Scsi_Host *shost,
 
 	ioa_cfg = (struct ipr_ioa_cfg *)shost->hostdata;
 
-	scsi_cmd->result = (DID_OK << 16);
+	scsi_result_set_good(scsi_cmd);
 	res = scsi_cmd->device->hostdata;
 
 	if (ipr_is_gata(res) && res->sata_port) {

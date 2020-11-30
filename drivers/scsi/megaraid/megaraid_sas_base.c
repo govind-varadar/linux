@@ -1815,7 +1815,7 @@ megasas_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 		return SCSI_MLQUEUE_DEVICE_BUSY;
 
 
-	scmd->result = 0;
+	scsi_result_set_good(scmd);
 
 	if (MEGASAS_IS_LOGICAL(scmd->device) &&
 	    (scmd->device->id >= instance->fw_supported_vd_count ||
@@ -1827,7 +1827,7 @@ megasas_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	if ((scmd->cmnd[0] == SYNCHRONIZE_CACHE) &&
 	    MEGASAS_IS_LOGICAL(scmd->device) &&
 	    (!instance->fw_sync_cache_support)) {
-		scmd->result = DID_OK << 16;
+		scsi_result_set_good(scmd);
 		goto out_done;
 	}
 
@@ -3565,7 +3565,7 @@ megasas_complete_cmd(struct megasas_instance *instance, struct megasas_cmd *cmd,
 		switch (hdr->cmd_status) {
 
 		case MFI_STAT_OK:
-			cmd->scmd->result = DID_OK << 16;
+			scsi_result_set_good(cmd->scmd);
 			break;
 
 		case MFI_STAT_SCSI_IO_FAILED:

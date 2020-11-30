@@ -2478,7 +2478,7 @@ static int acornscsi_queuecmd_lck(struct scsi_cmnd *SCpnt,
 
     SCpnt->scsi_done = done;
     SCpnt->host_scribble = NULL;
-    SCpnt->result = 0;
+    scsi_result_set_good(SCpnt);
     SCpnt->tag = 0;
     SCpnt->SCp.phase = (int)acornscsi_datadirection(SCpnt->cmnd[0]);
     SCpnt->SCp.sent_command = 0;

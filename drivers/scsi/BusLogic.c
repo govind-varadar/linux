@@ -2813,7 +2813,7 @@ static void blogic_process_ccbs(struct blogic_adapter *adapter)
 				    .cmds_complete++;
 				adapter->tgt_flags[ccb->tgt_id]
 				    .cmd_good = true;
-				command->result = DID_OK << 16;
+				scsi_result_set_good(command);
 				break;
 			case BLOGIC_CMD_ABORT_BY_HOST:
 				blogic_warn("CCB #%ld to Target %d Aborted\n",
@@ -3042,7 +3042,7 @@ static int blogic_qcmd_lck(struct scsi_cmnd *command,
 	   occurred.
 	 */
 	if (cdb[0] == REQUEST_SENSE && command->sense_buffer[0] != 0) {
-		command->result = DID_OK << 16;
+		scsi_result_set_good(command);
 		comp_cb(command);
 		return 0;
 	}

@@ -3337,7 +3337,7 @@ static int pmcraid_queuecommand_lck(
 	fw_version = be16_to_cpu(pinstance->inq_data->fw_version);
 	scsi_cmd->scsi_done = done;
 	res = scsi_cmd->device->hostdata;
-	scsi_cmd->result = (DID_OK << 16);
+	scsi_result_set_good(scsi_cmd);
 
 	/* if adapter is marked as dead, set result to DID_NO_CONNECT complete
 	 * the command

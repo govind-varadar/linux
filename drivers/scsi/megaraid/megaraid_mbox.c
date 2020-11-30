@@ -1442,7 +1442,7 @@ megaraid_queue_command_lck(struct scsi_cmnd *scp, void (*done)(struct scsi_cmnd 
 
 	adapter		= SCP2ADAPTER(scp);
 	scp->scsi_done	= done;
-	scp->result	= 0;
+	scsi_result_set_good(scp);
 
 	/*
 	 * Allocate and build a SCB request
@@ -1510,7 +1510,7 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 			 * If no, return success always
 			 */
 			if (!adapter->ha) {
-				scp->result = (DID_OK << 16);
+				scsi_result_set_good(scp);
 				return NULL;
 			}
 
@@ -2289,7 +2289,7 @@ megaraid_mbox_dpc(unsigned long devp)
 
 		case 0x00:
 
-			scp->result = (DID_OK << 16);
+			scsi_result_set_good(scp);
 			break;
 
 		case 0x02:

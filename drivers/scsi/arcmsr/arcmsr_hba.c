@@ -1401,7 +1401,7 @@ static void arcmsr_report_ccb_state(struct AdapterControlBlock *acb,
 	if (!error) {
 		if (acb->devstate[id][lun] == ARECA_RAID_GONE)
 			acb->devstate[id][lun] = ARECA_RAID_GOOD;
-		ccb->pcmd->result = DID_OK << 16;
+		scsi_result_set_good(ccb->pcmd);
 		arcmsr_ccb_complete(ccb);
 	}else{
 		switch (ccb->arcmsr_cdb.DeviceStatus) {
@@ -3244,7 +3244,7 @@ static int arcmsr_queue_command_lck(struct scsi_cmnd *cmd,
 	}
 	cmd->scsi_done = done;
 	cmd->host_scribble = NULL;
-	cmd->result = 0;
+	scsi_result_set_good(cmd);
 	if (target == 16) {
 		/* virtual device for iop message transfer */
 		arcmsr_handle_virtual_command(acb, cmd);

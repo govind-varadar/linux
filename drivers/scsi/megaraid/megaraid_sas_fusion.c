@@ -1999,7 +1999,7 @@ map_cmd_status(struct fusion_context *fusion,
 	switch (status) {
 
 	case MFI_STAT_OK:
-		scmd->result = DID_OK << 16;
+		scsi_result_set_good(scmd);
 		break;
 
 	case MFI_STAT_SCSI_IO_FAILED:

@@ -822,7 +822,7 @@ static void rts51x_invoke_transport(struct scsi_cmnd *srb, struct us_data *us)
 			if ((srb->cmnd[0] == TEST_UNIT_READY) &&
 			    (chip->pwr_state == US_SUSPEND)) {
 				if (TST_LUN_READY(chip, srb->device->lun)) {
-					srb->result = SAM_STAT_GOOD;
+					scsi_result_set_good(srb);
 				} else {
 					srb->result = SAM_STAT_CHECK_CONDITION;
 					memcpy(srb->sense_buffer,
@@ -840,7 +840,7 @@ static void rts51x_invoke_transport(struct scsi_cmnd *srb, struct us_data *us)
 					       invalid_cmd_field,
 					       US_SENSE_SIZE);
 				} else {
-					srb->result = SAM_STAT_GOOD;
+					scsi_result_set_good(srb);
 				}
 				usb_stor_dbg(us, "ALLOW_MEDIUM_REMOVAL\n");
 				goto out;

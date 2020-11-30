@@ -325,7 +325,7 @@ static int aha1740_queuecommand_lck(struct scsi_cmnd * SCpnt,
 	DEB(int i);
 
 	if(*cmd == REQUEST_SENSE) {
-		SCpnt->result = 0;
+		scsi_result_set_good(SCpnt);
 		done(SCpnt); 
 		return 0;
 	}

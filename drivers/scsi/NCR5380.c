@@ -578,7 +578,7 @@ static int NCR5380_queue_command(struct Scsi_Host *instance,
 	}
 #endif /* (NDEBUG & NDEBUG_NO_WRITE) */
 
-	cmd->result = 0;
+	scsi_result_set_good(cmd);
 
 	if (!NCR5380_acquire_dma_irq(instance))
 		return SCSI_MLQUEUE_HOST_BUSY;

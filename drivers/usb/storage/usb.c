@@ -371,7 +371,7 @@ static int usb_stor_control_thread(void * __us)
 
 			usb_stor_dbg(us, "Faking INQUIRY command\n");
 			fill_inquiry_response(us, data_ptr, 36);
-			srb->result = SAM_STAT_GOOD;
+			scsi_result_set_good(srb);
 		}
 
 		/* we've got a command, let's do it! */

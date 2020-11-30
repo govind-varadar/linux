@@ -302,7 +302,7 @@ static irqreturn_t ps3rom_interrupt(int irq, void *data)
 
 			scsi_set_resid(cmd, scsi_bufflen(cmd) - len);
 		}
-		cmd->result = DID_OK << 16;
+		scsi_result_set_good(cmd);
 		goto done;
 	}
 

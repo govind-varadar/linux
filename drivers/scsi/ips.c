@@ -1098,7 +1098,7 @@ static int ips_queue_lck(struct scsi_cmnd *SC, void (*done) (struct scsi_cmnd *)
 			}
 			ha->ioctl_reset = 1;	/* This reset request is from an IOCTL */
 			__ips_eh_reset(SC);
-			SC->result = DID_OK << 16;
+			scsi_result_set_good(SC);
 			SC->scsi_done(SC);
 			return (0);
 		}
@@ -1610,7 +1610,7 @@ ips_make_passthru(ips_ha_t *ha, struct scsi_cmnd *SC, ips_scb_t *scb, int intr)
 		       &ips_num_controllers, sizeof (int));
 		ips_scmd_buf_write(SC, ha->ioctl_data,
 				   sizeof (ips_passthru_t) + sizeof (int));
-		SC->result = DID_OK << 16;
+		scsi_result_set_good(SC);
 
 		return (IPS_SUCCESS_IMM);
 
@@ -1667,7 +1667,7 @@ ips_flash_copperhead(ips_ha_t * ha, ips_passthru_t * pt, ips_scb_t * scb)
 	}
 	pt->BasicStatus = 0x0B;
 	pt->ExtendedStatus = 0;
-	scb->scsi_cmd->result = DID_OK << 16;
+	scsi_result_set_good(scb->scsi_cmd);
 	/* IF it's OK to Use the "CD BOOT" Flash Buffer, then you can     */
 	/* avoid allocating a huge buffer per adapter ( which can fail ). */
 	if (pt->CoppCP.cmd.flashfw.type == IPS_BIOS_IMAGE &&
@@ -1869,7 +1869,7 @@ ips_flash_firmware(ips_ha_t * ha, ips_passthru_t * pt, ips_scb_t * scb)
 	scb->cmd.flashfw.buffer_addr = cpu_to_le32(scb->data_busaddr);
 	if (pt->TimeOut)
 		scb->timeout = pt->TimeOut;
-	scb->scsi_cmd->result = DID_OK << 16;
+	scsi_result_set_good(scb->scsi_cmd);
 	return IPS_SUCCESS;
 }
 
@@ -1971,7 +1971,7 @@ ips_usrcmd(ips_ha_t * ha, ips_passthru_t * pt, ips_scb_t * scb)
 	}
 
 	/* assume success */
-	scb->scsi_cmd->result = DID_OK << 16;
+	scsi_result_set_good(scb->scsi_cmd);
 
 	/* success */
 	return (1);
@@ -2586,7 +2586,7 @@ ips_next(ips_ha_t * ha, int intr)
 			break;
 		case IPS_SUCCESS_IMM:
 			if (scb->scsi_cmd) {
-				scb->scsi_cmd->result = DID_OK << 16;
+				scsi_result_set_good(scb->scsi_cmd);
 				scb->scsi_cmd->scsi_done(scb->scsi_cmd);
 			}
 
@@ -2646,7 +2646,7 @@ ips_next(ips_ha_t * ha, int intr)
 		if (intr == IPS_INTR_ON)
 			spin_unlock(host->host_lock);	/* Unlock HA after command is taken off queue */
 
-		SC->result = DID_OK;
+		scsi_result_set_good(SC);
 		SC->host_scribble = NULL;
 
 		scb->target_id = SC->device->id;
@@ -3488,7 +3488,7 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 			break;
 
 		case START_STOP:
-			scb->scsi_cmd->result = DID_OK << 16;
+			scsi_result_set_good(scb->scsi_cmd);
 			break;
 
 		case TEST_UNIT_READY:
@@ -3499,7 +3499,7 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 				 * or we have a SCSI inquiry
 				 */
 				if (scb->scsi_cmd->cmnd[0] == TEST_UNIT_READY)
-					scb->scsi_cmd->result = DID_OK << 16;
+					scsi_result_set_good(scb->scsi_cmd);
 
 				if (scb->scsi_cmd->cmnd[0] == INQUIRY) {
 					IPS_SCSI_INQ_DATA inquiry;
@@ -3531,7 +3531,7 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 							   &inquiry,
 							   sizeof (inquiry));
 
-					scb->scsi_cmd->result = DID_OK << 16;
+					scsi_result_set_good(scb->scsi_cmd);
 				}
 			} else {
 				scb->cmd.logical_info.op_code = IPS_CMD_GET_LD_INFO;
@@ -3549,7 +3549,7 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 
 		case REQUEST_SENSE:
 			ips_reqsen(ha, scb);
-			scb->scsi_cmd->result = DID_OK << 16;
+			scsi_result_set_good(scb->scsi_cmd);
 			break;
 
 		case READ_6:
@@ -3645,7 +3645,7 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 				 * we don't have to do anything
 				 * so just return
 				 */
-				scb->scsi_cmd->result = DID_OK << 16;
+				scsi_result_set_good(scb->scsi_cmd);
 			} else
 				ret = IPS_SUCCESS;
 
@@ -3653,7 +3653,7 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 
 		case RESERVE:
 		case RELEASE:
-			scb->scsi_cmd->result = DID_OK << 16;
+			scsi_result_set_good(scb->scsi_cmd);
 			break;
 
 		case MODE_SENSE:
@@ -3687,7 +3687,7 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 		case READ_DEFECT_DATA:
 		case READ_BUFFER:
 		case WRITE_BUFFER:
-			scb->scsi_cmd->result = DID_OK << 16;
+			scsi_result_set_good(scb->scsi_cmd);
 			break;
 
 		default:

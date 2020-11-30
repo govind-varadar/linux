@@ -825,7 +825,7 @@ int esas2r_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 	unsigned bufflen;
 
 	/* Assume success, if it fails we will fix the result later. */
-	cmd->result = DID_OK << 16;
+	scsi_result_set_good(cmd);
 
 	if (unlikely(test_bit(AF_DEGRADED_MODE, &a->flags))) {
 		cmd->result = DID_NO_CONNECT << 16;

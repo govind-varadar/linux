@@ -762,7 +762,7 @@ static int nsp32_arbitration(struct scsi_cmnd *SCpnt, unsigned int base)
 
 	if (arbit & ARBIT_WIN) {
 		/* Arbitration succeeded */
-		SCpnt->result = DID_OK << 16;
+		scsi_result_set_good(SCpnt);
 		nsp32_index_write1(base, EXT_PORT, LED_ON); /* PCI LED on */
 	} else if (arbit & ARBIT_FAIL) {
 		/* Arbitration failed */

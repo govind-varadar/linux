@@ -1641,7 +1641,7 @@ int iscsi_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *sc)
 	struct iscsi_conn *conn;
 	struct iscsi_task *task = NULL;
 
-	sc->result = 0;
+	scsi_result_set_good(sc);
 	sc->SCp.ptr = NULL;
 
 	ihost = shost_priv(host);

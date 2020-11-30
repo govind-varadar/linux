@@ -765,7 +765,7 @@ static int ppa_engine(ppa_struct *dev, struct scsi_cmnd *cmd)
 		fallthrough;
 
 	case 6:		/* Phase 6 - Read status/message */
-		cmd->result = DID_OK << 16;
+		scsi_result_set_good(cmd);
 		/* Check for data overrun */
 		if (ppa_wait(dev) != (unsigned char) 0xf0) {
 			ppa_fail(dev, DID_ERROR);

@@ -1443,7 +1443,7 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 	}
 	switch (scmd->cmnd[0]) {
 	case TEST_UNIT_READY:
-		scmd->result = (DID_OK << 16);
+		scsi_result_set_good(scmd);
 		scmd->scsi_done(scmd);
 		return 0;
 	case INQUIRY:
@@ -1455,12 +1455,12 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 				SAM_STAT_CHECK_CONDITION;
 		} else {
 			myrb_inquiry(cb, scmd);
-			scmd->result = (DID_OK << 16);
+			scsi_result_set_good(scmd);
 		}
 		scmd->scsi_done(scmd);
 		return 0;
 	case SYNCHRONIZE_CACHE:
-		scmd->result = (DID_OK << 16);
+		scsi_result_set_good(scmd);
 		scmd->scsi_done(scmd);
 		return 0;
 	case MODE_SENSE:
@@ -1473,7 +1473,7 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 				SAM_STAT_CHECK_CONDITION;
 		} else {
 			myrb_mode_sense(cb, scmd, ldev_info);
-			scmd->result = (DID_OK << 16);
+			scsi_result_set_good(scmd);
 		}
 		scmd->scsi_done(scmd);
 		return 0;
@@ -1503,7 +1503,7 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 		return 0;
 	case REQUEST_SENSE:
 		myrb_request_sense(cb, scmd);
-		scmd->result = (DID_OK << 16);
+		scsi_result_set_good(scmd);
 		return 0;
 	case SEND_DIAGNOSTIC:
 		if (scmd->cmnd[1] != 0x04) {
@@ -1514,7 +1514,7 @@ static int myrb_ldev_queuecommand(struct Scsi_Host *shost,
 				SAM_STAT_CHECK_CONDITION;
 		} else {
 			/* Assume good status */
-			scmd->result = (DID_OK << 16);
+			scsi_result_set_good(scmd);
 		}
 		scmd->scsi_done(scmd);
 		return 0;

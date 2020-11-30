@@ -1579,7 +1579,7 @@ void bnx2fc_process_tm_compl(struct bnx2fc_cmd *io_req,
 	case FC_GOOD:
 		if (io_req->cdb_status == 0) {
 			/* Good IO completion */
-			sc_cmd->result = DID_OK << 16;
+			scsi_result_set_good(sc_cmd);
 		} else {
 			/* Transport status is good, SCSI status not good */
 			sc_cmd->result = (DID_OK << 16) | io_req->cdb_status;
@@ -1974,7 +1974,7 @@ void bnx2fc_process_scsi_cmd_compl(struct bnx2fc_cmd *io_req,
 	case FC_GOOD:
 		if (io_req->cdb_status == 0) {
 			/* Good IO completion */
-			sc_cmd->result = DID_OK << 16;
+			scsi_result_set_good(sc_cmd);
 		} else {
 			/* Transport status is good, SCSI status not good */
 			BNX2FC_IO_DBG(io_req, "scsi_cmpl: cdb_status = %d"
