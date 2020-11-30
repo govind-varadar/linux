@@ -71,6 +71,7 @@ static void csio_scsis_tm_active(struct csio_ioreq *, enum csio_scsi_ev);
 static void csio_scsis_aborting(struct csio_ioreq *, enum csio_scsi_ev);
 static void csio_scsis_closing(struct csio_ioreq *, enum csio_scsi_ev);
 static void csio_scsis_shost_cmpl_await(struct csio_ioreq *, enum csio_scsi_ev);
+static void csio_tm_cbfn(struct csio_hw *hw, struct csio_ioreq *req);
 
 /*
  * csio_scsi_match_io - Match an ioreq with the given SCSI level data.
@@ -166,7 +167,7 @@ csio_scsi_fcp_cmnd(struct csio_ioreq *req, void *addr)
 	struct scsi_cmnd *scmnd = csio_scsi_cmnd(req);
 
 	/* Check for Task Management */
-	if (likely(scmnd->SCp.Message == 0)) {
+	if (likely(req->io_cbfn != csio_tm_cbfn)) {
 		int_to_scsilun(scmnd->device->lun, &fcp_cmnd->fc_lun);
 		fcp_cmnd->fc_tm_flags = 0;
 		fcp_cmnd->fc_cmdref = 0;
@@ -185,7 +186,7 @@ csio_scsi_fcp_cmnd(struct csio_ioreq *req, void *addr)
 	} else {
 		memset(fcp_cmnd, 0, sizeof(*fcp_cmnd));
 		int_to_scsilun(scmnd->device->lun, &fcp_cmnd->fc_lun);
-		fcp_cmnd->fc_tm_flags = (uint8_t)scmnd->SCp.Message;
+		fcp_cmnd->fc_tm_flags = FCP_TMF_LUN_RESET;
 	}
 }
 
@@ -1853,7 +1854,6 @@ csio_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmnd)
 
 	/* Needed during abort */
 	cmnd->host_scribble = (unsigned char *)ioreq;
-	cmnd->SCp.Message = 0;
 
 	/* Kick off SCSI IO SM on the ioreq */
 	spin_lock_irqsave(&hw->lock, flags);
@@ -2125,7 +2125,6 @@ csio_eh_lun_reset_handler(struct scsi_cmnd *cmnd)
 	cmnd->host_scribble	= (unsigned char *)ioreq;
 	cmnd->SCp.Status	= 0;
 
-	cmnd->SCp.Message	= FCP_TMF_LUN_RESET;
 	ioreq->tmo		= CSIO_SCSI_LUNRST_TMO_MS / 1000;
 
 	/*
