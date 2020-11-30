@@ -1057,14 +1057,14 @@ toss_command:
 	 * we don't, the midlayer will ignore the return value,
 	 * which is insane.  We pick up the pieces like this.
 	 */
-	Cmnd->result = DID_BUS_BUSY;
+	set_host_byte(Cmnd, DID_BUS_BUSY);
 	done(Cmnd);
 	return 1;
 }
 
 static DEF_SCSI_QCMD(qlogicpti_queuecommand)
 
-static int qlogicpti_return_status(struct Status_Entry *sts, int id)
+static unsigned char qlogicpti_return_status(struct Status_Entry *sts, int id)
 {
 	int host_status = DID_ERROR;
 
@@ -1125,7 +1125,7 @@ static int qlogicpti_return_status(struct Status_Entry *sts, int id)
 		break;
 	}
 
-	return (sts->scsi_status & STATUS_MASK) | (host_status << 16);
+	return host_status;
 }
 
 static struct scsi_cmnd *qlogicpti_intr_handler(struct qlogicpti *qpti)
@@ -1180,10 +1180,11 @@ static struct scsi_cmnd *qlogicpti_intr_handler(struct qlogicpti *qpti)
 			       SCSI_SENSE_BUFFERSIZE);
 
 		if (sts->hdr.entry_type == ENTRY_STATUS)
-			Cmnd->result =
-			    qlogicpti_return_status(sts, qpti->qpti_id);
+			set_host_byte(Cmnd,
+				      qlogicpti_return_status(sts, qpti->qpti_id));
+			set_status_byte(Cmnd, sts->scsi_status);
 		else
-			Cmnd->result = DID_ERROR << 16;
+			set_host_byte(Cmnd, DID_ERROR);
 
 		if (scsi_bufflen(Cmnd))
 			dma_unmap_sg(&qpti->op->dev,
