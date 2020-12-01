@@ -905,7 +905,7 @@ static void esp_cmd_is_done(struct esp *esp, struct esp_cmd_entry *ent,
 	esp->active_cmd = NULL;
 	esp_unmap_dma(esp, cmd);
 	esp_free_lun_tag(ent, dev->hostdata);
-	cmd->result = 0;
+	set_status_byte(cmd, SAM_STAT_GOOD);
 	set_host_byte(cmd, host_byte);
 	if (host_byte == DID_OK)
 		set_status_byte(cmd, ent->status);
@@ -2033,7 +2033,7 @@ static void esp_reset_cleanup_one(struct esp *esp, struct esp_cmd_entry *ent)
 
 	esp_unmap_dma(esp, cmd);
 	esp_free_lun_tag(ent, cmd->device->hostdata);
-	cmd->result = DID_RESET << 16;
+	set_host_byte(cmd, DID_RESET);
 
 	if (ent->flags & ESP_CMD_FLAG_AUTOSENSE)
 		esp_unmap_sense(esp, ent);
@@ -2060,7 +2060,7 @@ static void esp_reset_cleanup(struct esp *esp)
 		struct scsi_cmnd *cmd = ent->cmd;
 
 		list_del(&ent->list);
-		cmd->result = DID_RESET << 16;
+		set_host_byte(cmd, DID_RESET);
 		cmd->scsi_done(cmd);
 		esp_put_ent(esp, ent);
 	}
@@ -2534,7 +2534,7 @@ static int esp_eh_abort_handler(struct scsi_cmnd *cmd)
 		 */
 		list_del(&ent->list);
 
-		cmd->result = DID_ABORT << 16;
+		set_host_byte(cmd, DID_ABORT);
 		cmd->scsi_done(cmd);
 
 		esp_put_ent(esp, ent);
