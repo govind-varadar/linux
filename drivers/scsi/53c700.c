@@ -599,7 +599,7 @@ NCR_700_unmap(struct NCR_700_Host_Parameters *hostdata, struct scsi_cmnd *SCp,
 
 STATIC inline void
 NCR_700_scsi_done(struct NCR_700_Host_Parameters *hostdata,
-	       struct scsi_cmnd *SCp, int result)
+	       struct scsi_cmnd *SCp, unsigned char host_byte)
 {
 	hostdata->state = NCR_700_HOST_FREE;
 	hostdata->cmd = NULL;
@@ -634,7 +634,7 @@ NCR_700_scsi_done(struct NCR_700_Host_Parameters *hostdata,
 		NCR_700_set_depth(SCp->device, NCR_700_get_depth(SCp->device) - 1);
 
 		SCp->host_scribble = NULL;
-		SCp->result = result;
+		set_host_byte(SCp, host_byte);
 		SCp->scsi_done(SCp);
 	} else {
 		printk(KERN_ERR "53c700: SCSI DONE HAS NULL SCp\n");
@@ -990,7 +990,8 @@ process_script_interrupt(__u32 dsps, __u32 dsp, struct scsi_cmnd *SCp,
 				 * contingent allegiance condition */
 				scmd_printk(KERN_ERR, SCp,
 					"broken device is looping in contingent allegiance: ignoring\n");
-				NCR_700_scsi_done(hostdata, SCp, hostdata->status[0]);
+				set_status_byte(SCp, hostdata->status[0]);
+				NCR_700_scsi_done(hostdata, SCp, DID_OK);
 			} else {
 				char *cmnd =
 					NCR_700_get_sense_cmnd(SCp->device);
@@ -1066,7 +1067,8 @@ process_script_interrupt(__u32 dsps, __u32 dsp, struct scsi_cmnd *SCp,
 			//		hostdata->tag_negotiated &= ~(1<<scmd_id(SCp));
 			//	}
 			//}
-			NCR_700_scsi_done(hostdata, SCp, hostdata->status[0]);
+			set_status_byte(SCp, hostdata->status[0]);
+			NCR_700_scsi_done(hostdata, SCp, DID_OK);
 		}
 	} else if((dsps & 0xfffff0f0) == A_UNEXPECTED_PHASE) {
 		__u8 i = (dsps & 0xf00) >> 8;
@@ -1571,7 +1573,7 @@ NCR_700_intr(int irq, void *dev_id)
 				 * command again otherwise we'll
 				 * deadlock on the
 				 * hostdata->state_lock */
-				SCp->result = DID_RESET << 16;
+				set_host_byte(SCp, DID_RESET);
 				SCp->scsi_done(SCp);
 			}
 			mdelay(25);
@@ -1586,7 +1588,7 @@ NCR_700_intr(int irq, void *dev_id)
 		} else if(sstat0 & SELECTION_TIMEOUT) {
 			DEBUG(("scsi%d: (%d:%d) selection timeout\n",
 			       host->host_no, pun, lun));
-			NCR_700_scsi_done(hostdata, SCp, DID_NO_CONNECT<<16);
+			NCR_700_scsi_done(hostdata, SCp, DID_NO_CONNECT);
 		} else if(sstat0 & PHASE_MISMATCH) {
 			struct NCR_700_command_slot *slot = (SCp == NULL) ? NULL :
 				(struct NCR_700_command_slot *)SCp->host_scribble;
@@ -1661,11 +1663,11 @@ NCR_700_intr(int irq, void *dev_id)
 		} else if(sstat0 & SCSI_GROSS_ERROR) {
 			printk(KERN_ERR "scsi%d: (%d:%d) GROSS ERROR\n",
 			       host->host_no, pun, lun);
-			NCR_700_scsi_done(hostdata, SCp, DID_ERROR<<16);
+			NCR_700_scsi_done(hostdata, SCp, DID_ERROR);
 		} else if(sstat0 & PARITY_ERROR) {
 			printk(KERN_ERR "scsi%d: (%d:%d) PARITY ERROR\n",
 			       host->host_no, pun, lun);
-			NCR_700_scsi_done(hostdata, SCp, DID_ERROR<<16);
+			NCR_700_scsi_done(hostdata, SCp, DID_PARITY);
 		} else if(dstat & SCRIPT_INT_RECEIVED) {
 			DEBUG(("scsi%d: (%d:%d) ====>SCRIPT INTERRUPT<====\n",
 			       host->host_no, pun, lun));
@@ -1675,11 +1677,11 @@ NCR_700_intr(int irq, void *dev_id)
 			       "         Please email James.Bottomley@HansenPartnership.com with the details\n",
 			       host->host_no, pun, lun,
 			       dsp, dsp - hostdata->pScript);
-			NCR_700_scsi_done(hostdata, SCp, DID_ERROR<<16);
+			NCR_700_scsi_done(hostdata, SCp, DID_ERROR);
 		} else if(dstat & (WATCH_DOG_INTERRUPT|ABORTED)) {
 			printk(KERN_ERR "scsi%d: (%d:%d) serious DMA problem, dstat=%02x\n",
 			       host->host_no, pun, lun, dstat);
-			NCR_700_scsi_done(hostdata, SCp, DID_ERROR<<16);
+			NCR_700_scsi_done(hostdata, SCp, DID_ERROR);
 		}
 
 		
