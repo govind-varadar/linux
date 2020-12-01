@@ -2857,8 +2857,9 @@ out:
 	if (err_type == BGS_GUARD_ERR_MASK) {
 		scsi_build_sense_buffer(1, cmd->sense_buffer, ILLEGAL_REQUEST,
 					0x10, 0x1);
-		cmd->result = DRIVER_SENSE << 24 | DID_ABORT << 16 |
-			      SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ABORT);
+		set_driver_byte(cmd, DRIVER_SENSE);
 		phba->bg_guard_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
 				"9069 BLKGRD: LBA %lx grd_tag error %x != %x\n",
@@ -2868,8 +2869,9 @@ out:
 	} else if (err_type == BGS_REFTAG_ERR_MASK) {
 		scsi_build_sense_buffer(1, cmd->sense_buffer, ILLEGAL_REQUEST,
 					0x10, 0x3);
-		cmd->result = DRIVER_SENSE << 24 | DID_ABORT << 16 |
-			      SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ABORT);
+		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_reftag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -2880,8 +2882,9 @@ out:
 	} else if (err_type == BGS_APPTAG_ERR_MASK) {
 		scsi_build_sense_buffer(1, cmd->sense_buffer, ILLEGAL_REQUEST,
 					0x10, 0x2);
-		cmd->result = DRIVER_SENSE << 24 | DID_ABORT << 16 |
-			      SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ABORT);
+		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_apptag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -2942,8 +2945,9 @@ lpfc_sli4_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 
 		scsi_build_sense_buffer(1, cmd->sense_buffer, ILLEGAL_REQUEST,
 					0x10, 0x1);
-		cmd->result = DRIVER_SENSE << 24 | DID_ABORT << 16 |
-			      SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ABORT);
+		set_driver_byte(cmd, DRIVER_SENSE);
 		phba->bg_guard_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
 				"9059 BLKGRD: Guard Tag error in cmd"
@@ -2958,8 +2962,9 @@ lpfc_sli4_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 
 		scsi_build_sense_buffer(1, cmd->sense_buffer, ILLEGAL_REQUEST,
 					0x10, 0x3);
-		cmd->result = DRIVER_SENSE << 24 | DID_ABORT << 16 |
-			      SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ABORT);
+		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_reftag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -2975,8 +2980,9 @@ lpfc_sli4_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 
 		scsi_build_sense_buffer(1, cmd->sense_buffer, ILLEGAL_REQUEST,
 					0x10, 0x2);
-		cmd->result = DRIVER_SENSE << 24 | DID_ABORT << 16 |
-			      SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ABORT);
+		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_apptag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -3060,7 +3066,7 @@ lpfc_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 	uint64_t failing_sector = 0;
 
 	if (lpfc_bgs_get_invalid_prof(bgstat)) {
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
 				"9072 BLKGRD: Invalid BG Profile in cmd"
 				" 0x%x lba 0x%llx blk cnt 0x%x "
@@ -3072,7 +3078,7 @@ lpfc_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 	}
 
 	if (lpfc_bgs_get_uninit_dif_block(bgstat)) {
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
 				"9073 BLKGRD: Invalid BG PDIF Block in cmd"
 				" 0x%x lba 0x%llx blk cnt 0x%x "
@@ -3088,8 +3094,9 @@ lpfc_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 
 		scsi_build_sense_buffer(1, cmd->sense_buffer, ILLEGAL_REQUEST,
 				0x10, 0x1);
-		cmd->result = DRIVER_SENSE << 24 | DID_ABORT << 16 |
-			      SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ABORT);
+		set_driver_byte(cmd, DRIVER_SENSE);
 		phba->bg_guard_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
 				"9055 BLKGRD: Guard Tag error in cmd"
@@ -3104,8 +3111,9 @@ lpfc_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 
 		scsi_build_sense_buffer(1, cmd->sense_buffer, ILLEGAL_REQUEST,
 				0x10, 0x3);
-		cmd->result = DRIVER_SENSE << 24 | DID_ABORT << 16 |
-			      SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ABORT);
+		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_reftag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -3121,8 +3129,9 @@ lpfc_parse_bg_err(struct lpfc_hba *phba, struct lpfc_io_buf *lpfc_cmd,
 
 		scsi_build_sense_buffer(1, cmd->sense_buffer, ILLEGAL_REQUEST,
 				0x10, 0x2);
-		cmd->result = DRIVER_SENSE << 24 | DID_ABORT << 16 |
-			      SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(cmd, DID_ABORT);
+		set_driver_byte(cmd, DRIVER_SENSE);
 
 		phba->bg_apptag_err_cnt++;
 		lpfc_printf_log(phba, KERN_WARNING, LOG_FCP | LOG_BG,
@@ -3727,16 +3736,16 @@ lpfc_send_scsi_error_event(struct lpfc_hba *phba, struct lpfc_vport *vport,
 		return;
 
 	/* If there is queuefull or busy condition send a scsi event */
-	if ((cmnd->result == SAM_STAT_TASK_SET_FULL) ||
-		(cmnd->result == SAM_STAT_BUSY)) {
+	if ((get_status_byte(cmnd) == SAM_STAT_TASK_SET_FULL) ||
+	    (get_status_byte(cmnd) == SAM_STAT_BUSY)) {
 		fast_path_evt = lpfc_alloc_fast_evt(phba);
 		if (!fast_path_evt)
 			return;
 		fast_path_evt->un.scsi_evt.event_type =
 			FC_REG_SCSI_EVENT;
 		fast_path_evt->un.scsi_evt.subcategory =
-		(cmnd->result == SAM_STAT_TASK_SET_FULL) ?
-		LPFC_EVENT_QFULL : LPFC_EVENT_DEVBSY;
+		    (get_status_byte(cmnd) == SAM_STAT_TASK_SET_FULL) ?
+		    LPFC_EVENT_QFULL : LPFC_EVENT_DEVBSY;
 		fast_path_evt->un.scsi_evt.lun = cmnd->device->lun;
 		memcpy(&fast_path_evt->un.scsi_evt.wwpn,
 			&pnode->nlp_portname, sizeof(struct lpfc_name));
@@ -4001,7 +4010,8 @@ lpfc_handle_fcp_err(struct lpfc_vport *vport, struct lpfc_io_buf *lpfc_cmd,
 	}
 
  out:
-	cmnd->result = host_status << 16 | scsi_status;
+	set_status_byte(cmnd, scsi_status);
+	set_host_byte(cmnd, host_status);
 	lpfc_send_scsi_error_event(vport->phba, vport, lpfc_cmd, fcpi_parm);
 }
 
@@ -4153,7 +4163,7 @@ lpfc_fcp_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
 		break;
 	case IOSTAT_NPORT_BSY:
 	case IOSTAT_FABRIC_BSY:
-		cmd->result = DID_TRANSPORT_DISRUPTED << 16;
+		set_host_byte(cmd, DID_TRANSPORT_DISRUPTED);
 		fast_path_evt = lpfc_alloc_fast_evt(phba);
 		if (!fast_path_evt)
 			break;
@@ -4215,14 +4225,14 @@ lpfc_fcp_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
 		    lpfc_cmd->result == IOERR_ELXSEC_CRYPTO_ERROR ||
 		    lpfc_cmd->result ==
 		    IOERR_ELXSEC_CRYPTO_COMPARE_ERROR) {
-			cmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(cmd, DID_NO_CONNECT);
 			break;
 		}
 		if (lpfc_cmd->result == IOERR_INVALID_RPI ||
 		    lpfc_cmd->result == IOERR_NO_RESOURCES ||
 		    lpfc_cmd->result == IOERR_ABORT_REQUESTED ||
 		    lpfc_cmd->result == IOERR_SLER_CMD_RCV_FAILURE) {
-			cmd->result = DID_REQUEUE << 16;
+			set_host_byte(cmd, DID_REQUEUE);
 			break;
 		}
 		if ((lpfc_cmd->result == IOERR_RX_DMA_FAILED ||
@@ -4261,7 +4271,7 @@ lpfc_fcp_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
 	default:
 		if (lpfc_cmd->status >= IOSTAT_CNT)
 			lpfc_cmd->status = IOSTAT_DEFAULT;
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		lpfc_printf_vlog(vport, KERN_INFO, LOG_NVME_IOERR,
 				 "9037 FCP Completion Error: xri %x "
 				 "status x%x result x%x [x%x] "
@@ -4278,8 +4288,8 @@ lpfc_fcp_io_cmd_wqe_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pwqeIn,
 				 "9039 Iodone <%d/%llu> cmd x%p, error "
 				 "x%x SNS x%x x%x Data: x%x x%x\n",
 				 cmd->device->id, cmd->device->lun, cmd,
-				 cmd->result, *lp, *(lp + 3), cmd->retries,
-				 scsi_get_resid(cmd));
+				 scsi_get_result(cmd), *lp, *(lp + 3),
+				 cmd->retries, scsi_get_resid(cmd));
 	}
 
 	lpfc_update_stats(vport, lpfc_cmd);
@@ -4456,7 +4466,7 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 			break;
 		case IOSTAT_NPORT_BSY:
 		case IOSTAT_FABRIC_BSY:
-			cmd->result = DID_TRANSPORT_DISRUPTED << 16;
+			set_host_byte(cmd, DID_TRANSPORT_DISRUPTED);
 			fast_path_evt = lpfc_alloc_fast_evt(phba);
 			if (!fast_path_evt)
 				break;
@@ -4490,14 +4500,14 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 			    lpfc_cmd->result == IOERR_ELXSEC_CRYPTO_ERROR ||
 			    lpfc_cmd->result ==
 					IOERR_ELXSEC_CRYPTO_COMPARE_ERROR) {
-				cmd->result = DID_NO_CONNECT << 16;
+				set_host_byte(cmd, DID_NO_CONNECT);
 				break;
 			}
 			if (lpfc_cmd->result == IOERR_INVALID_RPI ||
 			    lpfc_cmd->result == IOERR_NO_RESOURCES ||
 			    lpfc_cmd->result == IOERR_ABORT_REQUESTED ||
 			    lpfc_cmd->result == IOERR_SLER_CMD_RCV_FAILURE) {
-				cmd->result = DID_REQUEUE << 16;
+				set_host_byte(cmd, DID_REQUEUE);
 				break;
 			}
 			if ((lpfc_cmd->result == IOERR_RX_DMA_FAILED ||
@@ -4531,13 +4541,14 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 			}
 			fallthrough;
 		default:
-			cmd->result = DID_ERROR << 16;
+			set_host_byte(cmd, DID_ERROR);
 			break;
 		}
 
-		if (!pnode || (pnode->nlp_state != NLP_STE_MAPPED_NODE))
-			cmd->result = DID_TRANSPORT_DISRUPTED << 16 |
-				      SAM_STAT_BUSY;
+		if (!pnode || (pnode->nlp_state != NLP_STE_MAPPED_NODE)) {
+			set_status_byte(cmd, SAM_STAT_BUSY);
+			set_host_byte(cmd, DID_TRANSPORT_DISRUPTED);
+		}
 	} else
 		scsi_result_set_good(cmd);
 
@@ -4548,8 +4559,8 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 				 "0710 Iodone <%d/%llu> cmd x%px, error "
 				 "x%x SNS x%x x%x Data: x%x x%x\n",
 				 cmd->device->id, cmd->device->lun, cmd,
-				 cmd->result, *lp, *(lp + 3), cmd->retries,
-				 scsi_get_resid(cmd));
+				 scsi_get_result(cmd), *lp, *(lp + 3),
+				 cmd->retries, scsi_get_resid(cmd));
 	}
 
 	lpfc_update_stats(vport, lpfc_cmd);
@@ -5273,7 +5284,7 @@ lpfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 
 	if (unlikely(err)) {
 		if (err == 2) {
-			cmnd->result = DID_ERROR << 16;
+			set_host_byte(cmnd, DID_ERROR);
 			goto out_fail_command_release_buf;
 		}
 		goto out_host_busy_free_buf;
