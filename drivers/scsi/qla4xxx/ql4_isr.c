@@ -145,7 +145,7 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 
 	ddb_entry = srb->ddb;
 	if (ddb_entry == NULL) {
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		goto status_entry_exit;
 	}
 
@@ -157,7 +157,7 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 	case SCS_COMPLETE:
 
 		if (sts_entry->iscsiFlags & ISCSI_FLAG_RESIDUAL_OVER) {
-			cmd->result = DID_ERROR << 16;
+			set_host_byte(cmd, DID_ERROR);
 			break;
 		}
 
@@ -166,7 +166,7 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 			if (!scsi_status && ((scsi_bufflen(cmd) - residual) <
 				cmd->underflow)) {
 
-				cmd->result = DID_ERROR << 16;
+				set_host_byte(cmd, DID_ERROR);
 
 				DEBUG2(printk("scsi%ld:%d:%d:%llu: %s: "
 					"Mid-layer Data underrun0, "
@@ -180,7 +180,8 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 			}
 		}
 
-		cmd->result = DID_OK << 16 | scsi_status;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, scsi_status);
 
 		if (scsi_status != SAM_STAT_CHECK_CONDITION)
 			break;
@@ -192,7 +193,7 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 	case SCS_INCOMPLETE:
 		/* Always set the status to DID_ERROR, since
 		 * all conditions result in that status anyway */
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		break;
 
 	case SCS_RESET_OCCURRED:
@@ -200,7 +201,7 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 			      ha->host_no, cmd->device->channel,
 			      cmd->device->id, cmd->device->lun, __func__));
 
-		cmd->result = DID_RESET << 16;
+		set_host_byte(cmd, DID_RESET);
 		break;
 
 	case SCS_ABORTED:
@@ -208,7 +209,7 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 			      ha->host_no, cmd->device->channel,
 			      cmd->device->id, cmd->device->lun, __func__));
 
-		cmd->result = DID_RESET << 16;
+		set_host_byte(cmd, DID_RESET);
 		break;
 
 	case SCS_TIMEOUT:
@@ -216,7 +217,7 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 			      ha->host_no, cmd->device->channel,
 			      cmd->device->id, cmd->device->lun));
 
-		cmd->result = DID_TRANSPORT_DISRUPTED << 16;
+		set_host_byte(cmd, DID_TRANSPORT_DISRUPTED);
 
 		/*
 		 * Mark device missing so that we won't continue to send
@@ -236,7 +237,7 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 				      cmd->device->channel, cmd->device->id,
 				      cmd->device->lun, __func__));
 
-			cmd->result = DID_ERROR << 16;
+			set_host_byte(cmd, DID_ERROR);
 			break;
 		}
 
@@ -266,7 +267,7 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 						   scsi_bufflen(cmd),
 						   residual));
 
-				cmd->result = DID_ERROR << 16;
+				set_host_byte(cmd, DID_ERROR);
 				break;
 			}
 
@@ -298,11 +299,13 @@ static void qla4xxx_status_entry(struct scsi_qla_host *ha,
 					  residual,
 					  scsi_bufflen(cmd)));
 
-			cmd->result = DID_ERROR << 16 | scsi_status;
+			set_status_byte(cmd, scsi_status);
+			set_host_byte(cmd, DID_ERROR);
 			goto check_scsi_status;
 		}
 
-		cmd->result = DID_OK << 16 | scsi_status;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, scsi_status);
 
 check_scsi_status:
 		if (scsi_status == SAM_STAT_CHECK_CONDITION)
@@ -324,14 +327,15 @@ check_scsi_status:
 		if (iscsi_is_session_online(ddb_entry->sess))
 			qla4xxx_mark_device_missing(ddb_entry->sess);
 
-		cmd->result = DID_TRANSPORT_DISRUPTED << 16;
+		set_host_byte(cmd, DID_TRANSPORT_DISRUPTED);
 		break;
 
 	case SCS_QUEUE_FULL:
 		/*
 		 * SCSI Mid-Layer handles device queue full
 		 */
-		cmd->result = DID_OK << 16 | sts_entry->scsiStatus;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, sts_entry->scsiStatus);
 		DEBUG2(printk("scsi%ld:%d:%llu: %s: QUEUE FULL detected "
 			      "compl=%02x, scsi=%02x, state=%02x, iFlags=%02x,"
 			      " iResp=%02x\n", ha->host_no, cmd->device->id,
@@ -343,7 +347,7 @@ check_scsi_status:
 		break;
 
 	default:
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		break;
 	}
 
