@@ -614,7 +614,7 @@ static int aac_probe_container_callback2(struct scsi_cmnd * scsicmd)
 	if ((fsa_dev_ptr[scmd_id(scsicmd)].valid & 1))
 		return aac_scsi_cmd(scsicmd);
 
-	scsicmd->result = DID_NO_CONNECT << 16;
+	set_host_byte(scsicmd, DID_NO_CONNECT);
 	scsicmd->scsi_done(scsicmd);
 	return 0;
 }
@@ -1191,7 +1191,8 @@ static int aac_bounds_32(struct aac_dev * dev, struct scsi_cmnd * cmd, u64 lba)
 	if (lba & 0xffffffff00000000LL) {
 		int cid = scmd_id(cmd);
 		dprintk((KERN_DEBUG "aacraid: Illegal lba\n"));
-		cmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_sense(&dev->fsa_dev[cid].sense_data,
 		  HARDWARE_ERROR, SENCODE_INTERNAL_TARGET_FAILURE,
 		  ASENCODE_INTERNAL_TARGET_FAILURE, 0, 0);
@@ -2367,7 +2368,8 @@ static void io_callback(void *context, struct fib * fibptr)
 		dev->fsa_dev[cid].sense_data.sense_key = NO_SENSE;
 		break;
 	case ST_NOT_READY:
-		scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_host_byte(scsicmd, DID_OK);
+		set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 		set_sense(&dev->fsa_dev[cid].sense_data, NOT_READY,
 		  SENCODE_BECOMING_READY, ASENCODE_BECOMING_READY, 0, 0);
 		memcpy(scsicmd->sense_buffer, &dev->fsa_dev[cid].sense_data,
@@ -2375,7 +2377,8 @@ static void io_callback(void *context, struct fib * fibptr)
 			     SCSI_SENSE_BUFFERSIZE));
 		break;
 	case ST_MEDERR:
-		scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_host_byte(scsicmd, DID_OK);
+		set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 		set_sense(&dev->fsa_dev[cid].sense_data, MEDIUM_ERROR,
 		  SENCODE_UNRECOVERED_READ_ERROR, ASENCODE_NO_SENSE, 0, 0);
 		memcpy(scsicmd->sense_buffer, &dev->fsa_dev[cid].sense_data,
@@ -2387,7 +2390,8 @@ static void io_callback(void *context, struct fib * fibptr)
 		printk(KERN_WARNING "io_callback: io failed, status = %d\n",
 		  le32_to_cpu(readreply->status));
 #endif
-		scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_host_byte(scsicmd, DID_OK);
+		set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 		set_sense(&dev->fsa_dev[cid].sense_data,
 		  HARDWARE_ERROR, SENCODE_INTERNAL_TARGET_FAILURE,
 		  ASENCODE_INTERNAL_TARGET_FAILURE, 0, 0);
@@ -2462,7 +2466,8 @@ static int aac_read(struct scsi_cmnd * scsicmd)
 	if ((lba + count) > (dev->fsa_dev[scmd_id(scsicmd)].size)) {
 		cid = scmd_id(scsicmd);
 		dprintk((KERN_DEBUG "aacraid: Illegal lba\n"));
-		scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_host_byte(scsicmd, DID_OK);
+		set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 		set_sense(&dev->fsa_dev[cid].sense_data,
 			  ILLEGAL_REQUEST, SENCODE_LBA_OUT_OF_RANGE,
 			  ASENCODE_INTERNAL_TARGET_FAILURE, 0, 0);
@@ -2494,7 +2499,8 @@ static int aac_read(struct scsi_cmnd * scsicmd)
 	/*
 	 *	For some reason, the Fib didn't queue, return QUEUE_FULL
 	 */
-	scsicmd->result = DID_OK << 16 | SAM_STAT_TASK_SET_FULL;
+	set_host_byte(scsicmd, DID_OK);
+	set_status_byte(scsicmd, SAM_STAT_TASK_SET_FULL);
 	scsicmd->scsi_done(scsicmd);
 	aac_fib_complete(cmd_fibcontext);
 	aac_fib_free(cmd_fibcontext);
@@ -2553,7 +2559,8 @@ static int aac_write(struct scsi_cmnd * scsicmd)
 	if ((lba + count) > (dev->fsa_dev[scmd_id(scsicmd)].size)) {
 		cid = scmd_id(scsicmd);
 		dprintk((KERN_DEBUG "aacraid: Illegal lba\n"));
-		scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_host_byte(scsicmd, DID_OK);
+		set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 		set_sense(&dev->fsa_dev[cid].sense_data,
 			  ILLEGAL_REQUEST, SENCODE_LBA_OUT_OF_RANGE,
 			  ASENCODE_INTERNAL_TARGET_FAILURE, 0, 0);
@@ -2585,7 +2592,8 @@ static int aac_write(struct scsi_cmnd * scsicmd)
 	/*
 	 *	For some reason, the Fib didn't queue, return QUEUE_FULL
 	 */
-	scsicmd->result = DID_OK << 16 | SAM_STAT_TASK_SET_FULL;
+	set_host_byte(scsicmd, DID_OK);
+	set_status_byte(scsicmd, SAM_STAT_TASK_SET_FULL);
 	scsicmd->scsi_done(scsicmd);
 
 	aac_fib_complete(cmd_fibcontext);
@@ -2607,16 +2615,15 @@ static void synchronize_callback(void *context, struct fib *fibptr)
 
 
 	synchronizereply = fib_data(fibptr);
-	if (le32_to_cpu(synchronizereply->status) == CT_OK)
-		scsi_result_set_good(cmd);
-	else {
+	scsi_result_set_good(cmd);
+	if (le32_to_cpu(synchronizereply->status) != CT_OK) {
 		struct scsi_device *sdev = cmd->device;
 		struct aac_dev *dev = fibptr->dev;
 		u32 cid = sdev_id(sdev);
 		printk(KERN_WARNING
 		     "synchronize_callback: synchronize failed, status = %d\n",
 		     le32_to_cpu(synchronizereply->status));
-		cmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		set_sense(&dev->fsa_dev[cid].sense_data,
 		  HARDWARE_ERROR, SENCODE_INTERNAL_TARGET_FAILURE,
 		  ASENCODE_INTERNAL_TARGET_FAILURE, 0, 0);
@@ -2782,7 +2789,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		if (scmd_channel(scsicmd) == CONTAINER_CHANNEL) {
 			if((cid >= dev->maximum_num_containers) ||
 					(scsicmd->device->lun != 0)) {
-				scsicmd->result = DID_NO_CONNECT << 16;
+				set_host_byte(scsicmd, DID_NO_CONNECT);
 				goto scsi_done_ret;
 			}
 
@@ -2826,7 +2833,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 					return -1;
 				return aac_send_srb_fib(scsicmd);
 			} else {
-				scsicmd->result = DID_NO_CONNECT << 16;
+				set_host_byte(scsicmd, DID_NO_CONNECT);
 				goto scsi_done_ret;
 			}
 		}
@@ -2838,7 +2845,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		(scsicmd->cmnd[0] != TEST_UNIT_READY))
 	{
 		dprintk((KERN_WARNING "Only INQUIRY & TUR command supported for controller, rcvd = 0x%x.\n", scsicmd->cmnd[0]));
-		scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_host_byte(scsicmd, DID_OK);
+		set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 		set_sense(&dev->fsa_dev[cid].sense_data,
 		  ILLEGAL_REQUEST, SENCODE_INVALID_COMMAND,
 		  ASENCODE_INVALID_COMMAND, 0, 0);
@@ -2919,7 +2927,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				scsi_result_set_good(scsicmd);
 			} else {
 				/* vpd page not implemented */
-				scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+				set_host_byte(scsicmd, DID_OK);
+				set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 				set_sense(&dev->fsa_dev[cid].sense_data,
 				  ILLEGAL_REQUEST, SENCODE_INVALID_CDB_FIELD,
 				  ASENCODE_NO_SENSE, 7, 2);
@@ -3202,7 +3211,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 	 */
 	case TEST_UNIT_READY:
 		if (fsa_dev_ptr[cid].sense_data.sense_key == NOT_READY) {
-			scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+			set_host_byte(scsicmd, DID_OK);
+			set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 			set_sense(&dev->fsa_dev[cid].sense_data,
 				  NOT_READY, SENCODE_BECOMING_READY,
 				  ASENCODE_BECOMING_READY, 0, 0);
@@ -3231,7 +3241,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 	 */
 		dprintk((KERN_WARNING "Unhandled SCSI Command: 0x%x.\n",
 				scsicmd->cmnd[0]));
-		scsicmd->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 		set_sense(&dev->fsa_dev[cid].sense_data,
 			  ILLEGAL_REQUEST, SENCODE_INVALID_COMMAND,
 			  ASENCODE_INVALID_COMMAND, 0, 0);
@@ -3412,7 +3422,8 @@ static void aac_srb_callback(void *context, struct fib * fibptr)
 				le32_to_cpu(srbreply->status));
 		len = min_t(u32, le32_to_cpu(srbreply->sense_data_size),
 			    SCSI_SENSE_BUFFERSIZE);
-		scsicmd->result = DID_ERROR << 16 | SAM_STAT_CHECK_CONDITION;
+		set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
+		set_host_byte(scsicmd, DID_ERROR);
 		memcpy(scsicmd->sense_buffer,
 				srbreply->sense_data, len);
 	}
@@ -3441,52 +3452,52 @@ static void aac_srb_callback(void *context, struct fib * fibptr)
 				pr_warn("aacraid: SCSI CMD underflow\n");
 			else
 				pr_warn("aacraid: SCSI CMD Data Overrun\n");
-			scsicmd->result = DID_ERROR << 16;
+			set_host_byte(scsicmd, DID_ERROR);
 			break;
 		case INQUIRY:
-			scsi_result_set_good(scsicmd);
+			set_host_byte(scsicmd, DID_OK);
 			break;
 		default:
-			scsi_result_set_good(scsicmd);
+			set_host_byte(scsicmd, DID_OK);
 			break;
 		}
 		break;
 	case SRB_STATUS_ABORTED:
-		scsicmd->result = DID_ABORT << 16;
+		set_host_byte(scsicmd, DID_ABORT);
 		break;
 	case SRB_STATUS_ABORT_FAILED:
 		/*
 		 * Not sure about this one - but assuming the
 		 * hba was trying to abort for some reason
 		 */
-		scsicmd->result = DID_ERROR << 16;
+		set_host_byte(scsicmd, DID_ERROR);
 		break;
 	case SRB_STATUS_PARITY_ERROR:
-		scsicmd->result = DID_PARITY << 16;
+		set_host_byte(scsicmd, DID_PARITY);
 		break;
 	case SRB_STATUS_NO_DEVICE:
 	case SRB_STATUS_INVALID_PATH_ID:
 	case SRB_STATUS_INVALID_TARGET_ID:
 	case SRB_STATUS_INVALID_LUN:
 	case SRB_STATUS_SELECTION_TIMEOUT:
-		scsicmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scsicmd, DID_NO_CONNECT);
 		break;
 
 	case SRB_STATUS_COMMAND_TIMEOUT:
 	case SRB_STATUS_TIMEOUT:
-		scsicmd->result = DID_TIME_OUT << 16;
+		set_host_byte(scsicmd, DID_TIME_OUT);
 		break;
 
 	case SRB_STATUS_BUSY:
-		scsicmd->result = DID_BUS_BUSY << 16;
+		set_host_byte(scsicmd, DID_BUS_BUSY);
 		break;
 
 	case SRB_STATUS_BUS_RESET:
-		scsicmd->result = DID_RESET << 16;
+		set_host_byte(scsicmd, DID_RESET);
 		break;
 
 	case SRB_STATUS_MESSAGE_REJECTED:
-		scsicmd->result = DID_ERROR << 16;
+		set_host_byte(scsicmd, DID_ERROR);
 		break;
 	case SRB_STATUS_REQUEST_FLUSHED:
 	case SRB_STATUS_ERROR:
@@ -3522,20 +3533,23 @@ static void aac_srb_callback(void *context, struct fib * fibptr)
 			|| (scsicmd->cmnd[0] == ATA_16)) {
 
 			if (scsicmd->cmnd[2] & (0x01 << 5)) {
-				scsi_result_set_good(scsicmd);
+				set_host_byte(scsicmd, DID_OK);
+			break;
 			} else {
-				scsicmd->result = DID_ERROR << 16;
+				set_host_byte(scsicmd, DID_ERROR);
+			break;
 			}
 		} else {
-			scsicmd->result = DID_ERROR << 16;
+			set_host_byte(scsicmd, DID_ERROR);
+			break;
 		}
-		break;
 	}
 	if (le32_to_cpu(srbreply->scsi_status)
 			== SAM_STAT_CHECK_CONDITION) {
 		int len;
 
-		scsicmd->result |= SAM_STAT_CHECK_CONDITION;
+		set_host_byte(scsicmd, DID_OK);
+		set_status_byte(scsicmd, SAM_STAT_CHECK_CONDITION);
 		len = min_t(u32, le32_to_cpu(srbreply->sense_data_size),
 			    SCSI_SENSE_BUFFERSIZE);
 #ifdef AAC_DETAILED_STATUS_INFO
@@ -3549,7 +3563,7 @@ static void aac_srb_callback(void *context, struct fib * fibptr)
 	/*
 	 * OR in the scsi status (already shifted up a bit)
 	 */
-	scsicmd->result |= le32_to_cpu(srbreply->scsi_status);
+	set_status_byte(scsicmd, le32_to_cpu(srbreply->scsi_status));
 
 	aac_fib_complete(fibptr);
 	scsicmd->scsi_done(scsicmd);
@@ -3559,13 +3573,13 @@ static void hba_resp_task_complete(struct aac_dev *dev,
 					struct scsi_cmnd *scsicmd,
 					struct aac_hba_resp *err) {
 
-	scsicmd->result = err->status;
+	set_status_byte(scsicmd, err->status);
 	/* set residual count */
 	scsi_set_resid(scsicmd, le32_to_cpu(err->residual_count));
 
 	switch (err->status) {
 	case SAM_STAT_GOOD:
-		scsicmd->result |= DID_OK << 16;
+		scsi_result_set_good(scsicmd);
 		break;
 	case SAM_STAT_CHECK_CONDITION:
 	{
@@ -3576,19 +3590,20 @@ static void hba_resp_task_complete(struct aac_dev *dev,
 		if (len)
 			memcpy(scsicmd->sense_buffer,
 				err->sense_response_buf, len);
-		scsicmd->result |= DID_OK << 16;
+		set_host_byte(scsicmd, DID_OK);
 		break;
 	}
 	case SAM_STAT_BUSY:
-		scsicmd->result |= DID_BUS_BUSY << 16;
+		set_host_byte(scsicmd, DID_BUS_BUSY);
 		break;
 	case SAM_STAT_TASK_ABORTED:
-		scsicmd->result |= DID_ABORT << 16;
+		set_host_byte(scsicmd, DID_ABORT);
+		set_msg_byte(scsicmd, ABORT);
 		break;
 	case SAM_STAT_RESERVATION_CONFLICT:
 	case SAM_STAT_TASK_SET_FULL:
 	default:
-		scsicmd->result |= DID_ERROR << 16;
+		set_host_byte(scsicmd, DID_ERROR);
 		break;
 	}
 }
@@ -3608,26 +3623,27 @@ static void hba_resp_task_failure(struct aac_dev *dev,
 			dev->hba_map[bus][cid].devtype = AAC_DEVTYPE_ARC_RAW;
 			dev->hba_map[bus][cid].rmw_nexus = 0xffffffff;
 		}
-		scsicmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scsicmd, DID_NO_CONNECT);
 		break;
 	}
 	case HBA_RESP_STAT_IO_ERROR:
 	case HBA_RESP_STAT_NO_PATH_TO_DEVICE:
-		scsicmd->result = DID_OK << 16 | SAM_STAT_BUSY;
+		set_host_byte(scsicmd, DID_OK);
+		set_status_byte(scsicmd, SAM_STAT_BUSY);
 		break;
 	case HBA_RESP_STAT_IO_ABORTED:
-		scsicmd->result = DID_ABORT << 16;
+		set_host_byte(scsicmd, DID_ABORT);
 		break;
 	case HBA_RESP_STAT_INVALID_DEVICE:
-		scsicmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scsicmd, DID_NO_CONNECT);
 		break;
 	case HBA_RESP_STAT_UNDERRUN:
 		/* UNDERRUN is OK */
-		scsi_result_set_good(scsicmd);
+		set_host_byte(scsicmd, DID_OK);
 		break;
 	case HBA_RESP_STAT_OVERRUN:
 	default:
-		scsicmd->result = DID_ERROR << 16;
+		set_host_byte(scsicmd, DID_ERROR);
 		break;
 	}
 }
@@ -3672,17 +3688,18 @@ void aac_hba_callback(void *context, struct fib *fibptr)
 		hba_resp_task_failure(dev, scsicmd, err);
 		break;
 	case HBA_RESP_SVCRES_TMF_REJECTED:
-		scsicmd->result = DID_ERROR << 16;
+		set_msg_byte(scsicmd, MESSAGE_REJECT);
+		set_host_byte(scsicmd, DID_ERROR);
 		break;
 	case HBA_RESP_SVCRES_TMF_LUN_INVALID:
-		scsicmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scsicmd, DID_NO_CONNECT);
 		break;
 	case HBA_RESP_SVCRES_TMF_COMPLETE:
 	case HBA_RESP_SVCRES_TMF_SUCCEEDED:
-		scsi_result_set_good(scsicmd);
+		set_host_byte(scsicmd, DID_OK);
 		break;
 	default:
-		scsicmd->result = DID_ERROR << 16;
+		set_host_byte(scsicmd, DID_ERROR);
 		break;
 	}
 
@@ -3711,7 +3728,7 @@ static int aac_send_srb_fib(struct scsi_cmnd* scsicmd)
 	dev = (struct aac_dev *)scsicmd->device->host->hostdata;
 	if (scmd_id(scsicmd) >= dev->maximum_num_physicals ||
 			scsicmd->device->lun > 7) {
-		scsicmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scsicmd, DID_NO_CONNECT);
 		scsicmd->scsi_done(scsicmd);
 		return 0;
 	}
@@ -3752,7 +3769,7 @@ static int aac_send_hba_fib(struct scsi_cmnd *scsicmd)
 	dev = shost_priv(scsicmd->device->host);
 	if (scmd_id(scsicmd) >= dev->maximum_num_physicals ||
 			scsicmd->device->lun > AAC_MAX_LUN - 1) {
-		scsicmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scsicmd, DID_NO_CONNECT);
 		scsicmd->scsi_done(scsicmd);
 		return 0;
 	}
