@@ -1302,25 +1302,24 @@ static void mvumi_complete_cmd(struct mvumi_hba *mhba, struct mvumi_cmd *cmd,
 	struct scsi_cmnd *scmd = cmd->scmd;
 
 	cmd->scmd->SCp.ptr = NULL;
-	scmd->result = ob_frame->req_status;
+	set_host_byte(scmd, DID_OK);
+	set_status_byte(scmd, ob_frame->req_status);
 
 	switch (ob_frame->req_status) {
 	case SAM_STAT_GOOD:
-		scmd->result |= DID_OK << 16;
 		break;
 	case SAM_STAT_BUSY:
-		scmd->result |= DID_BUS_BUSY << 16;
+		set_host_byte(scmd, DID_BUS_BUSY);
 		break;
 	case SAM_STAT_CHECK_CONDITION:
-		scmd->result |= (DID_OK << 16);
 		if (ob_frame->rsp_flag & CL_RSP_FLAG_SENSEDATA) {
 			memcpy(cmd->scmd->sense_buffer, ob_frame->payload,
 				sizeof(struct mvumi_sense_data));
-			scmd->result |=  (DRIVER_SENSE << 24);
+			set_driver_byte(scmd, DRIVER_SENSE);
 		}
 		break;
 	default:
-		scmd->result |= (DRIVER_INVALID << 24) | (DID_ABORT << 16);
+		set_host_byte(scmd, DID_ERROR);
 		break;
 	}
 
@@ -2067,8 +2066,8 @@ static unsigned char mvumi_build_frame(struct mvumi_hba *mhba,
 	return 0;
 
 error:
-	scmd->result = (DID_OK << 16) | (DRIVER_SENSE << 24) |
-		SAM_STAT_CHECK_CONDITION;
+	set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
+	set_driver_byte(scmd, DRIVER_SENSE);
 	scsi_build_sense_buffer(0, scmd->sense_buffer, ILLEGAL_REQUEST, 0x24,
 									0);
 	return -1;
@@ -2130,7 +2129,7 @@ static enum blk_eh_timer_return mvumi_timed_out(struct scsi_cmnd *scmd)
 	else
 		atomic_dec(&mhba->fw_outstanding);
 
-	scmd->result = (DID_ABORT << 16);
+	set_host_byte(scmd, DID_ABORT);
 	scmd->SCp.ptr = NULL;
 	if (scsi_bufflen(scmd)) {
 		dma_unmap_sg(&mhba->pdev->dev, scsi_sglist(scmd),
