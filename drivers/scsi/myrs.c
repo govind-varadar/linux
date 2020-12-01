@@ -1595,7 +1595,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 	int nsge;
 
 	if (!scmd->device->hostdata) {
-		scmd->result = (DID_NO_CONNECT << 16);
+		set_host_byte(scmd, DID_NO_CONNECT);
 		scmd->scsi_done(scmd);
 		return 0;
 	}
@@ -1604,7 +1604,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 	case REPORT_LUNS:
 		scsi_build_sense_buffer(0, scmd->sense_buffer, ILLEGAL_REQUEST,
 					0x20, 0x0);
-		scmd->result = (DRIVER_SENSE << 24) | SAM_STAT_CHECK_CONDITION;
+		set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
 		scmd->scsi_done(scmd);
 		return 0;
 	case MODE_SENSE:
@@ -1616,8 +1616,9 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 				/* Illegal request, invalid field in CDB */
 				scsi_build_sense_buffer(0, scmd->sense_buffer,
 					ILLEGAL_REQUEST, 0x24, 0);
-				scmd->result = (DRIVER_SENSE << 24) |
-					SAM_STAT_CHECK_CONDITION;
+				set_status_byte(scmd,
+						SAM_STAT_CHECK_CONDITION);
+				set_driver_byte(scmd, DRIVER_SENSE);
 			} else {
 				myrs_mode_sense(cs, scmd, ldev_info);
 				scsi_result_set_good(scmd);
@@ -1761,7 +1762,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 		scsi_for_each_sg(scmd, sgl, nsge, i) {
 			if (WARN_ON(!hw_sgl)) {
 				scsi_dma_unmap(scmd);
-				scmd->result = (DID_ERROR << 16);
+				set_host_byte(scmd, DID_ERROR);
 				scmd->scsi_done(scmd);
 				return 0;
 			}
@@ -2085,11 +2086,28 @@ static void myrs_handle_scsi(struct myrs_hba *cs, struct myrs_cmdblk *cmd_blk,
 	}
 	if (cmd_blk->residual)
 		scsi_set_resid(scmd, cmd_blk->residual);
-	if (status == MYRS_STATUS_DEVICE_NON_RESPONSIVE ||
-	    status == MYRS_STATUS_DEVICE_NON_RESPONSIVE2)
-		scmd->result = (DID_BAD_TARGET << 16);
-	else
-		scmd->result = (DID_OK << 16) | status;
+	scsi_result_set_good(scmd);
+	switch (status) {
+	case MYRS_STATUS_SUCCESS:
+		break;
+	case MYRS_STATUS_FAILED:
+		set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
+		break;
+	case MYRS_STATUS_DEVICE_BUSY:
+		set_status_byte(scmd, SAM_STAT_BUSY);
+		break;
+	case MYRS_STATUS_DEVICE_NON_RESPONSIVE:
+		/* fallthrough */
+	case MYRS_STATUS_DEVICE_NON_RESPONSIVE2:
+		set_host_byte(scmd, DID_BAD_TARGET);
+		break;
+	case MYRS_STATUS_RESERVATION_CONFLICT:
+		set_status_byte(scmd, SAM_STAT_RESERVATION_CONFLICT);
+		break;
+	default:
+		set_host_byte(scmd, DID_ERROR);
+		break;
+	}
 	scmd->scsi_done(scmd);
 }
 
