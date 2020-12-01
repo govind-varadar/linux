@@ -792,7 +792,7 @@ static void purge_requests(struct ibmvscsi_host_data *hostdata, int error_code)
 
 		spin_unlock_irqrestore(hostdata->host->host_lock, flags);
 		if (evt->cmnd) {
-			evt->cmnd->result = (error_code << 16);
+			set_host_byte(evt->cmnd, error_code);
 			unmap_cmd_data(&evt->iu.srp.cmd, evt,
 				       evt->hostdata->dev);
 			if (evt->cmnd_done)
@@ -959,7 +959,7 @@ static int ibmvscsi_send_srp_event(struct srp_event_struct *evt_struct,
 	unmap_cmd_data(&evt_struct->iu.srp.cmd, evt_struct, hostdata->dev);
 
 	if (evt_struct->cmnd != NULL) {
-		evt_struct->cmnd->result = DID_ERROR << 16;
+		set_host_byte(evt_struct->cmnd, DID_ERROR);
 		evt_struct->cmnd_done(evt_struct->cmnd);
 	} else if (evt_struct->done)
 		evt_struct->done(evt_struct);
@@ -985,10 +985,10 @@ static void handle_cmd_rsp(struct srp_event_struct *evt_struct)
 			dev_warn(evt_struct->hostdata->dev,
 				 "bad SRP RSP type %#02x\n", rsp->opcode);
 	}
-	
+
 	if (cmnd) {
-		cmnd->result |= rsp->status;
-		if (((cmnd->result >> 1) & 0x1f) == CHECK_CONDITION)
+		set_status_byte(cmnd, rsp->status);
+		if (rsp->status == SAM_STAT_CHECK_CONDITION)
 			memcpy(cmnd->sense_buffer,
 			       rsp->data,
 			       be32_to_cpu(rsp->sense_data_len));
@@ -1592,7 +1592,7 @@ static int ibmvscsi_eh_abort_handler(struct scsi_cmnd *cmd)
 	sdev_printk(KERN_INFO, cmd->device, "successfully aborted task tag 0x%llx\n",
 		    tsk_mgmt->task_tag);
 
-	cmd->result = (DID_ABORT << 16);
+	set_host_byte(cmd, DID_ABORT);
 	list_del(&found_evt->list);
 	unmap_cmd_data(&found_evt->iu.srp.cmd, found_evt,
 		       found_evt->hostdata->dev);
@@ -1697,7 +1697,7 @@ static int ibmvscsi_eh_device_reset_handler(struct scsi_cmnd *cmd)
 	list_for_each_entry_safe(tmp_evt, pos, &hostdata->sent, list) {
 		if ((tmp_evt->cmnd) && (tmp_evt->cmnd->device == cmd->device)) {
 			if (tmp_evt->cmnd)
-				tmp_evt->cmnd->result = (DID_RESET << 16);
+				set_host_byte(tmp_evt->cmnd, DID_RESET);
 			list_del(&tmp_evt->list);
 			unmap_cmd_data(&tmp_evt->iu.srp.cmd, tmp_evt,
 				       tmp_evt->hostdata->dev);
@@ -1826,7 +1826,7 @@ static void ibmvscsi_handle_crq(struct viosrp_crq *crq,
 	del_timer(&evt_struct->timer);
 
 	if ((crq->status != VIOSRP_OK && crq->status != VIOSRP_OK2) && evt_struct->cmnd)
-		evt_struct->cmnd->result = DID_ERROR << 16;
+		set_host_byte(evt_struct->cmnd, DID_ERROR);
 	if (evt_struct->done)
 		evt_struct->done(evt_struct);
 	else
