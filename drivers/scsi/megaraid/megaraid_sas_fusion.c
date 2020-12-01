@@ -2035,17 +2035,20 @@ map_cmd_status(struct fusion_context *fusion,
 	switch (status) {
 
 	case MFI_STAT_OK:
-		scmd->result = DID_OK << 16;
+		set_host_byte(scmd, DID_OK);
+		set_status_byte(scmd, SAM_STAT_GOOD);
 		break;
 
 	case MFI_STAT_SCSI_IO_FAILED:
 	case MFI_STAT_LD_INIT_IN_PROGRESS:
-		scmd->result = (DID_ERROR << 16) | ext_status;
+		set_status_byte(scmd, ext_status);
+		set_host_byte(scmd, DID_ERROR);
 		break;
 
 	case MFI_STAT_SCSI_DONE_WITH_ERROR:
 
-		scmd->result = (DID_OK << 16) | ext_status;
+		set_status_byte(scmd, ext_status);
+		set_host_byte(scmd, DID_OK);
 		if (ext_status == SAM_STAT_CHECK_CONDITION) {
 			memset(scmd->sense_buffer, 0,
 			       SCSI_SENSE_BUFFERSIZE);
@@ -2072,13 +2075,13 @@ map_cmd_status(struct fusion_context *fusion,
 
 	case MFI_STAT_LD_OFFLINE:
 	case MFI_STAT_DEVICE_NOT_FOUND:
-		scmd->result = DID_BAD_TARGET << 16;
+		set_host_byte(scmd, DID_BAD_TARGET);
 		break;
 	case MFI_STAT_CONFIG_SEQ_MISMATCH:
-		scmd->result = DID_IMM_RETRY << 16;
+		set_host_byte(scmd, DID_IMM_RETRY);
 		break;
 	default:
-		scmd->result = DID_ERROR << 16;
+		set_host_byte(scmd, DID_ERROR);
 		break;
 	}
 }
@@ -4698,7 +4701,7 @@ int megasas_task_abort_fusion(struct scsi_cmnd *scmd)
 	if (!mr_device_priv_data) {
 		sdev_printk(KERN_INFO, scmd->device, "device been deleted! "
 			"scmd(%p)\n", scmd);
-		scmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scmd, DID_NO_CONNECT);
 		ret = SUCCESS;
 		goto out;
 	}
@@ -4779,7 +4782,7 @@ int megasas_reset_target_fusion(struct scsi_cmnd *scmd)
 	if (!mr_device_priv_data) {
 		sdev_printk(KERN_INFO, scmd->device,
 			    "device been deleted! scmd: (0x%p)\n", scmd);
-		scmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scmd, DID_NO_CONNECT);
 		ret = SUCCESS;
 		goto out;
 	}
@@ -4840,14 +4843,14 @@ int megasas_check_mpio_paths(struct megasas_instance *instance,
 	struct scsi_cmnd *scmd)
 {
 	struct megasas_instance *peer_instance = NULL;
-	int retval = (DID_REQUEUE << 16);
+	int retval = DID_REQUEUE;
 
 	if (instance->peerIsPresent) {
 		peer_instance = megasas_get_peer_instance(instance);
 		if ((peer_instance) &&
 			(atomic_read(&peer_instance->adprecovery) ==
 			MEGASAS_HBA_OPERATIONAL))
-			retval = (DID_NO_CONNECT << 16);
+			retval = DID_NO_CONNECT;
 	}
 	return retval;
 }
@@ -4958,9 +4961,9 @@ int megasas_reset_fusion(struct Scsi_Host *shost, int reason)
 					MPI2_FUNCTION_SCSI_IO_REQUEST)
 					fpio_count++;
 
-				scmd_local->result =
-					megasas_check_mpio_paths(instance,
-							scmd_local);
+				set_host_byte(scmd_local,
+					      megasas_check_mpio_paths(instance,
+								       scmd_local));
 				if (instance->ldio_threshold &&
 					megasas_cmd_type(scmd_local) == READ_WRITE_LDIO)
 					atomic_dec(&instance->ldio_outstanding);
