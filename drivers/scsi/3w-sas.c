@@ -859,7 +859,8 @@ static int twl_fill_sense(TW_Device_Extension *tw_dev, int i, int request_id, in
 
 	if (copy_sense) {
 		memcpy(tw_dev->srb[request_id]->sense_buffer, header->sense_data, TW_SENSE_DATA_LENGTH);
-		tw_dev->srb[request_id]->result = (full_command_packet->command.newcommand.status << 1);
+		set_status_byte(tw_dev->srb[request_id],
+				full_command_packet->command.newcommand.status << 1);
 		goto out;
 	}
 out:
@@ -1339,7 +1340,7 @@ static int twl_reset_device_extension(TW_Device_Extension *tw_dev, int ioctl_res
 			struct scsi_cmnd *cmd = tw_dev->srb[i];
 
 			if (cmd) {
-				cmd->result = (DID_RESET << 16);
+				set_host_byte(cmd, DID_RESET);
 				scsi_dma_unmap(cmd);
 				cmd->scsi_done(cmd);
 			}
@@ -1449,7 +1450,7 @@ static int twl_scsi_queue_lck(struct scsi_cmnd *SCpnt, void (*done)(struct scsi_
 	if (retval) {
 		tw_dev->state[request_id] = TW_S_COMPLETED;
 		twl_free_request_id(tw_dev, request_id);
-		SCpnt->result = (DID_ERROR << 16);
+		set_host_byte(SCpnt, DID_ERROR);
 		done(SCpnt);
 		retval = 0;
 	}
