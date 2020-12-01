@@ -1040,7 +1040,8 @@ static void inia100_scb_handler(struct orc_host *host, struct orc_scb *scb)
 		memcpy((unsigned char *) &cmd->sense_buffer[0],
 		   (unsigned char *) &escb->sglist[0], SENSE_SIZE);
 	}
-	cmd->result = scb->tastat | (scb->hastat << 16);
+	set_status_byte(cmd, scb->tastat);
+	set_host_byte(cmd, scb->hastat);
 	scsi_dma_unmap(cmd);
 	cmd->scsi_done(cmd);	/* Notify system DONE           */
 	orc_release_scb(host, scb);	/* Release SCB for current channel */
