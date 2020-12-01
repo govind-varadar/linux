@@ -198,10 +198,10 @@ static void bnx2fc_scsi_done(struct bnx2fc_cmd *io_req, int err_code)
 		return;
 	}
 
-	sc_cmd->result = err_code << 16;
+	set_host_byte(sc_cmd, err_code);
 
 	BNX2FC_IO_DBG(io_req, "sc=%p, result=0x%x, retries=%d, allowed=%d\n",
-		sc_cmd, host_byte(sc_cmd->result), sc_cmd->retries,
+		sc_cmd, get_host_byte(sc_cmd), sc_cmd->retries,
 		sc_cmd->allowed);
 	scsi_set_resid(sc_cmd, scsi_bufflen(sc_cmd));
 	sc_cmd->SCp.ptr = NULL;
@@ -1579,10 +1579,11 @@ void bnx2fc_process_tm_compl(struct bnx2fc_cmd *io_req,
 	case FC_GOOD:
 		if (io_req->cdb_status == 0) {
 			/* Good IO completion */
-			sc_cmd->result = DID_OK << 16;
+			set_host_byte(sc_cmd, DID_OK);
 		} else {
 			/* Transport status is good, SCSI status not good */
-			sc_cmd->result = (DID_OK << 16) | io_req->cdb_status;
+			set_status_byte(sc_cmd, io_req->cdb_status);
+			set_host_byte(sc_cmd, DID_OK);
 		}
 		if (io_req->fcp_resid)
 			scsi_set_resid(sc_cmd, io_req->fcp_resid);
@@ -1851,7 +1852,7 @@ int bnx2fc_queuecommand(struct Scsi_Host *host,
 
 	rval = fc_remote_port_chkready(rport);
 	if (rval) {
-		sc_cmd->result = rval << 16;
+		set_host_byte(sc_cmd, rval);
 		sc_cmd->scsi_done(sc_cmd);
 		return 0;
 	}
@@ -1974,13 +1975,14 @@ void bnx2fc_process_scsi_cmd_compl(struct bnx2fc_cmd *io_req,
 	case FC_GOOD:
 		if (io_req->cdb_status == 0) {
 			/* Good IO completion */
-			sc_cmd->result = DID_OK << 16;
+			set_host_byte(sc_cmd, DID_OK);
 		} else {
 			/* Transport status is good, SCSI status not good */
 			BNX2FC_IO_DBG(io_req, "scsi_cmpl: cdb_status = %d"
 				 " fcp_resid = 0x%x\n",
 				io_req->cdb_status, io_req->fcp_resid);
-			sc_cmd->result = (DID_OK << 16) | io_req->cdb_status;
+			set_status_byte(sc_cmd, io_req->cdb_status);
+			set_host_byte(sc_cmd, DID_OK);
 
 			if (io_req->cdb_status == SAM_STAT_TASK_SET_FULL ||
 			    io_req->cdb_status == SAM_STAT_BUSY) {
