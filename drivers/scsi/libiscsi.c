@@ -598,7 +598,7 @@ static void fail_scsi_task(struct iscsi_task *task, int err)
 	else
 		state = ISCSI_TASK_ABRT_TMF;
 
-	sc->result = err << 16;
+	set_host_byte(sc, err);
 	scsi_set_resid(sc, scsi_bufflen(sc));
 
 	/* regular RX path uses back_lock */
@@ -798,7 +798,8 @@ static void iscsi_scsi_cmd_rsp(struct iscsi_conn *conn, struct iscsi_hdr *hdr,
 	iscsi_update_cmdsn(session, (struct iscsi_nopin*)rhdr);
 	conn->exp_statsn = be32_to_cpu(rhdr->statsn) + 1;
 
-	sc->result = (DID_OK << 16) | rhdr->cmd_status;
+	set_host_byte(sc, DID_OK);
+	set_status_byte(sc, rhdr->cmd_status);
 
 	if (task->protected) {
 		sector_t sector;
@@ -813,8 +814,8 @@ static void iscsi_scsi_cmd_rsp(struct iscsi_conn *conn, struct iscsi_hdr *hdr,
 
 		ascq = session->tt->check_protection(task, &sector);
 		if (ascq) {
-			sc->result = DRIVER_SENSE << 24 |
-				     SAM_STAT_CHECK_CONDITION;
+			set_status_byte(sc, SAM_STAT_CHECK_CONDITION);
+			set_driver_byte(sc, DRIVER_SENSE);
 			scsi_build_sense_buffer(1, sc->sense_buffer,
 						ILLEGAL_REQUEST, 0x10, ascq);
 			scsi_set_sense_information(sc->sense_buffer,
@@ -825,7 +826,7 @@ static void iscsi_scsi_cmd_rsp(struct iscsi_conn *conn, struct iscsi_hdr *hdr,
 	}
 
 	if (rhdr->response != ISCSI_STATUS_CMD_COMPLETED) {
-		sc->result = DID_ERROR << 16;
+		set_host_byte(sc, DID_ERROR);
 		goto out;
 	}
 
@@ -837,7 +838,7 @@ invalid_datalen:
 			iscsi_conn_printk(KERN_ERR,  conn,
 					 "Got CHECK_CONDITION but invalid data "
 					 "buffer size of %d\n", datalen);
-			sc->result = DID_BAD_TARGET << 16;
+			set_host_byte(sc, DID_BAD_TARGET);
 			goto out;
 		}
 
@@ -854,7 +855,8 @@ invalid_datalen:
 
 	if (rhdr->flags & (ISCSI_FLAG_CMD_BIDI_UNDERFLOW |
 			   ISCSI_FLAG_CMD_BIDI_OVERFLOW)) {
-		sc->result = (DID_BAD_TARGET << 16) | rhdr->cmd_status;
+		set_status_byte(sc, rhdr->cmd_status);
+		set_host_byte(sc, DID_BAD_TARGET);
 	}
 
 	if (rhdr->flags & (ISCSI_FLAG_CMD_UNDERFLOW |
@@ -866,12 +868,14 @@ invalid_datalen:
 		     res_count <= scsi_bufflen(sc)))
 			/* write side for bidi or uni-io set_resid */
 			scsi_set_resid(sc, res_count);
-		else
-			sc->result = (DID_BAD_TARGET << 16) | rhdr->cmd_status;
+		else {
+			set_status_byte(sc, rhdr->cmd_status);
+			set_host_byte(sc, DID_BAD_TARGET);
+		}
 	}
 out:
 	ISCSI_DBG_SESSION(session, "cmd rsp done [sc %p res %d itt 0x%x]\n",
-			  sc, sc->result, task->itt);
+			  sc, scsi_get_result(sc), task->itt);
 	conn->scsirsp_pdus_cnt++;
 	iscsi_complete_task(task, ISCSI_TASK_COMPLETED);
 }
@@ -896,23 +900,26 @@ iscsi_data_in_rsp(struct iscsi_conn *conn, struct iscsi_hdr *hdr,
 		return;
 
 	iscsi_update_cmdsn(conn->session, (struct iscsi_nopin *)hdr);
-	sc->result = (DID_OK << 16) | rhdr->cmd_status;
+	set_host_byte(sc, DID_OK);
+	set_status_byte(sc, rhdr->cmd_status);
 	conn->exp_statsn = be32_to_cpu(rhdr->statsn) + 1;
 	if (rhdr->flags & (ISCSI_FLAG_DATA_UNDERFLOW |
-	                   ISCSI_FLAG_DATA_OVERFLOW)) {
+			   ISCSI_FLAG_DATA_OVERFLOW)) {
 		int res_count = be32_to_cpu(rhdr->residual_count);
 
 		if (res_count > 0 &&
 		    (rhdr->flags & ISCSI_FLAG_CMD_OVERFLOW ||
 		     res_count <= sc->sdb.length))
 			scsi_set_resid(sc, res_count);
-		else
-			sc->result = (DID_BAD_TARGET << 16) | rhdr->cmd_status;
+		else {
+			set_status_byte(sc, rhdr->cmd_status);
+			set_host_byte(sc, DID_BAD_TARGET);
+		}
 	}
 
 	ISCSI_DBG_SESSION(conn->session, "data in with status done "
 			  "[sc %p res %d itt 0x%x]\n",
-			  sc, sc->result, task->itt);
+			  sc, scsi_get_result(sc), task->itt);
 	conn->scsirsp_pdus_cnt++;
 	iscsi_complete_task(task, ISCSI_TASK_COMPLETED);
 }
@@ -1672,29 +1679,29 @@ int iscsi_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *sc)
 			 */
 			if (unlikely(system_state != SYSTEM_RUNNING)) {
 				reason = FAILURE_SESSION_FAILED;
-				sc->result = DID_NO_CONNECT << 16;
+				set_host_byte(sc, DID_NO_CONNECT);
 				break;
 			}
 			fallthrough;
 		case ISCSI_STATE_IN_RECOVERY:
 			reason = FAILURE_SESSION_IN_RECOVERY;
-			sc->result = DID_IMM_RETRY << 16;
+			set_host_byte(sc, DID_IMM_RETRY);
 			break;
 		case ISCSI_STATE_LOGGING_OUT:
 			reason = FAILURE_SESSION_LOGGING_OUT;
-			sc->result = DID_IMM_RETRY << 16;
+			set_host_byte(sc, DID_IMM_RETRY);
 			break;
 		case ISCSI_STATE_RECOVERY_FAILED:
 			reason = FAILURE_SESSION_RECOVERY_TIMEOUT;
-			sc->result = DID_TRANSPORT_FAILFAST << 16;
+			set_host_byte(sc, DID_TRANSPORT_FAILFAST);
 			break;
 		case ISCSI_STATE_TERMINATE:
 			reason = FAILURE_SESSION_TERMINATE;
-			sc->result = DID_NO_CONNECT << 16;
+			set_host_byte(sc, DID_NO_CONNECT);
 			break;
 		default:
 			reason = FAILURE_SESSION_FREED;
-			sc->result = DID_NO_CONNECT << 16;
+			set_host_byte(sc, DID_NO_CONNECT);
 		}
 		goto fault;
 	}
@@ -1702,13 +1709,13 @@ int iscsi_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *sc)
 	conn = session->leadconn;
 	if (!conn) {
 		reason = FAILURE_SESSION_FREED;
-		sc->result = DID_NO_CONNECT << 16;
+		set_host_byte(sc, DID_NO_CONNECT);
 		goto fault;
 	}
 
 	if (test_bit(ISCSI_SUSPEND_BIT, &conn->suspend_tx)) {
 		reason = FAILURE_SESSION_IN_RECOVERY;
-		sc->result = DID_REQUEUE << 16;
+		set_host_byte(sc, DID_REQUEUE);
 		goto fault;
 	}
 
@@ -1730,7 +1737,7 @@ int iscsi_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *sc)
 				reason = FAILURE_OOM;
 				goto prepd_reject;
 			} else {
-				sc->result = DID_ABORT << 16;
+				set_host_byte(sc, DID_ABORT);
 				goto prepd_fault;
 			}
 		}
@@ -1966,7 +1973,7 @@ enum blk_eh_timer_return iscsi_eh_cmd_timed_out(struct scsi_cmnd *sc)
 		 * upper layer to deal with the result.
 		 */
 		if (unlikely(system_state != SYSTEM_RUNNING)) {
-			sc->result = DID_NO_CONNECT << 16;
+			set_host_byte(sc, DID_NO_CONNECT);
 			ISCSI_DBG_EH(session, "sc on shutdown, handled\n");
 			rc = BLK_EH_DONE;
 			goto done;
