@@ -824,10 +824,10 @@ int esas2r_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 	unsigned bufflen;
 
 	/* Assume success, if it fails we will fix the result later. */
-	cmd->result = DID_OK << 16;
+	set_host_byte(cmd, DID_OK);
 
 	if (unlikely(test_bit(AF_DEGRADED_MODE, &a->flags))) {
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		cmd->scsi_done(cmd);
 		return 0;
 	}
@@ -984,7 +984,7 @@ int esas2r_eh_abort(struct scsi_cmnd *cmd)
 	esas2r_log(ESAS2R_LOG_INFO, "eh_abort (%p)", cmd);
 
 	if (test_bit(AF_DEGRADED_MODE, &a->flags)) {
-		cmd->result = DID_ABORT << 16;
+		set_host_byte(cmd, DID_ABORT);
 
 		scsi_set_resid(cmd, 0);
 
@@ -1050,7 +1050,7 @@ check_active_queue:
 	 * freed it, or we didn't find it at all.  Either way, success!
 	 */
 
-	cmd->result = DID_ABORT << 16;
+	set_host_byte(cmd, DID_ABORT);
 
 	scsi_set_resid(cmd, 0);
 
@@ -1523,9 +1523,10 @@ void esas2r_complete_request_cb(struct esas2r_adapter *a,
 			     rq->func_rsp.scsi_rsp.scsi_stat,
 			     rq->cmd);
 
-		rq->cmd->result =
-			((esas2r_req_status_to_error(rq->req_stat) << 16)
-			 | (rq->func_rsp.scsi_rsp.scsi_stat & STATUS_MASK));
+		set_host_byte(rq->cmd,
+			      esas2r_req_status_to_error(rq->req_stat));
+		set_status_byte(rq->cmd,
+				rq->func_rsp.scsi_rsp.scsi_stat & STATUS_MASK);
 
 		if (rq->req_stat == RS_UNDERRUN)
 			scsi_set_resid(rq->cmd,
