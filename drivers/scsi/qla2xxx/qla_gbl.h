@@ -179,7 +179,7 @@ extern int ql2xfulldump_on_mpifail;
 extern int ql2xenforce_iocb_limit;
 
 extern int qla2x00_loop_reset(scsi_qla_host_t *);
-extern void qla2x00_abort_all_cmds(scsi_qla_host_t *, int);
+extern void qla2x00_abort_all_cmds(scsi_qla_host_t *, unsigned char);
 extern int qla2x00_post_aen_work(struct scsi_qla_host *, enum
     fc_host_event_code, u32);
 extern int qla2x00_post_idc_ack_work(struct scsi_qla_host *, uint16_t *);

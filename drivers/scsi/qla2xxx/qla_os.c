@@ -1706,7 +1706,7 @@ qla2x00_loop_reset(scsi_qla_host_t *vha)
  * The caller must ensure that no completion interrupts will happen
  * while this function is in progress.
  */
-static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, const int res,
+static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, unsigned char res,
 			      unsigned long *flags)
 	__releases(qp->qp_lock_ptr)
 	__acquires(qp->qp_lock_ptr)
@@ -1722,7 +1722,7 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, const int res,
 	lockdep_assert_held(qp->qp_lock_ptr);
 
 	if (qla2x00_chip_is_down(vha)) {
-		sp->done(sp, res);
+		sp->done(sp, res << 16);
 		return;
 	}
 
@@ -1731,7 +1731,7 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, const int res,
 	     !test_bit(ABORT_ISP_ACTIVE, &vha->dpc_flags) &&
 	     !qla2x00_isp_reg_stat(ha))) {
 		if (sp->comp) {
-			sp->done(sp, res);
+			sp->done(sp, res << 16);
 			return;
 		}
 
@@ -1760,9 +1760,9 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, const int res,
 
 		spin_lock_irqsave(qp->qp_lock_ptr, *flags);
 		if (ret_cmd && blk_mq_request_started(cmd->request))
-			sp->done(sp, res);
+			sp->done(sp, res << 16);
 	} else {
-		sp->done(sp, res);
+		sp->done(sp, res << 16);
 	}
 }
 
@@ -1771,7 +1771,7 @@ static void qla2x00_abort_srb(struct qla_qpair *qp, srb_t *sp, const int res,
  * while this function is in progress.
  */
 static void
-__qla2x00_abort_all_cmds(struct qla_qpair *qp, int res)
+__qla2x00_abort_all_cmds(struct qla_qpair *qp, unsigned char res)
 {
 	int cnt;
 	unsigned long flags;
@@ -1821,7 +1821,7 @@ __qla2x00_abort_all_cmds(struct qla_qpair *qp, int res)
  * while this function is in progress.
  */
 void
-qla2x00_abort_all_cmds(scsi_qla_host_t *vha, int res)
+qla2x00_abort_all_cmds(scsi_qla_host_t *vha, unsigned char res)
 {
 	int que;
 	struct qla_hw_data *ha = vha->hw;
@@ -3847,7 +3847,7 @@ qla2x00_free_device(scsi_qla_host_t *vha)
 {
 	struct qla_hw_data *ha = vha->hw;
 
-	qla2x00_abort_all_cmds(vha, DID_NO_CONNECT << 16);
+	qla2x00_abort_all_cmds(vha, DID_NO_CONNECT);
 
 	/* Disable timer */
 	if (vha->timer_active)
@@ -6593,7 +6593,7 @@ qla2x00_disable_board_on_pci_error(struct work_struct *work)
 
 	qla2x00_delete_all_vps(ha, base_vha);
 
-	qla2x00_abort_all_cmds(base_vha, DID_NO_CONNECT << 16);
+	qla2x00_abort_all_cmds(base_vha, DID_NO_CONNECT);
 
 	qla2x00_dfs_remove(base_vha);
 
@@ -7006,7 +7006,7 @@ end_loop:
 	ha->dpc_active = 0;
 
 	/* Cleanup any residual CTX SRBs. */
-	qla2x00_abort_all_cmds(base_vha, DID_NO_CONNECT << 16);
+	qla2x00_abort_all_cmds(base_vha, DID_NO_CONNECT);
 
 	return 0;
 }
@@ -7469,7 +7469,7 @@ qla2xxx_pci_error_detected(struct pci_dev *pdev, pci_channel_state_t state)
 		return PCI_ERS_RESULT_NEED_RESET;
 	case pci_channel_io_perm_failure:
 		ha->flags.pci_channel_io_perm_failure = 1;
-		qla2x00_abort_all_cmds(vha, DID_NO_CONNECT << 16);
+		qla2x00_abort_all_cmds(vha, DID_NO_CONNECT);
 		if (ql2xmqsupport || ql2xnvmeenable) {
 			set_bit(QPAIR_ONLINE_CHECK_NEEDED, &vha->dpc_flags);
 			qla2xxx_wake_dpc(vha);
@@ -7621,7 +7621,7 @@ qla_pci_reset_prepare(struct pci_dev *pdev)
 
 	set_bit(ABORT_ISP_ACTIVE, &base_vha->dpc_flags);
 	qla2x00_abort_isp_cleanup(base_vha);
-	qla2x00_abort_all_cmds(base_vha, DID_RESET << 16);
+	qla2x00_abort_all_cmds(base_vha, DID_RESET);
 }
 
 static void

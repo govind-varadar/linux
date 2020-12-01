@@ -2672,7 +2672,7 @@ qla2x00_dev_loss_tmo_callbk(struct fc_rport *rport)
 		return;
 
 	if (unlikely(pci_channel_offline(fcport->vha->hw->pdev))) {
-		qla2x00_abort_all_cmds(fcport->vha, DID_NO_CONNECT << 16);
+		qla2x00_abort_all_cmds(fcport->vha, DID_NO_CONNECT);
 		return;
 	}
 }
@@ -2692,7 +2692,7 @@ qla2x00_terminate_rport_io(struct fc_rport *rport)
 		return;
 
 	if (unlikely(pci_channel_offline(fcport->vha->hw->pdev))) {
-		qla2x00_abort_all_cmds(fcport->vha, DID_NO_CONNECT << 16);
+		qla2x00_abort_all_cmds(fcport->vha, DID_NO_CONNECT);
 		return;
 	}
 	/*

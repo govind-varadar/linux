@@ -1386,10 +1386,10 @@ qlafx00_abort_isp_cleanup(scsi_qla_host_t *vha, bool critemp)
 
 	if (!ha->flags.eeh_busy) {
 		if (critemp) {
-			qla2x00_abort_all_cmds(vha, DID_NO_CONNECT << 16);
+			qla2x00_abort_all_cmds(vha, DID_NO_CONNECT);
 		} else {
 			/* Requeue all commands in outstanding command list. */
-			qla2x00_abort_all_cmds(vha, DID_RESET << 16);
+			qla2x00_abort_all_cmds(vha, DID_RESET);
 		}
 	}
 

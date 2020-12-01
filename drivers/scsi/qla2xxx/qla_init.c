@@ -6843,7 +6843,7 @@ qla2x00_abort_isp_cleanup(scsi_qla_host_t *vha)
 		}
 
 		/* Requeue all commands in outstanding command list. */
-		qla2x00_abort_all_cmds(vha, DID_RESET << 16);
+		qla2x00_abort_all_cmds(vha, DID_RESET);
 	}
 	/* memory barrier */
 	wmb();
