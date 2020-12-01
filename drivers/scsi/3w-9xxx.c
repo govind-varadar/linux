@@ -1018,7 +1018,8 @@ static int twa_fill_sense(TW_Device_Extension *tw_dev, int request_id, int copy_
 
 	if (copy_sense) {
 		memcpy(tw_dev->srb[request_id]->sense_buffer, full_command_packet->header.sense_data, TW_SENSE_DATA_LENGTH);
-		tw_dev->srb[request_id]->result = (full_command_packet->command.newcommand.status << 1);
+		set_status_byte(tw_dev->srb[request_id],
+				full_command_packet->command.newcommand.status << 1);
 		retval = TW_ISR_DONT_RESULT;
 	}
 	return retval;
@@ -1332,11 +1333,11 @@ static irqreturn_t twa_interrupt(int irq, void *dev_instance)
 
 				twa_scsiop_execute_scsi_complete(tw_dev, request_id);
 				/* If no error command was a success */
-				cmd->result = (DID_OK << 16);
+				set_host_byte(cmd, DID_OK);
 
 				/* If error, command failed */
 				if (error == TW_ISR_DONT_RESULT)
-					cmd->result |= SAM_STAT_CHECK_CONDITION;
+					set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
 				/* Report residual bytes for single sgl */
 				if ((scsi_sg_count(cmd) <= 1) && (full_command_packet->command.newcommand.status == 0)) {
@@ -1588,7 +1589,7 @@ static int twa_reset_device_extension(TW_Device_Extension *tw_dev)
 			if (tw_dev->srb[i]) {
 				struct scsi_cmnd *cmd = tw_dev->srb[i];
 
-				cmd->result = (DID_RESET << 16);
+				set_host_byte(cmd, DID_RESET);
 				if (twa_command_mapped(cmd))
 					scsi_dma_unmap(cmd);
 				cmd->scsi_done(cmd);
@@ -1752,7 +1753,7 @@ static int twa_scsi_queue_lck(struct scsi_cmnd *SCpnt, void (*done)(struct scsi_
 
 	/* Check if this FW supports luns */
 	if ((SCpnt->device->lun != 0) && (tw_dev->tw_compat_info.working_srl < TW_FW_SRL_LUNS_SUPPORTED)) {
-		SCpnt->result = (DID_BAD_TARGET << 16);
+		set_host_byte(SCpnt, DID_BAD_TARGET);
 		done(SCpnt);
 		retval = 0;
 		goto out;
@@ -1775,7 +1776,7 @@ static int twa_scsi_queue_lck(struct scsi_cmnd *SCpnt, void (*done)(struct scsi_
 		twa_free_request_id(tw_dev, request_id);
 		break;
 	case 1:
-		SCpnt->result = (DID_ERROR << 16);
+		set_host_byte(SCpnt, DID_ERROR);
 		if (twa_command_mapped(SCpnt))
 			scsi_dma_unmap(SCpnt);
 		done(SCpnt);
