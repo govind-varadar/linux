@@ -256,7 +256,7 @@ static void ql_icmd(struct scsi_cmnd *cmd)
  *	Process scsi command - usually after interrupt 
  */
 
-static unsigned int ql_pcmd(struct scsi_cmnd *cmd)
+static void ql_pcmd(struct scsi_cmnd *cmd)
 {
 	unsigned int i, j;
 	unsigned long k;
@@ -274,13 +274,15 @@ static unsigned int ql_pcmd(struct scsi_cmnd *cmd)
 	j = inb(qbase + 6);
 	i = inb(qbase + 5);
 	if (i == 0x20) {
-		return (DID_NO_CONNECT << 16);
+		set_host_byte(cmd, DID_NO_CONNECT);
+		return;
 	}
 	i |= inb(qbase + 5);	/* the 0x10 bit can be set after the 0x08 */
 	if (i != 0x18) {
 		printk(KERN_ERR "Ql:Bad Interrupt status:%02x\n", i);
 		ql_zap(priv);
-		return (DID_BAD_INTR << 16);
+		set_host_byte(cmd, DID_BAD_INTR);
+		return;
 	}
 	j &= 7;			/* j = inb( qbase + 7 ) >> 5; */
 
@@ -293,7 +295,8 @@ static unsigned int ql_pcmd(struct scsi_cmnd *cmd)
 		printk(KERN_ERR "Ql:Bad sequence for command %d, int %02X, cmdleft = %d\n",
 		     j, i, inb(qbase + 7) & 0x1f);
 		ql_zap(priv);
-		return (DID_ERROR << 16);
+		set_host_byte(cmd, DID_ERROR);
+		return;
 	}
 	result = DID_OK;
 	if (inb(qbase + 7) & 0x1f)	/* if some bytes in fifo */
@@ -314,8 +317,11 @@ static unsigned int ql_pcmd(struct scsi_cmnd *cmd)
 		scsi_for_each_sg(cmd, sg, scsi_sg_count(cmd), i) {
 			if (priv->qabort) {
 				REG0;
-				return ((priv->qabort == 1 ?
-					 DID_ABORT : DID_RESET) << 16);
+				if (priv->qabort == 1)
+					set_host_byte(cmd, DID_ABORT);
+				else
+					set_host_byte(cmd, DID_RESET);
+				return;
 			}
 			buf = sg_virt(sg);
 			if (ql_pdma(priv, phase, buf, sg->length))
@@ -325,17 +331,19 @@ static unsigned int ql_pcmd(struct scsi_cmnd *cmd)
 		rtrc(2)
 		/*
 		 *	Wait for irq (split into second state of irq handler
-		 *	if this can take time) 
+		 *	if this can take time)
 		 */
-		if ((k = ql_wai(priv)))
-			return (k << 16);
+		if ((k = ql_wai(priv))) {
+			set_host_byte(cmd, k);
+			return;
+		}
 		k = inb(qbase + 5);	/* should be 0x10, bus service */
 	}
 
 	/*
-	 *	Enter Status (and Message In) Phase 
+	 *	Enter Status (and Message In) Phase
 	 */
-	 
+
 	k = jiffies + WATCHDOG;
 
 	while (time_before(jiffies, k) && !priv->qabort &&
@@ -344,19 +352,26 @@ static unsigned int ql_pcmd(struct scsi_cmnd *cmd)
 
 	if (time_after_eq(jiffies, k)) {
 		ql_zap(priv);
-		return (DID_TIME_OUT << 16);
+		set_host_byte(cmd, DID_TIME_OUT);
+		return;
 	}
 
 	/* FIXME: timeout ?? */
 	while (inb(qbase + 5))
 		cpu_relax();	/* clear pending ints */
 
-	if (priv->qabort)
-		return ((priv->qabort == 1 ? DID_ABORT : DID_RESET) << 16);
-
+	if (priv->qabort) {
+		if (priv->qabort == 1)
+			set_host_byte(cmd, DID_ABORT);
+		else
+			set_host_byte(cmd, DID_RESET);
+		return;
+	}
 	outb(0x11, qbase + 3);	/* get status and message */
-	if ((k = ql_wai(priv)))
-		return (k << 16);
+	if ((k = ql_wai(priv))) {
+		set_host_byte(cmd, k);
+		return;
+	}
 	i = inb(qbase + 5);	/* get chip irq stat */
 	j = inb(qbase + 7) & 0x1f;	/* and bytes rec'd */
 	status = inb(qbase + 2);
@@ -368,17 +383,19 @@ static unsigned int ql_pcmd(struct scsi_cmnd *cmd)
 	 */
 	if (!((i == 8 && j == 2) || (i == 0x10 && j == 1))) {
 		printk(KERN_ERR "Ql:Error during status phase, int=%02X, %d bytes recd\n", i, j);
-		result = DID_ERROR;
+		set_host_byte(cmd, DID_ERROR);
 	}
 	outb(0x12, qbase + 3);	/* done, disconnect */
 	rtrc(1)
-	if ((k = ql_wai(priv)))
-		return (k << 16);
+	if ((k = ql_wai(priv))) {
+		set_host_byte(cmd, k);
+		return;
+	}
 
 	/*
 	 *	Should get bus service interrupt and disconnect interrupt 
 	 */
-	 
+
 	i = inb(qbase + 5);	/* should be bus service */
 	while (!priv->qabort && ((i & 0x20) != 0x20)) {
 		barrier();
@@ -387,10 +404,15 @@ static unsigned int ql_pcmd(struct scsi_cmnd *cmd)
 	}
 	rtrc(0)
 
-	if (priv->qabort)
-		return ((priv->qabort == 1 ? DID_ABORT : DID_RESET) << 16);
-		
-	return (result << 16) | (message << 8) | (status & STATUS_MASK);
+	if (priv->qabort) {
+		if (priv->qabort == 1)
+			set_host_byte(cmd, DID_ABORT);
+		else
+			set_host_byte(cmd, DID_RESET);
+		return;
+	}
+	set_msg_byte(cmd, message);
+	set_status_byte(cmd, status);
 }
 
 /*
@@ -415,11 +437,11 @@ static void ql_ihandl(void *dev_id)
 		return;
 	}
 	icmd = priv->qlcmd;
-	icmd->result = ql_pcmd(icmd);
+	ql_pcmd(icmd);
 	priv->qlcmd = NULL;
 	/*
-	 *	If result is CHECK CONDITION done calls qcommand to request 
-	 *	sense 
+	 *	If result is CHECK CONDITION done calls qcommand to request
+	 *	sense
 	 */
 	(icmd->scsi_done) (icmd);
 }
@@ -444,7 +466,7 @@ static int qlogicfas408_queuecommand_lck(struct scsi_cmnd *cmd,
 {
 	struct qlogicfas408_priv *priv = get_priv_by_cmd(cmd);
 	if (scmd_id(cmd) == priv->qinitid) {
-		cmd->result = DID_BAD_TARGET << 16;
+		set_host_byte(cmd, DID_BAD_TARGET);
 		done(cmd);
 		return 0;
 	}
