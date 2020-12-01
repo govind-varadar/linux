@@ -935,7 +935,7 @@ static int __ips_eh_reset(struct scsi_cmnd *SC)
 			  ips_name, ha->host_num);
 
 		while ((scb = ips_removeq_scb_head(&ha->scb_activelist))) {
-			scb->scsi_cmd->result = DID_ERROR << 16;
+			set_host_byte(scb->scsi_cmd, DID_ERROR);
 			scb->scsi_cmd->scsi_done(scb->scsi_cmd);
 			ips_freescb(ha, scb);
 		}
@@ -945,7 +945,7 @@ static int __ips_eh_reset(struct scsi_cmnd *SC)
 			  ips_name, ha->host_num);
 
 		while ((scsi_cmd = ips_removeq_wait_head(&ha->scb_waitlist))) {
-			scsi_cmd->result = DID_ERROR;
+			set_host_byte(scsi_cmd, DID_ERROR);
 			scsi_cmd->scsi_done(scsi_cmd);
 		}
 
@@ -964,7 +964,7 @@ static int __ips_eh_reset(struct scsi_cmnd *SC)
 			  ips_name, ha->host_num);
 
 		while ((scb = ips_removeq_scb_head(&ha->scb_activelist))) {
-			scb->scsi_cmd->result = DID_ERROR << 16;
+			set_host_byte(scb->scsi_cmd, DID_ERROR);
 			scb->scsi_cmd->scsi_done(scb->scsi_cmd);
 			ips_freescb(ha, scb);
 		}
@@ -974,7 +974,7 @@ static int __ips_eh_reset(struct scsi_cmnd *SC)
 			  ips_name, ha->host_num);
 
 		while ((scsi_cmd = ips_removeq_wait_head(&ha->scb_waitlist))) {
-			scsi_cmd->result = DID_ERROR << 16;
+			set_host_byte(scsi_cmd, DID_ERROR);
 			scsi_cmd->scsi_done(scsi_cmd);
 		}
 
@@ -993,7 +993,7 @@ static int __ips_eh_reset(struct scsi_cmnd *SC)
 	DEBUG_VAR(1, "(%s%d) Failing active commands", ips_name, ha->host_num);
 
 	while ((scb = ips_removeq_scb_head(&ha->scb_activelist))) {
-		scb->scsi_cmd->result = DID_RESET << 16;
+		set_host_byte(scb->scsi_cmd, DID_RESET);
 		scb->scsi_cmd->scsi_done(scb->scsi_cmd);
 		ips_freescb(ha, scb);
 	}
@@ -1052,13 +1052,13 @@ static int ips_queue_lck(struct scsi_cmnd *SC, void (*done) (struct scsi_cmnd *)
 
 	if (ips_is_passthru(SC)) {
 		if (ha->copp_waitlist.count == IPS_MAX_IOCTL_QUEUE) {
-			SC->result = DID_BUS_BUSY << 16;
+			set_host_byte(SC, DID_BUS_BUSY);
 			done(SC);
 
 			return (0);
 		}
 	} else if (ha->scb_waitlist.count == IPS_MAX_QUEUE) {
-		SC->result = DID_BUS_BUSY << 16;
+		set_host_byte(SC, DID_BUS_BUSY);
 		done(SC);
 
 		return (0);
@@ -1075,7 +1075,7 @@ static int ips_queue_lck(struct scsi_cmnd *SC, void (*done) (struct scsi_cmnd *)
 	/* Check for command to initiator IDs */
 	if ((scmd_channel(SC) > 0)
 	    && (scmd_id(SC) == ha->ha_id[scmd_channel(SC)])) {
-		SC->result = DID_NO_CONNECT << 16;
+		set_host_byte(SC, DID_NO_CONNECT);
 		done(SC);
 
 		return (0);
@@ -1092,7 +1092,7 @@ static int ips_queue_lck(struct scsi_cmnd *SC, void (*done) (struct scsi_cmnd *)
 		if ((pt->CoppCP.cmd.reset.op_code == IPS_CMD_RESET_CHANNEL) &&
 		    (pt->CoppCP.cmd.reset.adapter_flag == 1)) {
 			if (ha->scb_activelist.count != 0) {
-				SC->result = DID_BUS_BUSY << 16;
+				set_host_byte(SC, DID_BUS_BUSY);
 				done(SC);
 				return (0);
 			}
@@ -1107,7 +1107,7 @@ static int ips_queue_lck(struct scsi_cmnd *SC, void (*done) (struct scsi_cmnd *)
 		scratch = kmalloc(sizeof (ips_copp_wait_item_t), GFP_ATOMIC);
 
 		if (!scratch) {
-			SC->result = DID_ERROR << 16;
+			set_host_byte(SC, DID_ERROR);
 			done(SC);
 
 			return (0);
@@ -1125,7 +1125,7 @@ static int ips_queue_lck(struct scsi_cmnd *SC, void (*done) (struct scsi_cmnd *)
 
 	return (0);
 out_error:
-	SC->result = DID_ERROR << 16;
+	set_host_byte(SC, DID_ERROR);
 	done(SC);
 
 	return (0);
@@ -2578,7 +2578,7 @@ ips_next(ips_ha_t * ha, int intr)
 		switch (ret) {
 		case IPS_FAILURE:
 			if (scb->scsi_cmd) {
-				scb->scsi_cmd->result = DID_ERROR << 16;
+				set_host_byte(scb->scsi_cmd, DID_ERROR);
 				scb->scsi_cmd->scsi_done(scb->scsi_cmd);
 			}
 
@@ -2611,7 +2611,7 @@ ips_next(ips_ha_t * ha, int intr)
 		switch (ret) {
 		case IPS_FAILURE:
 			if (scb->scsi_cmd) {
-				scb->scsi_cmd->result = DID_ERROR << 16;
+				set_host_byte(scb->scsi_cmd, DID_ERROR);
 			}
 
 			ips_freescb(ha, scb);
@@ -2711,7 +2711,7 @@ ips_next(ips_ha_t * ha, int intr)
 			break;
 		case IPS_FAILURE:
 			if (scb->scsi_cmd) {
-				scb->scsi_cmd->result = DID_ERROR << 16;
+				set_host_byte(scb->scsi_cmd, DID_ERROR);
 				scb->scsi_cmd->scsi_done(scb->scsi_cmd);
 			}
 
@@ -3205,7 +3205,7 @@ ips_done(ips_ha_t * ha, ips_scb_t * scb)
 			switch (ret) {
 			case IPS_FAILURE:
 				if (scb->scsi_cmd) {
-					scb->scsi_cmd->result = DID_ERROR << 16;
+					set_host_byte(scb->scsi_cmd, DID_ERROR);
 					scb->scsi_cmd->scsi_done(scb->scsi_cmd);
 				}
 
@@ -3213,7 +3213,7 @@ ips_done(ips_ha_t * ha, ips_scb_t * scb)
 				break;
 			case IPS_SUCCESS_IMM:
 				if (scb->scsi_cmd) {
-					scb->scsi_cmd->result = DID_ERROR << 16;
+					set_host_byte(scb->scsi_cmd,DID_ERROR);
 					scb->scsi_cmd->scsi_done(scb->scsi_cmd);
 				}
 
@@ -3313,10 +3313,10 @@ ips_map_status(ips_ha_t * ha, ips_scb_t * scb, ips_stat_t * sp)
 				/* Restrict access to physical DASD */
 				if (scb->scsi_cmd->cmnd[0] == INQUIRY) {
 				    ips_scmd_buf_read(scb->scsi_cmd,
-                                      &inquiryData, sizeof (inquiryData));
- 				    if ((inquiryData.DeviceType & 0x1f) == TYPE_DISK) {
-				        errcode = DID_TIME_OUT;
-				        break;
+						      &inquiryData, sizeof (inquiryData));
+				    if ((inquiryData.DeviceType & 0x1f) == TYPE_DISK) {
+					    errcode = DID_TIME_OUT;
+					    break;
 				    }
 				}
 			} else
@@ -3352,7 +3352,7 @@ ips_map_status(ips_ha_t * ha, ips_scb_t * scb, ips_stat_t * sp)
 					       scb->dcdb.sense_info,
 					       SCSI_SENSE_BUFFERSIZE);
 				}
-				device_error = 2;	/* check condition */
+				device_error = SAM_STAT_CHECK_CONDITION;
 			}
 
 			errcode = DID_OK;
@@ -3366,7 +3366,8 @@ ips_map_status(ips_ha_t * ha, ips_scb_t * scb, ips_stat_t * sp)
 		}		/* end switch */
 	}			/* end switch */
 
-	scb->scsi_cmd->result = device_error | (errcode << 16);
+	set_status_byte(scb->scsi_cmd, device_error);
+	set_host_byte(scb->scsi_cmd, errcode);
 
 	return (1);
 }
@@ -3453,7 +3454,6 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 {
 	int ret;
 	char *sp;
-	int device_error;
 	IPS_DCDB_TABLE_TAPE *tapeDCDB;
 	int TimeOut;
 
@@ -3484,7 +3484,7 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 		case ERASE:
 		case WRITE_FILEMARKS:
 		case SPACE:
-			scb->scsi_cmd->result = DID_ERROR << 16;
+			set_host_byte(scb->scsi_cmd, DID_ERROR);
 			break;
 
 		case START_STOP:
@@ -3702,8 +3702,9 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 			sp[12] = 0x20;	/* ASC = Invalid OpCode     */
 			sp[13] = 0x00;	/* ASCQ                     */
 
-			device_error = 2;	/* Indicate Check Condition */
-			scb->scsi_cmd->result = device_error | (DID_OK << 16);
+			set_host_byte(scb->scsi_cmd, DID_OK);
+			set_status_byte(scb->scsi_cmd,
+					SAM_STAT_CHECK_CONDITION);
 			break;
 		}		/* end switch */
 	}
@@ -3717,7 +3718,7 @@ ips_send_cmd(ips_ha_t * ha, ips_scb_t * scb)
 		/* If we already know the Device is Not there, no need to attempt a Command   */
 		/* This also protects an NT FailOver Controller from getting CDB's sent to it */
 		if (ha->conf->dev[scb->bus - 1][scb->target_id].ucState == 0) {
-			scb->scsi_cmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(scb->scsi_cmd, DID_NO_CONNECT);
 			return (IPS_SUCCESS_IMM);
 		}
 
@@ -3957,14 +3958,14 @@ ips_chkstatus(ips_ha_t * ha, IPS_STATUS * pstatus)
 				errcode = DID_ERROR;
 			}	/* end switch */
 
-			scb->scsi_cmd->result = errcode << 16;
+			set_host_byte(scb->scsi_cmd, errcode);
 		} else {	/* bus == 0 */
 			/* restrict access to physical drives */
 			if (scb->scsi_cmd->cmnd[0] == INQUIRY) {
 			    ips_scmd_buf_read(scb->scsi_cmd,
-                                  &inquiryData, sizeof (inquiryData));
+					      &inquiryData, sizeof (inquiryData));
 			    if ((inquiryData.DeviceType & 0x1f) == TYPE_DISK)
-			        scb->scsi_cmd->result = DID_TIME_OUT << 16;
+				    set_host_byte(scb->scsi_cmd, DID_TIME_OUT);
 			}
 		}		/* else */
 	} else {		/* recovered error / success */
