@@ -158,7 +158,8 @@ imm_fail(imm_struct *dev, int error_code)
 {
 	/* If we fail a device then we trash status / message bytes */
 	if (dev->cur_cmd) {
-		dev->cur_cmd->result = error_code << 16;
+		scsi_result_set_good(dev->cur_cmd);
+		set_host_byte(dev->cur_cmd, error_code);
 		dev->failed = 1;
 	}
 }
@@ -729,7 +730,7 @@ static void imm_interrupt(struct work_struct *work)
 	}
 	/* Command must of completed hence it is safe to let go... */
 #if IMM_DEBUG > 0
-	switch ((cmd->result >> 16) & 0xff) {
+	switch (get_host_byte(cmd)) {
 	case DID_OK:
 		break;
 	case DID_NO_CONNECT:
@@ -758,7 +759,7 @@ static void imm_interrupt(struct work_struct *work)
 		break;
 	default:
 		printk("imm: bad return code (%02x)\n",
-		       (cmd->result >> 16) & 0xff);
+		       get_host_byte(cmd));
 	}
 #endif
 
@@ -891,10 +892,13 @@ static int imm_engine(imm_struct *dev, struct scsi_cmnd *cmd)
 		if (imm_negotiate(dev))
 			return 0;
 		if (imm_in(dev, &l, 1)) {	/* read status byte */
+			scsi_result_set_good(cmd);
 			/* Check for optional message byte */
-			if (imm_wait(dev) == (unsigned char) 0xb8)
+			if (imm_wait(dev) == (unsigned char) 0xb8) {
 				imm_in(dev, &h, 1);
-			cmd->result = (DID_OK << 16) | (l & STATUS_MASK);
+				set_msg_byte(cmd, h);
+			}
+			set_status_byte(cmd, l);
 		}
 		if ((dev->mode == IMM_NIBBLE) || (dev->mode == IMM_PS2)) {
 			w_ctr(ppb, 0x4);
@@ -923,7 +927,8 @@ static int imm_queuecommand_lck(struct scsi_cmnd *cmd,
 	dev->jstart = jiffies;
 	dev->cur_cmd = cmd;
 	cmd->scsi_done = done;
-	cmd->result = DID_ERROR << 16;	/* default return code */
+	scsi_result_set_good(cmd);
+	set_host_byte(cmd, DID_ERROR);	/* default return code */
 	cmd->SCp.phase = 0;	/* bus free */
 
 	schedule_delayed_work(&dev->imm_tq, 0);
