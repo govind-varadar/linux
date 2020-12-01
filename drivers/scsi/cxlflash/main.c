@@ -59,7 +59,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 	if (ioasa->rc.flags & SISL_RC_FLAGS_OVERRUN) {
 		dev_dbg(dev, "%s: cmd underrun cmd = %p scp = %p\n",
 			__func__, cmd, scp);
-		scp->result = (DID_ERROR << 16);
+		set_host_byte(scp, DID_ERROR);
 	}
 
 	dev_dbg(dev, "%s: cmd failed afu_rc=%02x scsi_rc=%02x fc_rc=%02x "
@@ -72,20 +72,23 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 		if (ioasa->rc.flags & SISL_RC_FLAGS_SENSE_VALID) {
 			memcpy(scp->sense_buffer, ioasa->sense_data,
 			       SISL_SENSE_DATA_LEN);
-			scp->result = ioasa->rc.scsi_rc;
-		} else
-			scp->result = ioasa->rc.scsi_rc | (DID_ERROR << 16);
+			set_status_byte(scp, ioasa->rc.scsi_rc);
+			set_host_byte(scp, DID_OK);
+		} else {
+			set_status_byte(scp, ioasa->rc.scsi_rc);
+			set_host_byte(scp, DID_ERROR);
+		}
 	}
 
 	/*
-	 * We encountered an error. Set scp->result based on nature
+	 * We encountered an error. Set scsi result based on nature
 	 * of error.
 	 */
 	if (ioasa->rc.fc_rc) {
 		/* We have an FC status */
 		switch (ioasa->rc.fc_rc) {
 		case SISL_FC_RC_LINKDOWN:
-			scp->result = (DID_REQUEUE << 16);
+			set_host_byte(scp, DID_REQUEUE);
 			break;
 		case SISL_FC_RC_RESID:
 			/* This indicates an FCP resid underrun */
@@ -95,7 +98,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 				 * If not then we must handle it here.
 				 * This is probably an AFU bug.
 				 */
-				scp->result = (DID_ERROR << 16);
+				set_host_byte(scp, DID_ERROR);
 			}
 			break;
 		case SISL_FC_RC_RESIDERR:
@@ -108,7 +111,7 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 		case SISL_FC_RC_WRABORTPEND:
 		case SISL_FC_RC_NOEXP:
 		case SISL_FC_RC_INUSE:
-			scp->result = (DID_ERROR << 16);
+			set_host_byte(scp, DID_ERROR);
 			break;
 		}
 	}
@@ -117,25 +120,25 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
 		/* We have an AFU error */
 		switch (ioasa->rc.afu_rc) {
 		case SISL_AFU_RC_NO_CHANNELS:
-			scp->result = (DID_NO_CONNECT << 16);
+			set_host_byte(scp, DID_NO_CONNECT);
 			break;
 		case SISL_AFU_RC_DATA_DMA_ERR:
 			switch (ioasa->afu_extra) {
 			case SISL_AFU_DMA_ERR_PAGE_IN:
 				/* Retry */
-				scp->result = (DID_IMM_RETRY << 16);
+				set_host_byte(scp, DID_IMM_RETRY);
 				break;
 			case SISL_AFU_DMA_ERR_INVALID_EA:
 			default:
-				scp->result = (DID_ERROR << 16);
+				set_host_byte(scp, DID_ERROR);
 			}
 			break;
 		case SISL_AFU_RC_OUT_OF_DATA_BUFS:
 			/* Retry */
-			scp->result = (DID_ALLOC_FAILURE << 16);
+			set_host_byte(scp, DID_ALLOC_FAILURE);
 			break;
 		default:
-			scp->result = (DID_ERROR << 16);
+			set_host_byte(scp, DID_ERROR);
 		}
 	}
 }
@@ -151,7 +154,6 @@ static void process_cmd_err(struct afu_cmd *cmd, struct scsi_cmnd *scp)
  */
 static void cmd_complete(struct afu_cmd *cmd)
 {
-	struct scsi_cmnd *scp;
 	ulong lock_flags;
 	struct afu *afu = cmd->parent;
 	struct cxlflash_cfg *cfg = afu->parent;
@@ -163,14 +165,16 @@ static void cmd_complete(struct afu_cmd *cmd)
 	spin_unlock_irqrestore(&hwq->hsq_slock, lock_flags);
 
 	if (cmd->scp) {
-		scp = cmd->scp;
+		struct scsi_cmnd *scp = cmd->scp;
+		unsigned int result = (get_host_byte(scp) << 16) | get_status_byte(scp);
+
 		if (unlikely(cmd->sa.ioasc))
 			process_cmd_err(cmd, scp);
 		else
-			scp->result = (DID_OK << 16);
+			set_host_byte(scp, DID_OK);
 
 		dev_dbg_ratelimited(dev, "%s:scp=%p result=%08x ioasc=%08x\n",
-				    __func__, scp, scp->result, cmd->sa.ioasc);
+				    __func__, scp, result, cmd->sa.ioasc);
 		scp->scsi_done(scp);
 	} else if (cmd->cmd_tmf) {
 		spin_lock_irqsave(&cfg->tmf_slock, lock_flags);
@@ -204,7 +208,7 @@ static void flush_pending_cmds(struct hwq *hwq)
 
 		if (cmd->scp) {
 			scp = cmd->scp;
-			scp->result = (DID_IMM_RETRY << 16);
+			set_host_byte(scp, DID_IMM_RETRY);
 			scp->scsi_done(scp);
 		} else {
 			cmd->cmd_aborted = true;
@@ -600,7 +604,7 @@ static int cxlflash_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *scp)
 		goto out;
 	case STATE_FAILTERM:
 		dev_dbg_ratelimited(dev, "%s: device has failed\n", __func__);
-		scp->result = (DID_NO_CONNECT << 16);
+		set_host_byte(scp, DID_NO_CONNECT);
 		scp->scsi_done(scp);
 		rc = 0;
 		goto out;
