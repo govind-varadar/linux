@@ -1318,7 +1318,8 @@ static void arcmsr_pci_unmap_dma(struct CommandControlBlock *ccb)
 	scsi_dma_unmap(pcmd);
 }
 
-static void arcmsr_ccb_complete(struct CommandControlBlock *ccb)
+static void arcmsr_ccb_complete(struct CommandControlBlock *ccb,
+				unsigned char host_byte)
 {
 	struct AdapterControlBlock *acb = ccb->acb;
 	struct scsi_cmnd *pcmd = ccb->pcmd;
@@ -1326,6 +1327,7 @@ static void arcmsr_ccb_complete(struct CommandControlBlock *ccb)
 	atomic_dec(&acb->ccboutstandingcount);
 	arcmsr_pci_unmap_dma(ccb);
 	ccb->startdone = ARCMSR_CCB_DONE;
+	set_host_byte(pcmd, host_byte);
 	spin_lock_irqsave(&acb->ccblist_lock, flags);
 	list_add_tail(&ccb->list, &acb->ccb_free_list);
 	spin_unlock_irqrestore(&acb->ccblist_lock, flags);
@@ -1337,7 +1339,7 @@ static void arcmsr_report_sense_info(struct CommandControlBlock *ccb)
 
 	struct scsi_cmnd *pcmd = ccb->pcmd;
 	struct SENSE_DATA *sensebuffer = (struct SENSE_DATA *)pcmd->sense_buffer;
-	pcmd->result = (DID_OK << 16) | (CHECK_CONDITION << 1);
+	set_status_byte(pcmd, SAM_STAT_CHECK_CONDITION);
 	if (sensebuffer) {
 		int sense_data_length =
 			sizeof(struct SENSE_DATA) < SCSI_SENSE_BUFFERSIZE
@@ -1346,7 +1348,7 @@ static void arcmsr_report_sense_info(struct CommandControlBlock *ccb)
 		memcpy(sensebuffer, ccb->arcmsr_cdb.SenseData, sense_data_length);
 		sensebuffer->ErrorCode = SCSI_SENSE_CURRENT_ERRORS;
 		sensebuffer->Valid = 1;
-		pcmd->result |= (DRIVER_SENSE << 24);
+		set_driver_byte(pcmd, DRIVER_SENSE);
 	}
 }
 
@@ -1402,13 +1404,12 @@ static void arcmsr_report_ccb_state(struct AdapterControlBlock *acb,
 		if (acb->devstate[id][lun] == ARECA_RAID_GONE)
 			acb->devstate[id][lun] = ARECA_RAID_GOOD;
 		scsi_result_set_good(ccb->pcmd);
-		arcmsr_ccb_complete(ccb);
+		arcmsr_ccb_complete(ccb, DID_OK);
 	}else{
 		switch (ccb->arcmsr_cdb.DeviceStatus) {
 		case ARCMSR_DEV_SELECT_TIMEOUT: {
 			acb->devstate[id][lun] = ARECA_RAID_GONE;
-			ccb->pcmd->result = DID_NO_CONNECT << 16;
-			arcmsr_ccb_complete(ccb);
+			arcmsr_ccb_complete(ccb, DID_NO_CONNECT);
 			}
 			break;
 
@@ -1416,15 +1417,14 @@ static void arcmsr_report_ccb_state(struct AdapterControlBlock *acb,
 
 		case ARCMSR_DEV_INIT_FAIL: {
 			acb->devstate[id][lun] = ARECA_RAID_GONE;
-			ccb->pcmd->result = DID_BAD_TARGET << 16;
-			arcmsr_ccb_complete(ccb);
+			arcmsr_ccb_complete(ccb, DID_BAD_TARGET);
 			}
 			break;
 
 		case ARCMSR_DEV_CHECK_CONDITION: {
 			acb->devstate[id][lun] = ARECA_RAID_GOOD;
 			arcmsr_report_sense_info(ccb);
-			arcmsr_ccb_complete(ccb);
+			arcmsr_ccb_complete(ccb, DID_OK);
 			}
 			break;
 
@@ -1437,8 +1437,7 @@ static void arcmsr_report_ccb_state(struct AdapterControlBlock *acb,
 				, lun
 				, ccb->arcmsr_cdb.DeviceStatus);
 				acb->devstate[id][lun] = ARECA_RAID_GONE;
-				ccb->pcmd->result = DID_NO_CONNECT << 16;
-				arcmsr_ccb_complete(ccb);
+				arcmsr_ccb_complete(ccb, DID_NO_CONNECT);
 			break;
 		}
 	}
@@ -1450,8 +1449,7 @@ static void arcmsr_drain_donequeue(struct AdapterControlBlock *acb, struct Comma
 		if (pCCB->startdone == ARCMSR_CCB_ABORTED) {
 			struct scsi_cmnd *abortcmd = pCCB->pcmd;
 			if (abortcmd) {
-				abortcmd->result |= DID_ABORT << 16;
-				arcmsr_ccb_complete(pCCB);
+				arcmsr_ccb_complete(pCCB, DID_ABORT);
 				printk(KERN_NOTICE "arcmsr%d: pCCB ='0x%p' isr got aborted command \n",
 				acb->host->host_no, pCCB);
 			}
@@ -1605,7 +1603,7 @@ static void arcmsr_remove_scsi_devices(struct AdapterControlBlock *acb)
 	for (i = 0; i < acb->maxFreeCCB; i++) {
 		ccb = acb->pccb_pool[i];
 		if (ccb->startdone == ARCMSR_CCB_START) {
-			ccb->pcmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(ccb->pcmd, DID_NO_CONNECT);
 			arcmsr_pci_unmap_dma(ccb);
 			ccb->pcmd->scsi_done(ccb->pcmd);
 		}
@@ -1697,8 +1695,7 @@ static void arcmsr_remove(struct pci_dev *pdev)
 			struct CommandControlBlock *ccb = acb->pccb_pool[i];
 			if (ccb->startdone == ARCMSR_CCB_START) {
 				ccb->startdone = ARCMSR_CCB_ABORTED;
-				ccb->pcmd->result = DID_ABORT << 16;
-				arcmsr_ccb_complete(ccb);
+				arcmsr_ccb_complete(ccb, DID_ABORT);
 			}
 		}
 	}
@@ -3189,7 +3186,7 @@ static void arcmsr_handle_virtual_command(struct AdapterControlBlock *acb,
 		struct scatterlist *sg;
 
 		if (cmd->device->lun) {
-			cmd->result = (DID_TIME_OUT << 16);
+			set_host_byte(cmd, DID_TIME_OUT);
 			cmd->scsi_done(cmd);
 			return;
 		}
@@ -3220,7 +3217,7 @@ static void arcmsr_handle_virtual_command(struct AdapterControlBlock *acb,
 	case WRITE_BUFFER:
 	case READ_BUFFER: {
 		if (arcmsr_iop_message_xfer(acb, cmd))
-			cmd->result = (DID_ERROR << 16);
+			set_host_byte(cmd, DID_ERROR);
 		cmd->scsi_done(cmd);
 	}
 	break;
@@ -3238,7 +3235,7 @@ static int arcmsr_queue_command_lck(struct scsi_cmnd *cmd,
 	int target = cmd->device->id;
 
 	if (acb->acb_flags & ACB_F_ADAPTER_REMOVED) {
-		cmd->result = (DID_NO_CONNECT << 16);
+		set_host_byte(cmd, DID_NO_CONNECT);
 		cmd->scsi_done(cmd);
 		return 0;
 	}
@@ -3254,7 +3251,8 @@ static int arcmsr_queue_command_lck(struct scsi_cmnd *cmd,
 	if (!ccb)
 		return SCSI_MLQUEUE_HOST_BUSY;
 	if (arcmsr_build_ccb( acb, ccb, cmd ) == FAILED) {
-		cmd->result = (DID_ERROR << 16) | (RESERVATION_CONFLICT << 1);
+		set_host_byte(cmd, DID_ERROR);
+		set_status_byte(cmd, SAM_STAT_RESERVATION_CONFLICT);
 		cmd->scsi_done(cmd);
 		return 0;
 	}
@@ -3527,8 +3525,7 @@ polling_hba_ccb_retry:
 					, ccb->pcmd->device->id
 					, (u32)ccb->pcmd->device->lun
 					, ccb);
-				ccb->pcmd->result = DID_ABORT << 16;
-				arcmsr_ccb_complete(ccb);
+				arcmsr_ccb_complete(ccb, DID_ABORT);
 				continue;
 			}
 			printk(KERN_NOTICE "arcmsr%d: polling get an illegal ccb"
@@ -3596,8 +3593,7 @@ polling_hbb_ccb_retry:
 					,ccb->pcmd->device->id
 					,(u32)ccb->pcmd->device->lun
 					,ccb);
-				ccb->pcmd->result = DID_ABORT << 16;
-				arcmsr_ccb_complete(ccb);
+				arcmsr_ccb_complete(ccb, DID_ABORT);
 				continue;
 			}
 			printk(KERN_NOTICE "arcmsr%d: polling get an illegal ccb"
@@ -3658,8 +3654,7 @@ polling_hbc_ccb_retry:
 					, pCCB->pcmd->device->id
 					, (u32)pCCB->pcmd->device->lun
 					, pCCB);
-				pCCB->pcmd->result = DID_ABORT << 16;
-				arcmsr_ccb_complete(pCCB);
+				arcmsr_ccb_complete(pCCB, DID_ABORT);
 				continue;
 			}
 			printk(KERN_NOTICE "arcmsr%d: polling get an illegal ccb"
@@ -3733,8 +3728,7 @@ polling_hbaD_ccb_retry:
 					, pCCB->pcmd->device->id
 					, (u32)pCCB->pcmd->device->lun
 					, pCCB);
-				pCCB->pcmd->result = DID_ABORT << 16;
-				arcmsr_ccb_complete(pCCB);
+				arcmsr_ccb_complete(pCCB, DID_ABORT);
 				continue;
 			}
 			pr_notice("arcmsr%d: polling an illegal "
@@ -3801,8 +3795,7 @@ static int arcmsr_hbaE_polling_ccbdone(struct AdapterControlBlock *acb,
 					, pCCB->pcmd->device->id
 					, (u32)pCCB->pcmd->device->lun
 					, pCCB);
-				pCCB->pcmd->result = DID_ABORT << 16;
-				arcmsr_ccb_complete(pCCB);
+				arcmsr_ccb_complete(pCCB, DID_ABORT);
 				continue;
 			}
 			pr_notice("arcmsr%d: polling an illegal "
