@@ -2352,7 +2352,7 @@ static int handle_ioaccel_mode2_error(struct ctlr_info *h,
 				scsi_result_set_good(cmd);
 			break;
 		case IOACCEL2_STATUS_SR_TASK_COMP_CHK_COND:
-			cmd->result |= SAM_STAT_CHECK_CONDITION;
+			set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 			if (c2->error_data.data_present !=
 					IOACCEL2_SENSE_DATA_PRESENT) {
 				memset(cmd->sense_buffer, 0,
@@ -2412,7 +2412,7 @@ static int handle_ioaccel_mode2_error(struct ctlr_info *h,
 			 * of the disk to get the same device node.
 			 */
 			if (dev->physical_device && dev->expose_device) {
-				cmd->result = DID_NO_CONNECT << 16;
+				set_host_byte(cmd, DID_NO_CONNECT);
 				dev->removed = 1;
 				h->drv_req_rescan = 1;
 				dev_warn(&h->pdev->dev,
@@ -2517,7 +2517,7 @@ static void process_ioaccel2_completion(struct ctlr_info *h,
 		}
 
 		if (dev->in_reset) {
-			cmd->result = DID_RESET << 16;
+			set_host_byte(cmd, DID_RESET);
 			return hpsa_cmd_free_and_done(h, c, cmd);
 		}
 
@@ -2576,13 +2576,13 @@ static void complete_scsi_command(struct CommandList *cp)
 	h = cp->h;
 
 	if (!cmd->device) {
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		return hpsa_cmd_free_and_done(h, cp, cmd);
 	}
 
 	dev = cmd->device->hostdata;
 	if (!dev) {
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		return hpsa_cmd_free_and_done(h, cp, cmd);
 	}
 	c2 = &h->ioaccel2_cmd_pool[cp->cmdindex];
@@ -2607,7 +2607,7 @@ static void complete_scsi_command(struct CommandList *cp)
 	if (cp->cmd_type == CMD_IOACCEL2 || cp->cmd_type == CMD_IOACCEL1) {
 		if (dev->physical_device && dev->expose_device &&
 			dev->removed) {
-			cmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(cmd, DID_NO_CONNECT);
 			return hpsa_cmd_free_and_done(h, cp, cmd);
 		}
 		if (likely(cp->phys_disk != NULL))
@@ -2621,7 +2621,7 @@ static void complete_scsi_command(struct CommandList *cp)
 	 */
 	if (unlikely(ei->CommandStatus == CMD_CTLR_LOCKUP)) {
 		/* DID_NO_CONNECT will prevent a retry */
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		return hpsa_cmd_free_and_done(h, cp, cmd);
 	}
 
@@ -2660,7 +2660,7 @@ static void complete_scsi_command(struct CommandList *cp)
 	switch (ei->CommandStatus) {
 
 	case CMD_TARGET_STATUS:
-		cmd->result |= ei->ScsiStatus;
+		set_status_byte(cmd, ei->ScsiStatus);
 		/* copy the sense data */
 		if (SCSI_SENSE_BUFFERSIZE < sizeof(ei->SenseInfo))
 			sense_data_size = SCSI_SENSE_BUFFERSIZE;
@@ -2675,7 +2675,7 @@ static void complete_scsi_command(struct CommandList *cp)
 		if (ei->ScsiStatus == SAM_STAT_CHECK_CONDITION) {
 			switch (sense_key) {
 			case ABORTED_COMMAND:
-				cmd->result |= DID_SOFT_ERROR << 16;
+				set_host_byte(cmd, DID_SOFT_ERROR);
 				break;
 			case UNIT_ATTENTION:
 				if (asc == 0x3F && ascq == 0x0E)
@@ -2684,7 +2684,7 @@ static void complete_scsi_command(struct CommandList *cp)
 			case ILLEGAL_REQUEST:
 				if (asc == 0x25 && ascq == 0x00) {
 					dev->removed = 1;
-					cmd->result = DID_NO_CONNECT << 16;
+					set_host_byte(cmd, DID_NO_CONNECT);
 				}
 				break;
 			}
@@ -2699,7 +2699,7 @@ static void complete_scsi_command(struct CommandList *cp)
 				"Returning result: 0x%x\n",
 				cp, ei->ScsiStatus,
 				sense_key, asc, ascq,
-				cmd->result);
+				scsi_get_result(cmd));
 		} else {  /* scsi status is zero??? How??? */
 			dev_warn(&h->pdev->dev, "cp %p SCSI status was 0. "
 				"Returning no connection.\n", cp),
@@ -2716,7 +2716,7 @@ static void complete_scsi_command(struct CommandList *cp)
 			 * and it's severe enough.
 			 */
 
-			cmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(cmd, DID_NO_CONNECT);
 		}
 		break;
 
@@ -2735,60 +2735,60 @@ static void complete_scsi_command(struct CommandList *cp)
 		 * This is kind of a shame because it means that any other
 		 * CMD_INVALID (e.g. driver bug) will get interpreted as a
 		 * missing target. */
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 	}
 		break;
 	case CMD_PROTOCOL_ERR:
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		dev_warn(&h->pdev->dev, "CDB %16phN : protocol error\n",
 				cp->Request.CDB);
 		break;
 	case CMD_HARDWARE_ERR:
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		dev_warn(&h->pdev->dev, "CDB %16phN : hardware error\n",
 			cp->Request.CDB);
 		break;
 	case CMD_CONNECTION_LOST:
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		dev_warn(&h->pdev->dev, "CDB %16phN : connection lost\n",
 			cp->Request.CDB);
 		break;
 	case CMD_ABORTED:
-		cmd->result = DID_ABORT << 16;
+		set_host_byte(cmd, DID_ABORT);
 		break;
 	case CMD_ABORT_FAILED:
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		dev_warn(&h->pdev->dev, "CDB %16phN : abort failed\n",
 			cp->Request.CDB);
 		break;
 	case CMD_UNSOLICITED_ABORT:
-		cmd->result = DID_SOFT_ERROR << 16; /* retry the command */
+		set_host_byte(cmd, DID_SOFT_ERROR); /* retry the command */
 		dev_warn(&h->pdev->dev, "CDB %16phN : unsolicited abort\n",
 			cp->Request.CDB);
 		break;
 	case CMD_TIMEOUT:
-		cmd->result = DID_TIME_OUT << 16;
+		set_host_byte(cmd, DID_TIME_OUT);
 		dev_warn(&h->pdev->dev, "CDB %16phN timed out\n",
 			cp->Request.CDB);
 		break;
 	case CMD_UNABORTABLE:
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		dev_warn(&h->pdev->dev, "Command unabortable\n");
 		break;
 	case CMD_TMF_STATUS:
 		if (hpsa_evaluate_tmf_status(h, cp)) /* TMF failed? */
-			cmd->result = DID_ERROR << 16;
+			set_host_byte(cmd, DID_ERROR);
 		break;
 	case CMD_IOACCEL_DISABLED:
 		/* This only handles the direct pass-through case since RAID
 		 * offload is handled above.  Just attempt a retry.
 		 */
-		cmd->result = DID_SOFT_ERROR << 16;
+		set_host_byte(cmd, DID_SOFT_ERROR);
 		dev_warn(&h->pdev->dev,
 				"cp %p had HP SSD Smart Path error\n", cp);
 		break;
 	default:
-		cmd->result = DID_ERROR << 16;
+		set_host_byte(cmd, DID_ERROR);
 		dev_warn(&h->pdev->dev, "cp %p returned unknown status %x\n",
 				cp, ei->CommandStatus);
 	}
@@ -5026,7 +5026,7 @@ static int hpsa_scsi_ioaccel2_queue_command(struct ctlr_info *h,
 		cp->sg_count = (u8) use_sg;
 
 	if (phys_disk->in_reset) {
-		cmd->result = DID_RESET << 16;
+		set_host_byte(cmd, DID_RESET);
 		return -1;
 	}
 
@@ -5612,12 +5612,12 @@ static void hpsa_command_resubmit_worker(struct work_struct *work)
 	cmd = c->scsi_cmd;
 	dev = cmd->device->hostdata;
 	if (!dev) {
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		return hpsa_cmd_free_and_done(c->h, c, cmd);
 	}
 
 	if (dev->in_reset) {
-		cmd->result = DID_RESET << 16;
+		set_host_byte(cmd, DID_RESET);
 		return hpsa_cmd_free_and_done(c->h, c, cmd);
 	}
 
@@ -5637,7 +5637,7 @@ static void hpsa_command_resubmit_worker(struct work_struct *work)
 				 * Try again via scsi mid layer, which will
 				 * then get SCSI_MLQUEUE_HOST_BUSY.
 				 */
-				cmd->result = DID_IMM_RETRY << 16;
+				set_host_byte(cmd, DID_IMM_RETRY);
 				return hpsa_cmd_free_and_done(h, c, cmd);
 			}
 			/* else, fall thru and resubmit down CISS path */
@@ -5653,7 +5653,7 @@ static void hpsa_command_resubmit_worker(struct work_struct *work)
 		 * hpsa_ciss_submit will have already freed c
 		 * if it encountered a dma mapping failure.
 		 */
-		cmd->result = DID_IMM_RETRY << 16;
+		set_host_byte(cmd, DID_IMM_RETRY);
 		cmd->scsi_done(cmd);
 	}
 }
@@ -5673,19 +5673,19 @@ static int hpsa_scsi_queue_command(struct Scsi_Host *sh, struct scsi_cmnd *cmd)
 
 	dev = cmd->device->hostdata;
 	if (!dev) {
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		cmd->scsi_done(cmd);
 		return 0;
 	}
 
 	if (dev->removed) {
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		cmd->scsi_done(cmd);
 		return 0;
 	}
 
 	if (unlikely(lockup_detected(h))) {
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		cmd->scsi_done(cmd);
 		return 0;
 	}
