@@ -341,7 +341,7 @@ snic_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *sc)
 	if (ret) {
 		SNIC_HOST_ERR(shost, "Tgt %p id %d Not Ready.\n", tgt, tgt->id);
 		atomic64_inc(&snic->s_stats.misc.tgt_not_rdy);
-		sc->result = ret;
+		set_host_byte(sc, ret);
 		sc->scsi_done(sc);
 
 		return 0;
@@ -475,7 +475,8 @@ snic_process_io_failed_state(struct snic *snic,
 		      snic_io_status_to_str(cmpl_stat), CMD_FLAGS(sc));
 
 	/* Set sc->result */
-	sc->result = (res << 16) | icmnd_cmpl->scsi_status;
+	set_status_byte(sc, icmnd_cmpl->scsi_status);
+	set_host_byte(sc, res);
 } /* end of snic_process_io_failed_state */
 
 /*
@@ -508,7 +509,8 @@ snic_process_icmnd_cmpl_status(struct snic *snic,
 	CMD_STATE(sc) = SNIC_IOREQ_COMPLETE;
 
 	if (likely(cmpl_stat == SNIC_STAT_IO_SUCCESS)) {
-		sc->result = (DID_OK << 16) | scsi_stat;
+		set_status_byte(sc, scsi_stat);
+		set_host_byte(sc, DID_OK);
 
 		xfer_len = scsi_bufflen(sc);
 
@@ -846,7 +848,7 @@ snic_process_itmf_cmpl(struct snic *snic,
 		}
 
 		CMD_SP(sc) = NULL;
-		sc->result = (DID_ERROR << 16);
+		set_host_byte(sc, DID_ERROR);
 		SNIC_SCSI_DBG(snic->shost,
 			      "itmf_cmpl: Completing IO. sc %p flags 0x%llx\n",
 			      sc, CMD_FLAGS(sc));
@@ -1474,7 +1476,7 @@ snic_abort_finish(struct snic *snic, struct scsi_cmnd *sc)
 		 * the # IO timeouts == 2, will cause the LUN offline.
 		 * Call scsi_done to complete the IO.
 		 */
-		sc->result = (DID_ERROR << 16);
+		set_host_byte(sc, DID_ERROR);
 		sc->scsi_done(sc);
 		break;
 
@@ -1514,7 +1516,7 @@ snic_send_abort_and_wait(struct snic *snic, struct scsi_cmnd *sc)
 	int ret = 0, tmf = 0, tag = snic_cmd_tag(sc);
 
 	tgt = starget_to_tgt(scsi_target(sc->device));
-	if ((snic_tgt_chkready(tgt) != 0) && (tgt->tdata.typ == SNIC_TGT_SAN))
+	if ((snic_tgt_chkready(tgt) != DID_OK) && (tgt->tdata.typ == SNIC_TGT_SAN))
 		tmf = SNIC_ITMF_ABTS_TASK_TERM;
 	else
 		tmf = SNIC_ITMF_ABTS_TASK;
@@ -1793,7 +1795,7 @@ snic_dr_clean_single_req(struct snic *snic,
 	spin_unlock_irqrestore(io_lock, flags);
 
 	tgt = starget_to_tgt(scsi_target(sc->device));
-	if ((snic_tgt_chkready(tgt) != 0) && (tgt->tdata.typ == SNIC_TGT_SAN))
+	if ((snic_tgt_chkready(tgt) != DID_OK) && (tgt->tdata.typ == SNIC_TGT_SAN))
 		tmf = SNIC_ITMF_ABTS_TASK_TERM;
 	else
 		tmf = SNIC_ITMF_ABTS_TASK;
@@ -1854,7 +1856,7 @@ snic_dr_clean_single_req(struct snic *snic,
 
 	snic_release_req_buf(snic, rqi, sc);
 
-	sc->result = (DID_ERROR << 16);
+	set_host_byte(sc, DID_ERROR);
 	sc->scsi_done(sc);
 
 	ret = 0;
@@ -2491,7 +2493,7 @@ snic_scsi_cleanup(struct snic *snic, int ex_tag)
 		snic_release_req_buf(snic, rqi, sc);
 
 cleanup:
-		sc->result = DID_TRANSPORT_DISRUPTED << 16;
+		set_host_byte(sc, DID_TRANSPORT_DISRUPTED);
 		SNIC_HOST_INFO(snic->shost,
 			       "sc_clean: DID_TRANSPORT_DISRUPTED for sc %p, Tag %d flags 0x%llx rqi %p duration %u msecs\n",
 			       sc, sc->request->tag, CMD_FLAGS(sc), rqi,
