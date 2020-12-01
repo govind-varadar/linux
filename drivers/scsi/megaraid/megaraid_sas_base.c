@@ -1773,8 +1773,10 @@ megasas_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	instance = (struct megasas_instance *)
 	    scmd->device->host->hostdata;
 
+	scsi_result_set_good(scmd);
+
 	if (instance->unload == 1) {
-		scmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scmd, DID_NO_CONNECT);
 		scmd->scsi_done(scmd);
 		return 0;
 	}
@@ -1788,21 +1790,21 @@ megasas_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 		if (megasas_check_mpio_paths(instance, scmd) == DID_REQUEUE) {
 			return SCSI_MLQUEUE_HOST_BUSY;
 		} else {
-			scmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(scmd, DID_NO_CONNECT);
 			scmd->scsi_done(scmd);
 			return 0;
 		}
 	}
 
 	if (atomic_read(&instance->adprecovery) == MEGASAS_HW_CRITICAL_ERROR) {
-		scmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scmd, DID_NO_CONNECT);
 		scmd->scsi_done(scmd);
 		return 0;
 	}
 
 	mr_device_priv_data = scmd->device->hostdata;
 	if (!mr_device_priv_data) {
-		scmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scmd, DID_NO_CONNECT);
 		scmd->scsi_done(scmd);
 		return 0;
 	}
@@ -1814,19 +1816,17 @@ megasas_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 		return SCSI_MLQUEUE_DEVICE_BUSY;
 
 
-	scsi_result_set_good(scmd);
-
 	if (MEGASAS_IS_LOGICAL(scmd->device) &&
 	    (scmd->device->id >= instance->fw_supported_vd_count ||
 		scmd->device->lun)) {
-		scmd->result = DID_BAD_TARGET << 16;
+		set_host_byte(scmd, DID_BAD_TARGET);
 		goto out_done;
 	}
 
 	if ((scmd->cmnd[0] == SYNCHRONIZE_CACHE) &&
 	    MEGASAS_IS_LOGICAL(scmd->device) &&
 	    (!instance->fw_sync_cache_support)) {
-		scsi_result_set_good(scmd);
+		set_host_byte(scmd, DID_OK);
 		goto out_done;
 	}
 
@@ -2733,7 +2733,7 @@ static int megasas_wait_for_outstanding(struct megasas_instance *instance)
 						struct megasas_cmd, list);
 			list_del_init(&reset_cmd->list);
 			if (reset_cmd->scmd) {
-				reset_cmd->scmd->result = DID_REQUEUE << 16;
+				set_host_byte(reset_cmd->scmd, DID_REQUEUE);
 				dev_notice(&instance->pdev->dev, "%d:%p reset [%02x]\n",
 					reset_index, reset_cmd,
 					reset_cmd->scmd->cmnd[0]);
@@ -3546,7 +3546,7 @@ megasas_complete_cmd(struct megasas_instance *instance, struct megasas_cmd *cmd,
 	case MFI_CMD_LD_WRITE:
 
 		if (alt_status) {
-			cmd->scmd->result = alt_status << 16;
+			set_host_byte(cmd->scmd, alt_status);
 			exception = 1;
 		}
 
@@ -3569,13 +3569,13 @@ megasas_complete_cmd(struct megasas_instance *instance, struct megasas_cmd *cmd,
 
 		case MFI_STAT_SCSI_IO_FAILED:
 		case MFI_STAT_LD_INIT_IN_PROGRESS:
-			cmd->scmd->result =
-			    (DID_ERROR << 16) | hdr->scsi_status;
+			set_status_byte(cmd->scmd, hdr->scsi_status);
+			set_host_byte(cmd->scmd, DID_ERROR);
 			break;
 
 		case MFI_STAT_SCSI_DONE_WITH_ERROR:
 
-			cmd->scmd->result = (DID_OK << 16) | hdr->scsi_status;
+			set_status_byte(cmd->scmd, hdr->scsi_status);
 
 			if (hdr->scsi_status == SAM_STAT_CHECK_CONDITION) {
 				memset(cmd->scmd->sense_buffer, 0,
@@ -3583,20 +3583,20 @@ megasas_complete_cmd(struct megasas_instance *instance, struct megasas_cmd *cmd,
 				memcpy(cmd->scmd->sense_buffer, cmd->sense,
 				       hdr->sense_len);
 
-				cmd->scmd->result |= DRIVER_SENSE << 24;
+				set_driver_byte(cmd->scmd, DRIVER_SENSE);
 			}
 
 			break;
 
 		case MFI_STAT_LD_OFFLINE:
 		case MFI_STAT_DEVICE_NOT_FOUND:
-			cmd->scmd->result = DID_BAD_TARGET << 16;
+			set_host_byte(cmd->scmd, DID_BAD_TARGET);
 			break;
 
 		default:
 			dev_printk(KERN_DEBUG, &instance->pdev->dev, "MFI FW status %#x\n",
 			       hdr->cmd_status);
-			cmd->scmd->result = DID_ERROR << 16;
+			set_host_byte(cmd->scmd, DID_ERROR);
 			break;
 		}
 

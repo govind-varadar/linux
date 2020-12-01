@@ -2004,18 +2004,19 @@ map_cmd_status(struct fusion_context *fusion,
 
 	case MFI_STAT_SCSI_IO_FAILED:
 	case MFI_STAT_LD_INIT_IN_PROGRESS:
-		scmd->result = (DID_ERROR << 16) | ext_status;
+		set_status_byte(scmd, ext_status);
+		set_host_byte(scmd, DID_ERROR);
 		break;
 
 	case MFI_STAT_SCSI_DONE_WITH_ERROR:
 
-		scmd->result = (DID_OK << 16) | ext_status;
+		set_status_byte(scmd, (ext_status));
 		if (ext_status == SAM_STAT_CHECK_CONDITION) {
 			memset(scmd->sense_buffer, 0,
 			       SCSI_SENSE_BUFFERSIZE);
 			memcpy(scmd->sense_buffer, sense,
 			       SCSI_SENSE_BUFFERSIZE);
-			scmd->result |= DRIVER_SENSE << 24;
+			set_driver_byte(scmd, DRIVER_SENSE);
 		}
 
 		/*
@@ -2037,13 +2038,13 @@ map_cmd_status(struct fusion_context *fusion,
 
 	case MFI_STAT_LD_OFFLINE:
 	case MFI_STAT_DEVICE_NOT_FOUND:
-		scmd->result = DID_BAD_TARGET << 16;
+		set_host_byte(scmd, DID_BAD_TARGET);
 		break;
 	case MFI_STAT_CONFIG_SEQ_MISMATCH:
-		scmd->result = DID_IMM_RETRY << 16;
+		set_host_byte(scmd, DID_IMM_RETRY);
 		break;
 	default:
-		scmd->result = DID_ERROR << 16;
+		set_host_byte(scmd, DID_ERROR);
 		break;
 	}
 }
@@ -4629,7 +4630,7 @@ int megasas_task_abort_fusion(struct scsi_cmnd *scmd)
 	if (!mr_device_priv_data) {
 		sdev_printk(KERN_INFO, scmd->device, "device been deleted! "
 			"scmd(%p)\n", scmd);
-		scmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scmd, DID_NO_CONNECT);
 		ret = SUCCESS;
 		goto out;
 	}
@@ -4710,7 +4711,7 @@ int megasas_reset_target_fusion(struct scsi_cmnd *scmd)
 	if (!mr_device_priv_data) {
 		sdev_printk(KERN_INFO, scmd->device,
 			    "device been deleted! scmd: (0x%p)\n", scmd);
-		scmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(scmd, DID_NO_CONNECT);
 		ret = SUCCESS;
 		goto out;
 	}
