@@ -1719,7 +1719,8 @@ out:
 			host_status = csio_scsi_copy_to_sgl(hw, req);
 	}
 
-	cmnd->result = (((host_status) << 16) | scsi_status);
+	set_status_byte(cmnd, scsi_status);
+	set_host_byte(cmnd, host_status);
 	cmnd->scsi_done(cmnd);
 
 	/* Wake up waiting threads */
@@ -1747,7 +1748,8 @@ csio_scsi_cbfn(struct csio_hw *hw, struct csio_ioreq *req)
 				host_status = csio_scsi_copy_to_sgl(hw, req);
 		}
 
-		cmnd->result = (((host_status) << 16) | scsi_status);
+		set_status_byte(cmnd, scsi_status);
+		set_host_byte(cmnd, host_status);
 		cmnd->scsi_done(cmnd);
 		csio_scsi_cmnd(req) = NULL;
 		CSIO_INC_STATS(csio_hw_to_scsim(hw), n_tot_success);
@@ -1796,7 +1798,7 @@ csio_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmnd)
 	}
 
 	if (unlikely(!csio_is_hw_ready(hw))) {
-		cmnd->result = (DID_REQUEUE << 16);
+		set_host_byte(cmnd, DID_REQUEUE);
 		CSIO_INC_STATS(scsim, n_hw_nr_error);
 		goto err_done;
 	}
@@ -1978,14 +1980,14 @@ inval_scmnd:
 		csio_scsi_cmnd(ioreq) = NULL;
 		spin_unlock_irq(&hw->lock);
 
-		cmnd->result = (DID_ERROR << 16);
+		set_host_byte(cmnd, DID_ERROR);
 		cmnd->scsi_done(cmnd);
 
 		return FAILED;
 	}
 
 	/* FW successfully aborted the request */
-	if (host_byte(cmnd->result) == DID_REQUEUE) {
+	if (get_host_byte(cmnd) == DID_REQUEUE) {
 		csio_info(hw,
 			"Aborted SCSI command to (%d:%llu) tag %u\n",
 			cmnd->device->id, cmnd->device->lun,
