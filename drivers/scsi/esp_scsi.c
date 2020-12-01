@@ -919,9 +919,9 @@ static void esp_cmd_is_done(struct esp *esp, struct esp_cmd_entry *ent,
 		 * saw originally.  Also, report that we are providing
 		 * the sense data.
 		 */
-		cmd->result = ((DRIVER_SENSE << 24) |
-			       (DID_OK << 16) |
-			       (SAM_STAT_CHECK_CONDITION << 0));
+		set_driver_byte(cmd, DRIVER_SENSE);
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
 		ent->flags &= ~ESP_CMD_FLAG_AUTOSENSE;
 		if (esp_debug & ESP_DEBUG_AUTOSENSE) {
@@ -1867,7 +1867,7 @@ again:
 				ent->flags |= ESP_CMD_FLAG_AUTOSENSE;
 				esp_autosense(esp, ent);
 			} else {
-				cmd->result = ent->status;
+				set_status_byte(cmd, ent->status);
 				esp_cmd_is_done(esp, ent, cmd, DID_OK);
 			}
 		} else if (ent->message == DISCONNECT) {
@@ -2033,7 +2033,7 @@ static void esp_reset_cleanup_one(struct esp *esp, struct esp_cmd_entry *ent)
 
 	esp_unmap_dma(esp, cmd);
 	esp_free_lun_tag(ent, cmd->device->hostdata);
-	cmd->result = DID_RESET << 16;
+	set_host_byte(cmd, DID_RESET);
 
 	if (ent->flags & ESP_CMD_FLAG_AUTOSENSE)
 		esp_unmap_sense(esp, ent);
@@ -2060,7 +2060,7 @@ static void esp_reset_cleanup(struct esp *esp)
 		struct scsi_cmnd *cmd = ent->cmd;
 
 		list_del(&ent->list);
-		cmd->result = DID_RESET << 16;
+		set_host_byte(cmd, DID_RESET);
 		cmd->scsi_done(cmd);
 		esp_put_ent(esp, ent);
 	}
@@ -2534,7 +2534,7 @@ static int esp_eh_abort_handler(struct scsi_cmnd *cmd)
 		 */
 		list_del(&ent->list);
 
-		cmd->result = DID_ABORT << 16;
+		set_host_byte(cmd, DID_ABORT);
 		cmd->scsi_done(cmd);
 
 		esp_put_ent(esp, ent);
