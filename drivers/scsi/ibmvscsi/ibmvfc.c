@@ -1826,7 +1826,7 @@ static void ibmvfc_scsi_done(struct ibmvfc_event *evt)
 			ibmvfc_log_error(evt);
 		}
 
-		if (!cmnd->result &&
+		if (scsi_result_is_good(!cmnd) &&
 		    (scsi_bufflen(cmnd) - scsi_get_resid(cmnd) < cmnd->underflow))
 			set_host_byte(cmnd, DID_ERROR);
 
@@ -1916,12 +1916,12 @@ static int ibmvfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 
 	if (unlikely((rc = fc_remote_port_chkready(rport))) ||
 	    unlikely((rc = ibmvfc_host_chkready(vhost)))) {
-		cmnd->result = rc << 16;
+		set_host_byte(cmnd, rc);
 		cmnd->scsi_done(cmnd);
 		return 0;
 	}
 
-	cmnd->result = (DID_OK << 16);
+	set_host_byte(cmnd, DID_OK);
 	if (vhost->using_channels) {
 		scsi_channel = hwq % vhost->scsi_scrqs.active_queues;
 		evt = ibmvfc_get_event(&vhost->scsi_scrqs.scrqs[scsi_channel]);
