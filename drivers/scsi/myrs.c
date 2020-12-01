@@ -1593,7 +1593,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 	int nsge;
 
 	if (!scmd->device->hostdata) {
-		scmd->result = (DID_NO_CONNECT << 16);
+		set_host_byte(scmd, DID_NO_CONNECT);
 		scmd->scsi_done(scmd);
 		return 0;
 	}
@@ -1613,7 +1613,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 				scsi_build_sense(scmd, 0, ILLEGAL_REQUEST, 0x24, 0);
 			} else {
 				myrs_mode_sense(cs, scmd, ldev_info);
-				scmd->result = (DID_OK << 16);
+				set_host_byte(scmd, DID_OK);
 			}
 			scmd->scsi_done(scmd);
 			return 0;
@@ -1754,7 +1754,7 @@ static int myrs_queuecommand(struct Scsi_Host *shost,
 		scsi_for_each_sg(scmd, sgl, nsge, i) {
 			if (WARN_ON(!hw_sgl)) {
 				scsi_dma_unmap(scmd);
-				scmd->result = (DID_ERROR << 16);
+				set_host_byte(scmd, DID_ERROR);
 				scmd->scsi_done(scmd);
 				return 0;
 			}
@@ -2079,9 +2079,11 @@ static void myrs_handle_scsi(struct myrs_hba *cs, struct myrs_cmdblk *cmd_blk,
 		scsi_set_resid(scmd, cmd_blk->residual);
 	if (status == MYRS_STATUS_DEVICE_NON_RESPONSIVE ||
 	    status == MYRS_STATUS_DEVICE_NON_RESPONSIVE2)
-		scmd->result = (DID_BAD_TARGET << 16);
-	else
-		scmd->result = (DID_OK << 16) | status;
+		set_host_byte(scmd, DID_BAD_TARGET);
+	else {
+		set_status_byte(scmd, status);
+		set_host_byte(scmd, DID_OK);
+	}
 	scmd->scsi_done(scmd);
 }
 
