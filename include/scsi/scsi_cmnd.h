@@ -358,6 +358,11 @@ static inline void scsi_result_set_good(struct scsi_cmnd *cmd)
 	cmd->result = 0;
 }
 
+static inline int scsi_get_result(struct scsi_cmnd *cmd)
+{
+	return cmd->result;
+}
+
 static inline unsigned scsi_transfer_length(struct scsi_cmnd *scmd)
 {
 	unsigned int xfer_len = scmd->sdb.length;
