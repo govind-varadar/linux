@@ -626,16 +626,15 @@ static void isd200_invoke_transport( struct us_data *us,
 		goto Handle_Abort;
 	}
 
+	scsi_result_set_good(srb);
 	switch (transferStatus) {
 
 	case USB_STOR_TRANSPORT_GOOD:
-		/* Indicate a good result */
-		scsi_result_set_good(srb);
 		break;
 
 	case USB_STOR_TRANSPORT_NO_SENSE:
 		usb_stor_dbg(us, "-- transport indicates protocol failure\n");
-		srb->result = SAM_STAT_CHECK_CONDITION;
+		set_status_byte(srb, SAM_STAT_CHECK_CONDITION);
 		return;
 
 	case USB_STOR_TRANSPORT_FAILED:
@@ -645,13 +644,13 @@ static void isd200_invoke_transport( struct us_data *us,
 
 	case USB_STOR_TRANSPORT_ERROR:
 		usb_stor_dbg(us, "-- transport indicates transport error\n");
-		srb->result = DID_ERROR << 16;
+		set_host_byte(srb, DID_ERROR);
 		/* Need reset here */
 		return;
-    
+
 	default:
 		usb_stor_dbg(us, "-- transport indicates unknown error\n");
-		srb->result = DID_ERROR << 16;
+		set_host_byte(srb, DID_ERROR);
 		/* Need reset here */
 		return;
 	}
@@ -674,13 +673,13 @@ static void isd200_invoke_transport( struct us_data *us,
 		}
 		if (result == ISD200_GOOD) {
 			isd200_build_sense(us, srb);
-			srb->result = SAM_STAT_CHECK_CONDITION;
+			set_status_byte(srb, SAM_STAT_CHECK_CONDITION);
 
 			/* If things are really okay, then let's show that */
 			if ((srb->sense_buffer[2] & 0xf) == 0x0)
 				scsi_result_set_good(srb);
 		} else {
-			srb->result = DID_ERROR << 16;
+			set_host_byte(srb, DID_ERROR);
 			/* Need reset here */
 		}
 	}
@@ -690,7 +689,7 @@ static void isd200_invoke_transport( struct us_data *us,
 	 * condition, show that in the result code
 	 */
 	if (transferStatus == USB_STOR_TRANSPORT_FAILED)
-		srb->result = SAM_STAT_CHECK_CONDITION;
+		set_status_byte(srb, SAM_STAT_CHECK_CONDITION);
 	return;
 
 	/*
@@ -698,7 +697,7 @@ static void isd200_invoke_transport( struct us_data *us,
 	 * following an abort
 	 */
 	Handle_Abort:
-	srb->result = DID_ABORT << 16;
+	set_host_byte(srb, DID_ABORT);
 
 	/* permit the reset transfer to take place */
 	clear_bit(US_FLIDX_ABORTING, &us->dflags);
@@ -1418,7 +1417,7 @@ static int isd200_scsi_to_ata(struct scsi_cmnd *srb, struct us_data *us,
 	default:
 		usb_stor_dbg(us, "Unsupported SCSI command - 0x%X\n",
 			     srb->cmnd[0]);
-		srb->result = DID_ERROR << 16;
+		set_host_byte(srb, DID_ERROR);
 		sendToTransport = 0;
 		break;
 	}
@@ -1519,7 +1518,7 @@ static void isd200_ata_command(struct scsi_cmnd *srb, struct us_data *us)
 
 	if (us->extra == NULL) {
 		usb_stor_dbg(us, "ERROR Driver not initialized\n");
-		srb->result = DID_ERROR << 16;
+		set_host_byte(srb, DID_ERROR);
 		return;
 	}
 
