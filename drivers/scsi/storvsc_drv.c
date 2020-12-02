@@ -1081,7 +1081,8 @@ static void storvsc_command_completion(struct storvsc_cmd_request *cmd_request,
 	vm_srb = &cmd_request->vstor_packet.vm_srb;
 	data_transfer_length = vm_srb->data_transfer_length;
 
-	scmnd->result = vm_srb->scsi_status;
+	set_host_byte(scmnd, DID_OK);
+	set_status_byte(scmnd, vm_srb->scsi_status);
 
 	if (!scsi_result_is_good(scmnd)) {
 		if (scsi_normalize_sense(scmnd->sense_buffer,
@@ -1641,7 +1642,7 @@ static bool storvsc_scsi_cmd_ok(struct scsi_cmnd *scmnd)
 	 * this. So, don't send it.
 	 */
 	case SET_WINDOW:
-		scmnd->result = DID_ERROR << 16;
+		set_host_byte(scmnd, DID_ERROR);
 		allowed = false;
 		break;
 	default:
