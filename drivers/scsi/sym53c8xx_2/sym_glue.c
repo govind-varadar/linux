@@ -172,7 +172,7 @@ void sym_set_cam_result_error(struct sym_hcb *np, struct sym_ccb *cp, int resid)
 	struct scsi_cmnd *cmd = cp->cmd;
 	u_int cam_status, scsi_status, drv_status;
 
-	drv_status  = 0;
+	drv_status = DRIVER_OK;
 	cam_status  = DID_OK;
 	scsi_status = cp->ssss_status;
 
@@ -235,7 +235,9 @@ void sym_set_cam_result_error(struct sym_hcb *np, struct sym_ccb *cp, int resid)
 		cam_status = sym_xerr_cam_status(DID_ERROR, cp->xerr_status);
 	}
 	scsi_set_resid(cmd, resid);
-	cmd->result = (drv_status << 24) | (cam_status << 16) | scsi_status;
+	set_status_byte(cmd, scsi_status);
+	set_host_byte(cmd, cam_status);
+	set_driver_byte(cmd, drv_status);
 }
 
 static int sym_scatter(struct sym_hcb *np, struct sym_ccb *cp, struct scsi_cmnd *cmd)
