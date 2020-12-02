@@ -626,16 +626,17 @@ static void isd200_invoke_transport( struct us_data *us,
 		goto Handle_Abort;
 	}
 
+	set_host_byte(srb, DID_OK);
+	set_status_byte(srb, SAM_STAT_GOOD);
 	switch (transferStatus) {
 
 	case USB_STOR_TRANSPORT_GOOD:
 		/* Indicate a good result */
-		srb->result = SAM_STAT_GOOD;
 		break;
 
 	case USB_STOR_TRANSPORT_NO_SENSE:
 		usb_stor_dbg(us, "-- transport indicates protocol failure\n");
-		srb->result = SAM_STAT_CHECK_CONDITION;
+		set_status_byte(srb, SAM_STAT_CHECK_CONDITION);
 		return;
 
 	case USB_STOR_TRANSPORT_FAILED:
@@ -645,13 +646,13 @@ static void isd200_invoke_transport( struct us_data *us,
 
 	case USB_STOR_TRANSPORT_ERROR:
 		usb_stor_dbg(us, "-- transport indicates transport error\n");
-		srb->result = DID_ERROR << 16;
+		set_host_byte(srb, DID_ERROR);
 		/* Need reset here */
 		return;
-    
+
 	default:
 		usb_stor_dbg(us, "-- transport indicates unknown error\n");
-		srb->result = DID_ERROR << 16;
+		set_host_byte(srb, DID_ERROR);
 		/* Need reset here */
 		return;
 	}
@@ -674,13 +675,13 @@ static void isd200_invoke_transport( struct us_data *us,
 		}
 		if (result == ISD200_GOOD) {
 			isd200_build_sense(us, srb);
-			srb->result = SAM_STAT_CHECK_CONDITION;
+			set_status_byte(srb, SAM_STAT_CHECK_CONDITION);
 
 			/* If things are really okay, then let's show that */
 			if ((srb->sense_buffer[2] & 0xf) == 0x0)
-				srb->result = SAM_STAT_GOOD;
+				set_status_byte(srb, SAM_STAT_GOOD);
 		} else {
-			srb->result = DID_ERROR << 16;
+			set_host_byte(srb, DID_ERROR);
 			/* Need reset here */
 		}
 	}
@@ -690,7 +691,7 @@ static void isd200_invoke_transport( struct us_data *us,
 	 * condition, show that in the result code
 	 */
 	if (transferStatus == USB_STOR_TRANSPORT_FAILED)
-		srb->result = SAM_STAT_CHECK_CONDITION;
+		set_status_byte(srb, SAM_STAT_CHECK_CONDITION);
 	return;
 
 	/*
@@ -698,7 +699,7 @@ static void isd200_invoke_transport( struct us_data *us,
 	 * following an abort
 	 */
 	Handle_Abort:
-	srb->result = DID_ABORT << 16;
+	set_host_byte(srb, DID_ABORT);
 
 	/* permit the reset transfer to take place */
 	clear_bit(US_FLIDX_ABORTING, &us->dflags);
@@ -1238,7 +1239,8 @@ static int isd200_scsi_to_ata(struct scsi_cmnd *srb, struct us_data *us,
 		/* copy InquiryData */
 		usb_stor_set_xfer_buf((unsigned char *) &info->InquiryData,
 				sizeof(info->InquiryData), srb);
-		srb->result = SAM_STAT_GOOD;
+		set_host_byte(srb, DID_OK);
+		set_status_byte(srb, SAM_STAT_GOOD);
 		sendToTransport = 0;
 		break;
 
@@ -1258,7 +1260,8 @@ static int isd200_scsi_to_ata(struct scsi_cmnd *srb, struct us_data *us,
 			isd200_srb_set_bufflen(srb, 0);
 		} else {
 			usb_stor_dbg(us, "   Media Status not supported, just report okay\n");
-			srb->result = SAM_STAT_GOOD;
+			set_host_byte(srb, DID_OK);
+			set_status_byte(srb, SAM_STAT_GOOD);
 			sendToTransport = 0;
 		}
 		break;
@@ -1276,7 +1279,8 @@ static int isd200_scsi_to_ata(struct scsi_cmnd *srb, struct us_data *us,
 			isd200_srb_set_bufflen(srb, 0);
 		} else {
 			usb_stor_dbg(us, "   Media Status not supported, just report okay\n");
-			srb->result = SAM_STAT_GOOD;
+			set_host_byte(srb, DID_OK);
+			set_status_byte(srb, SAM_STAT_GOOD);
 			sendToTransport = 0;
 		}
 		break;
@@ -1299,7 +1303,8 @@ static int isd200_scsi_to_ata(struct scsi_cmnd *srb, struct us_data *us,
 
 		usb_stor_set_xfer_buf((unsigned char *) &readCapacityData,
 				sizeof(readCapacityData), srb);
-		srb->result = SAM_STAT_GOOD;
+		set_host_byte(srb, DID_OK);
+		set_status_byte(srb, SAM_STAT_GOOD);
 		sendToTransport = 0;
 	}
 	break;
@@ -1384,7 +1389,8 @@ static int isd200_scsi_to_ata(struct scsi_cmnd *srb, struct us_data *us,
 			isd200_srb_set_bufflen(srb, 0);
 		} else {
 			usb_stor_dbg(us, "   Not removable media, just report okay\n");
-			srb->result = SAM_STAT_GOOD;
+			set_host_byte(srb, DID_OK);
+			set_status_byte(srb, SAM_STAT_GOOD);
 			sendToTransport = 0;
 		}
 		break;
@@ -1410,7 +1416,8 @@ static int isd200_scsi_to_ata(struct scsi_cmnd *srb, struct us_data *us,
 			isd200_srb_set_bufflen(srb, 0);
 		} else {
 			usb_stor_dbg(us, "   Nothing to do, just report okay\n");
-			srb->result = SAM_STAT_GOOD;
+			set_host_byte(srb, DID_OK);
+			set_status_byte(srb, SAM_STAT_GOOD);
 			sendToTransport = 0;
 		}
 		break;
@@ -1418,7 +1425,7 @@ static int isd200_scsi_to_ata(struct scsi_cmnd *srb, struct us_data *us,
 	default:
 		usb_stor_dbg(us, "Unsupported SCSI command - 0x%X\n",
 			     srb->cmnd[0]);
-		srb->result = DID_ERROR << 16;
+		set_host_byte(srb, DID_ERROR);
 		sendToTransport = 0;
 		break;
 	}
@@ -1519,7 +1526,7 @@ static void isd200_ata_command(struct scsi_cmnd *srb, struct us_data *us)
 
 	if (us->extra == NULL) {
 		usb_stor_dbg(us, "ERROR Driver not initialized\n");
-		srb->result = DID_ERROR << 16;
+		set_host_byte(srb, DID_ERROR);
 		return;
 	}
 
