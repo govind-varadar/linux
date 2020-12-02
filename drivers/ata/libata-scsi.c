@@ -196,7 +196,9 @@ void ata_scsi_set_sense(struct ata_device *dev, struct scsi_cmnd *cmd,
 	if (!cmd)
 		return;
 
-	cmd->result = (DRIVER_SENSE << 24) | SAM_STAT_CHECK_CONDITION;
+	set_driver_byte(cmd, DRIVER_SENSE);
+	set_host_byte(cmd, DID_OK);
+	set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
 	scsi_build_sense_buffer(d_sense, cmd->sense_buffer, sk, asc, ascq);
 }
@@ -638,7 +640,8 @@ static struct ata_queued_cmd *ata_scsi_qc_new(struct ata_device *dev,
 		if (cmd->request->rq_flags & RQF_QUIET)
 			qc->flags |= ATA_QCFLAG_QUIET;
 	} else {
-		cmd->result = (DID_OK << 16) | (QUEUE_FULL << 1);
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_TASK_SET_FULL);
 		cmd->scsi_done(cmd);
 	}
 
@@ -858,7 +861,9 @@ static void ata_gen_passthru_sense(struct ata_queued_cmd *qc)
 
 	memset(sb, 0, SCSI_SENSE_BUFFERSIZE);
 
-	cmd->result = (DRIVER_SENSE << 24) | SAM_STAT_CHECK_CONDITION;
+	set_driver_byte(cmd, DRIVER_SENSE);
+	set_host_byte(cmd, DID_OK);
+	set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
 	/*
 	 * Use ata_to_sense_error() to map status register bits
@@ -957,7 +962,9 @@ static void ata_gen_ata_sense(struct ata_queued_cmd *qc)
 
 	memset(sb, 0, SCSI_SENSE_BUFFERSIZE);
 
-	cmd->result = (DRIVER_SENSE << 24) | SAM_STAT_CHECK_CONDITION;
+	set_driver_byte(cmd, DRIVER_SENSE);
+	set_host_byte(cmd, DID_OK);
+	set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 
 	if (ata_dev_disabled(dev)) {
 		/* Device disabled after error recovery */
@@ -1657,9 +1664,10 @@ static void ata_scsi_qc_complete(struct ata_queued_cmd *qc)
 	if (((cdb[0] == ATA_16) || (cdb[0] == ATA_12)) &&
 	    ((cdb[2] & 0x20) || need_sense))
 		ata_gen_passthru_sense(qc);
-	else if (qc->flags & ATA_QCFLAG_SENSE_VALID)
-		cmd->result = SAM_STAT_CHECK_CONDITION;
-	else if (need_sense)
+	else if (qc->flags & ATA_QCFLAG_SENSE_VALID) {
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+	} else if (need_sense)
 		ata_gen_ata_sense(qc);
 	else
 		scsi_result_set_good(cmd);
@@ -1746,7 +1754,7 @@ early_finish:
 
 err_did:
 	ata_qc_free(qc);
-	cmd->result = (DID_ERROR << 16);
+	set_host_byte(cmd, DID_ERROR);
 	cmd->scsi_done(cmd);
 err_mem:
 	DPRINTK("EXIT - internal\n");
@@ -2623,14 +2631,16 @@ static void atapi_qc_complete(struct ata_queued_cmd *qc)
 		if (qc->cdb[0] == ALLOW_MEDIUM_REMOVAL && qc->dev->sdev)
 			qc->dev->sdev->locked = 0;
 
-		qc->scsicmd->result = SAM_STAT_CHECK_CONDITION;
+		set_host_byte(qc->scsicmd, DID_OK);
+		set_status_byte(qc->scsicmd, SAM_STAT_CHECK_CONDITION);
 		ata_qc_done(qc);
 		return;
 	}
 
 	/* successful completion or old EH failure path */
 	if (unlikely(err_mask & AC_ERR_DEV)) {
-		cmd->result = SAM_STAT_CHECK_CONDITION;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		atapi_request_sense(qc);
 		return;
 	} else if (unlikely(err_mask)) {
@@ -4061,7 +4071,7 @@ int __ata_scsi_queuecmd(struct scsi_cmnd *scmd, struct ata_device *dev)
  bad_cdb_len:
 	DPRINTK("bad CDB len=%u, scsi_op=0x%02x, max=%u\n",
 		scmd->cmd_len, scsi_op, dev->cdb_len);
-	scmd->result = DID_ERROR << 16;
+	set_host_byte(scmd, DID_ERROR);
 	scmd->scsi_done(scmd);
 	return 0;
 }
@@ -4103,7 +4113,7 @@ int ata_scsi_queuecmd(struct Scsi_Host *shost, struct scsi_cmnd *cmd)
 	if (likely(dev))
 		rc = __ata_scsi_queuecmd(cmd, dev);
 	else {
-		cmd->result = (DID_BAD_TARGET << 16);
+		set_host_byte(cmd, DID_BAD_TARGET);
 		cmd->scsi_done(cmd);
 	}
 
@@ -4197,7 +4207,7 @@ void ata_scsi_simulate(struct ata_device *dev, struct scsi_cmnd *cmd)
 
 	case REQUEST_SENSE:
 		ata_scsi_set_sense(dev, cmd, 0, 0, 0);
-		cmd->result = (DRIVER_SENSE << 24);
+		set_driver_byte(cmd, DRIVER_SENSE);
 		break;
 
 	/* if we reach this, then writeback caching is disabled,
