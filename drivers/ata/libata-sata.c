@@ -1245,7 +1245,7 @@ int ata_sas_queuecmd(struct scsi_cmnd *cmd, struct ata_port *ap)
 	if (likely(ata_dev_enabled(ap->link.device)))
 		rc = __ata_scsi_queuecmd(cmd, ap->link.device);
 	else {
-		cmd->result = (DID_BAD_TARGET << 16);
+		set_host_byte(cmd, DID_BAD_TARGET);
 		cmd->scsi_done(cmd);
 	}
 	return rc;

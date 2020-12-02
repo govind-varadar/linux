@@ -642,7 +642,8 @@ static struct ata_queued_cmd *ata_scsi_qc_new(struct ata_device *dev,
 		if (cmd->request->rq_flags & RQF_QUIET)
 			qc->flags |= ATA_QCFLAG_QUIET;
 	} else {
-		cmd->result = (DID_OK << 16) | (QUEUE_FULL << 1);
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_TASK_SET_FULL);
 		cmd->scsi_done(cmd);
 	}
 
@@ -1240,7 +1241,8 @@ static unsigned int ata_scsi_start_stop_xlat(struct ata_queued_cmd *qc)
 	ata_scsi_set_invalid_field(qc->dev, scmd, fp, bp);
 	return 1;
  skip:
-	scmd->result = SAM_STAT_GOOD;
+	set_host_byte(scmd, DID_OK);
+	set_status_byte(scmd, SAM_STAT_GOOD);
 	return 1;
 }
 
@@ -1491,7 +1493,8 @@ out_of_range:
 	return 1;
 
 nothing_to_do:
-	scmd->result = SAM_STAT_GOOD;
+	set_host_byte(scmd, DID_OK);
+	set_status_byte(scmd, SAM_STAT_GOOD);
 	return 1;
 }
 
@@ -1624,7 +1627,8 @@ out_of_range:
 	return 1;
 
 nothing_to_do:
-	scmd->result = SAM_STAT_GOOD;
+	set_host_byte(scmd, DID_OK);
+	set_status_byte(scmd, SAM_STAT_GOOD);
 	return 1;
 }
 
@@ -1656,12 +1660,15 @@ static void ata_scsi_qc_complete(struct ata_queued_cmd *qc)
 	if (((cdb[0] == ATA_16) || (cdb[0] == ATA_12)) &&
 	    ((cdb[2] & 0x20) || need_sense))
 		ata_gen_passthru_sense(qc);
-	else if (qc->flags & ATA_QCFLAG_SENSE_VALID)
-		cmd->result = SAM_STAT_CHECK_CONDITION;
-	else if (need_sense)
+	else if (qc->flags & ATA_QCFLAG_SENSE_VALID) {
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
+	} else if (need_sense)
 		ata_gen_ata_sense(qc);
-	else
-		cmd->result = SAM_STAT_GOOD;
+	else {
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_GOOD);
+	}
 
 	if (need_sense && !ap->ops->error_handler)
 		ata_dump_status(ap->print_id, &qc->result_tf);
@@ -1745,7 +1752,7 @@ early_finish:
 
 err_did:
 	ata_qc_free(qc);
-	cmd->result = (DID_ERROR << 16);
+	set_host_byte(cmd, DID_ERROR);
 	cmd->scsi_done(cmd);
 err_mem:
 	DPRINTK("EXIT - internal\n");
@@ -1840,8 +1847,10 @@ static void ata_scsi_rbuf_fill(struct ata_scsi_args *args,
 	rc = actor(args, rbuf);
 	ata_scsi_rbuf_put(cmd, rc == 0, &flags);
 
-	if (rc == 0)
-		cmd->result = SAM_STAT_GOOD;
+	if (rc == 0) {
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_GOOD);
+	}
 }
 
 /**
@@ -2622,14 +2631,16 @@ static void atapi_qc_complete(struct ata_queued_cmd *qc)
 		if (qc->cdb[0] == ALLOW_MEDIUM_REMOVAL && qc->dev->sdev)
 			qc->dev->sdev->locked = 0;
 
-		qc->scsicmd->result = SAM_STAT_CHECK_CONDITION;
+		set_host_byte(qc->scsicmd, DID_OK);
+		set_status_byte(qc->scsicmd, SAM_STAT_CHECK_CONDITION);
 		ata_qc_done(qc);
 		return;
 	}
 
 	/* successful completion or old EH failure path */
 	if (unlikely(err_mask & AC_ERR_DEV)) {
-		cmd->result = SAM_STAT_CHECK_CONDITION;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 		atapi_request_sense(qc);
 		return;
 	} else if (unlikely(err_mask)) {
@@ -2642,7 +2653,8 @@ static void atapi_qc_complete(struct ata_queued_cmd *qc)
 	} else {
 		if (cmd->cmnd[0] == INQUIRY && (cmd->cmnd[1] & 0x03) == 0)
 			atapi_fixup_inquiry(cmd);
-		cmd->result = SAM_STAT_GOOD;
+		set_host_byte(cmd, DID_OK);
+		set_status_byte(cmd, SAM_STAT_GOOD);
 	}
 
 	ata_qc_done(qc);
@@ -3832,7 +3844,8 @@ static unsigned int ata_scsi_mode_select_xlat(struct ata_queued_cmd *qc)
 	return 1;
 
  skip:
-	scmd->result = SAM_STAT_GOOD;
+	set_host_byte(scmd, DID_OK);
+	set_status_byte(scmd, SAM_STAT_GOOD);
 	return 1;
 }
 
@@ -4060,7 +4073,7 @@ int __ata_scsi_queuecmd(struct scsi_cmnd *scmd, struct ata_device *dev)
  bad_cdb_len:
 	DPRINTK("bad CDB len=%u, scsi_op=0x%02x, max=%u\n",
 		scmd->cmd_len, scsi_op, dev->cdb_len);
-	scmd->result = DID_ERROR << 16;
+	set_host_byte(scmd, DID_ERROR);
 	scmd->scsi_done(scmd);
 	return 0;
 }
@@ -4102,7 +4115,7 @@ int ata_scsi_queuecmd(struct Scsi_Host *shost, struct scsi_cmnd *cmd)
 	if (likely(dev))
 		rc = __ata_scsi_queuecmd(cmd, dev);
 	else {
-		cmd->result = (DID_BAD_TARGET << 16);
+		set_host_byte(cmd, DID_BAD_TARGET);
 		cmd->scsi_done(cmd);
 	}
 
