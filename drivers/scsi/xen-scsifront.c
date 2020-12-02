@@ -261,7 +261,10 @@ static void scsifront_cdb_cmd_done(struct vscsifrnt_info *info,
 	scsifront_gnttab_done(info, shadow);
 	scsifront_put_rqid(info, id);
 
-	sc->result = ring_rsp->rslt;
+	set_driver_byte(sc, driver_byte(ring_rsp->rslt));
+	set_host_byte(sc, host_byte(ring_rsp->rslt));
+	set_msg_byte(sc, msg_byte(ring_rsp->rslt));
+	set_status_byte(sc, ring_rsp->rslt & 0xff);
 	scsi_set_resid(sc, ring_rsp->residual_len);
 
 	sense_len = min_t(uint8_t, VSCSIIF_SENSE_BUFFERSIZE,
@@ -551,7 +554,7 @@ static int scsifront_queuecommand(struct Scsi_Host *shost,
 		spin_unlock_irqrestore(shost->host_lock, flags);
 		if (err == -ENOMEM)
 			return SCSI_MLQUEUE_HOST_BUSY;
-		sc->result = DID_ERROR << 16;
+		set_host_byte(sc, DID_ERROR);
 		sc->scsi_done(sc);
 		return 0;
 	}
