@@ -199,7 +199,7 @@ static void wd719x_finish_cmd(struct wd719x_scb *scb, int result)
 	dma_unmap_single(&wd->pdev->dev, cmd->SCp.dma_handle,
 			 SCSI_SENSE_BUFFERSIZE, DMA_FROM_DEVICE);
 
-	cmd->result = result << 16;
+	set_host_byte(cmd, result);
 	cmd->scsi_done(cmd);
 }
 
@@ -294,7 +294,7 @@ out_unmap_scb:
 	dma_unmap_single(&wd->pdev->dev, scb->phys, sizeof(*scb),
 			 DMA_BIDIRECTIONAL);
 out_error:
-	cmd->result = DID_ERROR << 16;
+	set_host_byte(cmd, DID_ERROR);
 	cmd->scsi_done(cmd);
 	return 0;
 }
