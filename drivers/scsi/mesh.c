@@ -597,8 +597,6 @@ static void mesh_done(struct mesh_state *ms, int start_next)
 	if (cmd) {
 		set_host_byte(cmd, ms->stat);
 		set_status_byte(cmd, cmd->SCp.Status);
-		if (ms->stat == DID_OK)
-			set_msg_byte(cmd, cmd->SCp.Message);
 		if (DEBUG_TARGET(cmd)) {
 			printk(KERN_DEBUG "mesh_done: result = %x, data_ptr=%d, buflen=%d\n",
 			       scsi_get_result(cmd), ms->data_ptr, scsi_bufflen(cmd));
@@ -1180,7 +1178,7 @@ static void handle_msgin(struct mesh_state *ms)
 	if (ms->n_msgin < msgin_length(ms))
 		goto reject;
 	if (cmd)
-		cmd->SCp.Message = code;
+		set_msg_byte(cmd, code);
 	switch (code) {
 	case COMMAND_COMPLETE:
 		break;
