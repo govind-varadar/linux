@@ -853,8 +853,12 @@ static inline void check_condition_result(struct scsi_cmnd *scp)
 	set_status_byte(scp, SAM_STAT_CHECK_CONDITION);
 }
 
-static const int illegal_condition_result =
-	(DRIVER_SENSE << 24) | (DID_ABORT << 16) | SAM_STAT_CHECK_CONDITION;
+static inline void illegal_condition_result(struct scsi_cmnd *scp)
+{
+	set_driver_byte(scp, DRIVER_SENSE);
+	set_host_byte(scp, DID_ABORT);
+	set_status_byte(scp, SAM_STAT_CHECK_CONDITION);
+}
 
 static inline void device_qfull_result(struct scsi_cmnd *scp)
 {
@@ -862,7 +866,11 @@ static inline void device_qfull_result(struct scsi_cmnd *scp)
 	set_status_byte(scp, SAM_STAT_TASK_SET_FULL);
 }
 
-static const int condition_met_result = SAM_STAT_CONDITION_MET;
+static inline void condition_met_result(struct scsi_cmnd *scp)
+{
+	set_host_byte(scp, DID_OK);
+	set_status_byte(scp, SAM_STAT_CONDITION_MET);
+}
 
 
 /* Only do the extra work involved in logical block provisioning if one or
@@ -1574,8 +1582,10 @@ static int resp_inquiry(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 
 	alloc_len = get_unaligned_be16(cmd + 3);
 	arr = kzalloc(SDEBUG_MAX_INQ_ARR_SZ, GFP_ATOMIC);
-	if (! arr)
-		return DID_REQUEUE << 16;
+	if (! arr) {
+		set_host_byte(scp, DID_REQUEUE);
+		return scp->result;
+	}
 	is_disk = (sdebug_ptype == TYPE_DISK);
 	is_zbc = (devip->zmodel != BLK_ZONED_NONE);
 	is_disk_zbc = (is_disk || is_zbc);
@@ -1908,8 +1918,10 @@ static int resp_report_tgtpgs(struct scsi_cmnd *scp,
 
 	alen = get_unaligned_be32(cmd + 6);
 	arr = kzalloc(SDEBUG_MAX_TGTPGS_ARR_SZ, GFP_ATOMIC);
-	if (! arr)
-		return DID_REQUEUE << 16;
+	if (! arr) {
+		set_host_byte(scp, DID_REQUEUE);
+		return scp->result;
+	}
 	/*
 	 * EVPD page 0x88 states we have two ports, one
 	 * real and a fake port with no device connected.
@@ -2497,8 +2509,10 @@ static int resp_mode_select(struct scsi_cmnd *scp,
 		return scp->result;
 	}
 	res = fetch_to_dev_buffer(scp, arr, param_len);
-	if (-1 == res)
-		return DID_ERROR << 16;
+	if (-1 == res) {
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
+	}
 	else if (sdebug_verbose && (res < param_len))
 		sdev_printk(KERN_INFO, scp->device,
 			    "%s: cdb indicated=%d, IO sent=%d bytes\n",
@@ -3208,14 +3222,17 @@ static int resp_read_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 		if (prot_ret) {
 			read_unlock(macc_lckp);
 			mk_sense_buffer(scp, ABORTED_COMMAND, 0x10, prot_ret);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		}
 	}
 
 	ret = do_device_access(sip, scp, 0, lba, num, false);
 	read_unlock(macc_lckp);
-	if (unlikely(ret == -1))
-		return DID_ERROR << 16;
+	if (unlikely(ret == -1)) {
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
+	}
 
 	scsi_set_resid(scp, scsi_bufflen(scp) - ret);
 
@@ -3229,11 +3246,13 @@ static int resp_read_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			/* Logical block guard check failed */
 			mk_sense_buffer(scp, ABORTED_COMMAND, 0x10, 1);
 			atomic_set(&sdeb_inject_pending, 0);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		} else if (SDEBUG_OPT_DIX_ERR & sdebug_opts) {
 			mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10, 1);
 			atomic_set(&sdeb_inject_pending, 0);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		}
 	}
 	return 0;
@@ -3492,7 +3511,8 @@ static int resp_write_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 		if (prot_ret) {
 			write_unlock(macc_lckp);
 			mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10, prot_ret);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		}
 	}
 
@@ -3503,8 +3523,10 @@ static int resp_write_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 	if (sdebug_dev_is_zoned(devip))
 		zbc_inc_wp(devip, lba, num);
 	write_unlock(macc_lckp);
-	if (unlikely(-1 == ret))
-		return DID_ERROR << 16;
+	if (unlikely(-1 == ret)) {
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
+	}
 	else if (unlikely(sdebug_verbose &&
 			  (ret < (num * sdebug_sector_size))))
 		sdev_printk(KERN_INFO, scp->device,
@@ -3521,11 +3543,13 @@ static int resp_write_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			/* Logical block guard check failed */
 			mk_sense_buffer(scp, ABORTED_COMMAND, 0x10, 1);
 			atomic_set(&sdeb_inject_pending, 0);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		} else if (sdebug_opts & SDEBUG_OPT_DIX_ERR) {
 			mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10, 1);
 			atomic_set(&sdeb_inject_pending, 0);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		}
 	}
 	return 0;
@@ -3569,7 +3593,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 			if (sdebug_dif == T10_PI_TYPE2_PROTECTION &&
 			    wrprotect) {
 				mk_sense_invalid_opcode(scp);
-				return illegal_condition_result;
+				illegal_condition_result(scp);
+				return scp->result;
 			}
 			if ((sdebug_dif == T10_PI_TYPE1_PROTECTION ||
 			     sdebug_dif == T10_PI_TYPE3_PROTECTION) &&
@@ -3586,7 +3611,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				"%s: %s: LB Data Offset field bad\n",
 				my_name, __func__);
 		mk_sense_buffer(scp, ILLEGAL_REQUEST, INVALID_FIELD_IN_CDB, 0);
-		return illegal_condition_result;
+		illegal_condition_result(scp);
+		return scp->result;
 	}
 	lbdof_blen = lbdof * lb_size;
 	if ((lrd_size + (num_lrd * lrd_size)) > lbdof_blen) {
@@ -3595,7 +3621,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				"%s: %s: LBA range descriptors don't fit\n",
 				my_name, __func__);
 		mk_sense_buffer(scp, ILLEGAL_REQUEST, INVALID_FIELD_IN_CDB, 0);
-		return illegal_condition_result;
+		illegal_condition_result(scp);
+		return scp->result;
 	}
 	lrdp = kzalloc(lbdof_blen, GFP_ATOMIC);
 	if (lrdp == NULL)
@@ -3606,7 +3633,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 			my_name, __func__, lbdof_blen);
 	res = fetch_to_dev_buffer(scp, lrdp, lbdof_blen);
 	if (res == -1) {
-		ret = DID_ERROR << 16;
+		set_host_byte(scp, DID_ERROR);
+		ret = scp->result;
 		goto err_out;
 	}
 
@@ -3636,7 +3664,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				    my_name, __func__);
 			mk_sense_buffer(scp, ILLEGAL_REQUEST, WRITE_ERROR_ASC,
 					0);
-			ret = illegal_condition_result;
+			illegal_condition_result(scp);
+			ret = scp->result;
 			goto err_out_unlock;
 		}
 
@@ -3648,7 +3677,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 			if (prot_ret) {
 				mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10,
 						prot_ret);
-				ret = illegal_condition_result;
+				illegal_condition_result(scp);
+				ret = scp->result;
 				goto err_out_unlock;
 			}
 		}
@@ -3660,7 +3690,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 		if (unlikely(scsi_debug_lbp()))
 			map_region(sip, lba, num);
 		if (unlikely(-1 == ret)) {
-			ret = DID_ERROR << 16;
+			set_host_byte(scp, DID_ERROR);
+			ret = scp->result;;
 			goto err_out_unlock;
 		} else if (unlikely(sdebug_verbose && (ret < num_by)))
 			sdev_printk(KERN_INFO, scp->device,
@@ -3678,12 +3709,14 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				/* Logical block guard check failed */
 				mk_sense_buffer(scp, ABORTED_COMMAND, 0x10, 1);
 				atomic_set(&sdeb_inject_pending, 0);
-				ret = illegal_condition_result;
+				illegal_condition_result(scp);
+				ret = scp->result;
 				goto err_out_unlock;
 			} else if (sdebug_opts & SDEBUG_OPT_DIX_ERR) {
 				mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10, 1);
 				atomic_set(&sdeb_inject_pending, 0);
-				ret = illegal_condition_result;
+				illegal_condition_result(scp);
+				ret = scp->result;
 				goto err_out_unlock;
 			}
 		}
@@ -3738,7 +3771,8 @@ static int resp_write_same(struct scsi_cmnd *scp, u64 lba, u32 num,
 
 	if (-1 == ret) {
 		write_unlock(&sip->macc_lck);
-		return DID_ERROR << 16;
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
 	} else if (sdebug_verbose && !ndob && (ret < lb_size))
 		sdev_printk(KERN_INFO, scp->device,
 			    "%s: %s: lb size=%u, IO sent=%d bytes\n",
@@ -3906,7 +3940,8 @@ static int resp_comp_write(struct scsi_cmnd *scp,
 
 	ret = do_dout_fetch(scp, dnum, arr);
 	if (ret == -1) {
-		retval = DID_ERROR << 16;
+		set_host_byte(scp, DID_ERROR);
+		retval = scp->result;
 		goto cleanup;
 	} else if (sdebug_verbose && (ret < (dnum * lb_size)))
 		sdev_printk(KERN_INFO, scp->device, "%s: compare_write: cdb "
@@ -4104,7 +4139,8 @@ static int resp_pre_fetch(struct scsi_cmnd *scp,
 fini:
 	if (cmd[1] & 0x2)
 		res = SDEG_RES_IMMED_MASK;
-	return res | condition_met_result;
+	condition_met_result(scp);
+	return res | scp->result;
 }
 
 #define RL_BUCKET_ELEMS 8
@@ -4262,7 +4298,8 @@ static int resp_verify(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 
 	ret = do_dout_fetch(scp, a_num, arr);
 	if (ret == -1) {
-		ret = DID_ERROR << 16;
+		set_host_byte(scp, DID_ERROR);
+		ret = scp->result;
 		goto cleanup;
 	} else if (sdebug_verbose && (ret < (a_num * lb_size))) {
 		sdev_printk(KERN_INFO, scp->device,
