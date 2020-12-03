@@ -401,7 +401,6 @@ SYM53C500_intr(int irq, void *dev_id)
 			set_host_byte(curSC, DID_NO_CONNECT);
 		} else {	/* Command complete, return status and message */
 			set_host_byte(curSC, DID_OK);
-			set_msg_byte(curSC, curSC->SCp.Message);
 			set_status_byte(curSC, curSC->SCp.Status);
 		}
 		goto idle_out;
@@ -475,12 +474,14 @@ SYM53C500_intr(int irq, void *dev_id)
 		curSC->SCp.phase = message_in;
 
 		curSC->SCp.Status = inb(port_base + SCSI_FIFO);
-		curSC->SCp.Message = inb(port_base + SCSI_FIFO);
+		set_msg_byte(curSC, inb(port_base + SCSI_FIFO));
 
 		VDEB(printk("SCSI FIFO size=%d\n", inb(port_base + FIFO_FLAGS) & 0x1f));
-		DEB(printk("Status = %02x  Message = %02x\n", curSC->SCp.Status, curSC->SCp.Message));
+		DEB(printk("Status = %02x  Message = %02x\n",
+			   curSC->SCp.Status, get_msg_byte(curSC)));
 
-		if (curSC->SCp.Message == SAVE_POINTERS || curSC->SCp.Message == DISCONNECT) {
+		if (get_msg_byte(curSC) == SAVE_POINTERS ||
+		    get_msg_byte(curSC) == DISCONNECT) {
 			outb(SET_ATN, port_base + CMD_REG);	/* Reject message */
 			DEB(printk("Discarding SAVE_POINTERS message\n"));
 		}
@@ -560,7 +561,7 @@ SYM53C500_queue_lck(struct scsi_cmnd *SCpnt, void (*done)(struct scsi_cmnd *))
 	data->current_SC->scsi_done = done;
 	data->current_SC->SCp.phase = command_ph;
 	data->current_SC->SCp.Status = 0;
-	data->current_SC->SCp.Message = 0;
+	set_msg_byte(data->current_SC, COMMAND_COMPLETE);
 
 	/* We are locked here already by the mid layer */
 	REG0(port_base);
