@@ -856,8 +856,11 @@ static inline void check_condition_result(struct scsi_cmnd *scp)
 static const int illegal_condition_result =
 	(DRIVER_SENSE << 24) | (DID_ABORT << 16) | SAM_STAT_CHECK_CONDITION;
 
-static const int device_qfull_result =
-	(DID_OK << 16) | SAM_STAT_TASK_SET_FULL;
+static inline void device_qfull_result(struct scsi_cmnd *scp)
+{
+	set_host_byte(scp, DID_OK);
+	set_status_byte(scp, SAM_STAT_TASK_SET_FULL);
+}
 
 static const int condition_met_result = SAM_STAT_CONDITION_MET;
 
@@ -5361,14 +5364,13 @@ static bool inject_on_this_cmd(void)
  * SCSI_MLQUEUE_HOST_BUSY if temporarily out of resources.
  */
 static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
-			 int scsi_result,
 			 int (*pfp)(struct scsi_cmnd *,
 				    struct sdebug_dev_info *),
 			 int delta_jiff, int ndelay)
 {
 	bool new_sd_dp;
 	bool inject = false;
-	int k, num_in_q, qdepth;
+	int k, num_in_q, qdepth, result = 0;
 	unsigned long iflags;
 	u64 ns_from_boot = 0;
 	struct sdebug_queue *sqp;
@@ -5377,8 +5379,8 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 	struct sdebug_defer *sd_dp;
 
 	if (unlikely(devip == NULL)) {
-		if (scsi_result == 0)
-			scsi_result = DID_NO_CONNECT << 16;
+		if (scsi_result_is_good(cmnd))
+			set_host_byte(cmnd, DID_NO_CONNECT);
 		goto respond_in_thread;
 	}
 	sdp = cmnd->device;
@@ -5395,37 +5397,38 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 	num_in_q = atomic_read(&devip->num_in_q);
 	qdepth = cmnd->device->queue_depth;
 	if (unlikely((qdepth > 0) && (num_in_q >= qdepth))) {
-		if (scsi_result) {
+		if (!scsi_result_is_good(cmnd)) {
 			spin_unlock_irqrestore(&sqp->qc_lock, iflags);
 			goto respond_in_thread;
 		} else
-			scsi_result = device_qfull_result;
+			device_qfull_result(cmnd);
 	} else if (unlikely(sdebug_every_nth &&
 			    (SDEBUG_OPT_RARE_TSF & sdebug_opts) &&
-			    (scsi_result == 0))) {
+			    scsi_result_is_good(cmnd))) {
 		if ((num_in_q == (qdepth - 1)) &&
 		    (atomic_inc_return(&sdebug_a_tsf) >=
 		     abs(sdebug_every_nth))) {
 			atomic_set(&sdebug_a_tsf, 0);
 			inject = true;
-			scsi_result = device_qfull_result;
+			device_qfull_result(cmnd);
 		}
 	}
 
 	k = find_first_zero_bit(sqp->in_use_bm, sdebug_max_queue);
 	if (unlikely(k >= sdebug_max_queue)) {
 		spin_unlock_irqrestore(&sqp->qc_lock, iflags);
-		if (scsi_result)
+		if (!scsi_result_is_good(cmnd))
 			goto respond_in_thread;
 		else if (SDEBUG_OPT_ALL_TSF & sdebug_opts)
-			scsi_result = device_qfull_result;
+			device_qfull_result(cmnd);
 		if (SDEBUG_OPT_Q_NOISE & sdebug_opts)
 			sdev_printk(KERN_INFO, sdp,
 				    "%s: max_queue=%d exceeded, %s\n",
 				    __func__, sdebug_max_queue,
-				    (scsi_result ?  "status: TASK SET FULL" :
-						    "report: host busy"));
-		if (scsi_result)
+				    (!scsi_result_is_good(cmnd) ?
+				     "status: TASK SET FULL" :
+				     "report: host busy"));
+		if (!scsi_result_is_good(cmnd))
 			goto respond_in_thread;
 		else
 			return SCSI_MLQUEUE_HOST_BUSY;
@@ -5457,13 +5460,16 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 		ns_from_boot = ktime_get_boottime_ns();
 
 	/* one of the resp_*() response functions is called here */
-	cmnd->result = pfp ? pfp(cmnd, devip) : 0;
-	if (cmnd->result & SDEG_RES_IMMED_MASK) {
-		cmnd->result &= ~SDEG_RES_IMMED_MASK;
+	result = pfp ? pfp(cmnd, devip) : 0;
+	if (result & SDEG_RES_IMMED_MASK) {
+		result &= ~SDEG_RES_IMMED_MASK;
 		delta_jiff = ndelay = 0;
 	}
-	if (scsi_result_is_good(cmnd) && scsi_result != 0)
-		cmnd->result = scsi_result;
+	if (result != 0) {
+		set_driver_byte(cmnd, driver_byte(result));
+		set_host_byte(cmnd, host_byte(result));
+		set_status_byte(cmnd, result & 0xff);
+	}
 	if (scsi_result_is_good(cmnd) && unlikely(sdebug_opts & SDEBUG_OPT_TRANSPORT_ERR)) {
 		if (atomic_read(&sdeb_inject_pending)) {
 			mk_sense_buffer(cmnd, ABORTED_COMMAND, TRANSPORT_PROBLEM, ACK_NAK_TO);
@@ -5473,7 +5479,7 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 
 	if (unlikely(sdebug_verbose && !scsi_result_is_good(cmnd)))
 		sdev_printk(KERN_INFO, sdp, "%s: non-zero result=0x%x\n",
-			    __func__, cmnd->result);
+			    __func__, scsi_get_result(cmnd));
 
 	if (delta_jiff > 0 || ndelay > 0) {
 		ktime_t kt;
@@ -5548,16 +5554,20 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 			atomic_set(&sdeb_inject_pending, 0);
 		}
 	}
-	if (unlikely((SDEBUG_OPT_Q_NOISE & sdebug_opts) && scsi_result == device_qfull_result))
+	if (unlikely((SDEBUG_OPT_Q_NOISE & sdebug_opts) &&
+		     get_status_byte(cmnd) == SAM_STAT_TASK_SET_FULL))
 		sdev_printk(KERN_INFO, sdp, "%s: num_in_q=%d +1, %s%s\n", __func__,
 			    num_in_q, (inject ? "<inject> " : ""), "status: TASK SET FULL");
 	return 0;
 
 respond_in_thread:	/* call back to mid-layer using invocation thread */
-	cmnd->result = pfp != NULL ? pfp(cmnd, devip) : 0;
-	cmnd->result &= ~SDEG_RES_IMMED_MASK;
-	if (scsi_result_is_good(cmnd) && scsi_result != 0)
-		cmnd->result = scsi_result;
+	result = pfp != NULL ? pfp(cmnd, devip) : 0;
+	result &= ~SDEG_RES_IMMED_MASK;
+	if (result != 0) {
+		set_driver_byte(cmnd, driver_byte(result));
+		set_host_byte(cmnd, host_byte(result));
+		set_status_byte(cmnd, result & 0xff);
+	}
 	cmnd->scsi_done(cmnd);
 	return 0;
 }
@@ -7345,7 +7355,7 @@ static int scsi_debug_queuecommand(struct Scsi_Host *shost,
 
 fini:
 	if (F_DELAY_OVERR & flags)	/* cmds like INQUIRY respond asap */
-		return schedule_resp(scp, devip, scp->result, pfp, 0, 0);
+		return schedule_resp(scp, devip, pfp, 0, 0);
 	else if ((flags & F_LONG_DELAY) && (sdebug_jdelay > 0 ||
 					    sdebug_ndelay > 10000)) {
 		/*
@@ -7358,15 +7368,15 @@ fini:
 		int denom = (flags & F_SYNC_DELAY) ? 20 : 1;
 
 		jdelay = mult_frac(USER_HZ * jdelay, HZ, denom * USER_HZ);
-		return schedule_resp(scp, devip, scp->result, pfp, jdelay, 0);
+		return schedule_resp(scp, devip, pfp, jdelay, 0);
 	} else
-		return schedule_resp(scp, devip, scp->result, pfp, sdebug_jdelay,
+		return schedule_resp(scp, devip, pfp, sdebug_jdelay,
 				     sdebug_ndelay);
 check_cond:
-	return schedule_resp(scp, devip, scp->result, NULL, 0, 0);
+	return schedule_resp(scp, devip, NULL, 0, 0);
 err_out:
 	set_host_byte(scp, DID_NO_CONNECT);
-	return schedule_resp(scp, NULL, scp->result, NULL, 0, 0);
+	return schedule_resp(scp, NULL, NULL, 0, 0);
 }
 
 static struct scsi_host_template sdebug_driver_template = {
