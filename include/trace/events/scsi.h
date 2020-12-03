@@ -124,19 +124,6 @@
 		scsi_hostbyte_name(DID_TRANSPORT_DISRUPTED),	\
 		scsi_hostbyte_name(DID_TRANSPORT_FAILFAST))
 
-#define scsi_driverbyte_name(result)	{ result, #result }
-#define show_driverbyte_name(val)				\
-	__print_symbolic(val,					\
-		scsi_driverbyte_name(DRIVER_OK),		\
-		scsi_driverbyte_name(DRIVER_BUSY),		\
-		scsi_driverbyte_name(DRIVER_SOFT),		\
-		scsi_driverbyte_name(DRIVER_MEDIA),		\
-		scsi_driverbyte_name(DRIVER_ERROR),		\
-		scsi_driverbyte_name(DRIVER_INVALID),		\
-		scsi_driverbyte_name(DRIVER_TIMEOUT),		\
-		scsi_driverbyte_name(DRIVER_HARD),		\
-		scsi_driverbyte_name(DRIVER_SENSE))
-
 #define scsi_msgbyte_name(result)	{ result, #result }
 #define show_msgbyte_name(val)					\
 	__print_symbolic(val,					\
@@ -295,7 +282,6 @@ DECLARE_EVENT_CLASS(scsi_cmd_done_timeout_template,
 		__field( unsigned int,	channel	)
 		__field( unsigned int,	id	)
 		__field( unsigned int,	lun	)
-		__field( unsigned char,	driver_byte	)
 		__field( unsigned char,	host_byte	)
 		__field( unsigned char,	msg_byte	)
 		__field( unsigned char,	status_byte	)
@@ -312,7 +298,6 @@ DECLARE_EVENT_CLASS(scsi_cmd_done_timeout_template,
 		__entry->channel	= cmd->device->channel;
 		__entry->id		= cmd->device->id;
 		__entry->lun		= cmd->device->lun;
-		__entry->driver_byte	= get_driver_byte(cmd);
 		__entry->host_byte	= get_host_byte(cmd);
 		__entry->msg_byte	= get_msg_byte(cmd);
 		__entry->status_byte	= get_status_byte(cmd);
@@ -326,14 +311,13 @@ DECLARE_EVENT_CLASS(scsi_cmd_done_timeout_template,
 
 	TP_printk("host_no=%u channel=%u id=%u lun=%u data_sgl=%u " \
 		  "prot_sgl=%u prot_op=%s cmnd=(%s %s raw=%s) result=(driver=" \
-		  "%s host=%s message=%s status=%s)",
+		  "DRIVER_OK host=%s message=%s status=%s)",
 		  __entry->host_no, __entry->channel, __entry->id,
 		  __entry->lun, __entry->data_sglen, __entry->prot_sglen,
 		  show_prot_op_name(__entry->prot_op),
 		  show_opcode_name(__entry->opcode),
 		  __parse_cdb(__get_dynamic_array(cmnd), __entry->cmd_len),
 		  __print_hex(__get_dynamic_array(cmnd), __entry->cmd_len),
-		  show_driverbyte_name(__entry->driver_byte),
 		  show_hostbyte_name(__entry->host_byte),
 		  show_msgbyte_name(__entry->msg_byte),
 		  show_statusbyte_name(__entry->status_byte))

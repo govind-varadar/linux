@@ -94,10 +94,12 @@ static int bsg_scsi_complete_rq(struct request *rq, struct sg_io_v4 *hdr)
 	/*
 	 * fill in all the output members
 	 */
-	hdr->device_status = sreq->result & 0xff;
+	hdr->device_status = status_byte(sreq->result);
 	hdr->transport_status = host_byte(sreq->result);
-	hdr->driver_status = driver_byte(sreq->result);
+	hdr->driver_status = 0;
 	hdr->info = 0;
+	if (scsi_sense_buffer_valid(sreq->sense))
+		hdr->driver_status = DRIVER_SENSE;
 	if (hdr->device_status || hdr->transport_status || hdr->driver_status)
 		hdr->info |= SG_INFO_CHECK;
 	hdr->response_len = 0;

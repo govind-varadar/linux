@@ -1387,7 +1387,7 @@ sg_rq_end_io(struct request *rq, blk_status_t status)
 		srp->header.masked_status = shifted_status_byte(result);
 		srp->header.msg_status = msg_byte(result);
 		srp->header.host_status = host_byte(result);
-		srp->header.driver_status = driver_byte(result);
+		srp->header.driver_status = 0;
 		if ((sdp->sgdebug > 0) &&
 		    ((SAM_STAT_CHECK_CONDITION == srp->header.status) ||
 		     (SAM_STAT_COMMAND_TERMINATED == srp->header.status)))
@@ -1395,14 +1395,15 @@ sg_rq_end_io(struct request *rq, blk_status_t status)
 					   SCSI_SENSE_BUFFERSIZE);
 
 		/* Following if statement is a patch supplied by Eric Youngdale */
-		if (driver_byte(result) != 0
-		    && scsi_normalize_sense(sense, SCSI_SENSE_BUFFERSIZE, &sshdr)
-		    && !scsi_sense_is_deferred(&sshdr)
-		    && sshdr.sense_key == UNIT_ATTENTION
-		    && sdp->device->removable) {
-			/* Detected possible disc change. Set the bit - this */
-			/* may be used if there are filesystems using this device */
-			sdp->device->changed = 1;
+		if (scsi_normalize_sense(sense, SCSI_SENSE_BUFFERSIZE, &sshdr)) {
+			srp->header.driver_status = DRIVER_SENSE;
+			if (!scsi_sense_is_deferred(&sshdr)
+			    && sshdr.sense_key == UNIT_ATTENTION
+			    && sdp->device->removable)
+				/* Detected possible disc change.
+				 * Set the bit - this may be used if there
+				 * are filesystems using this device */
+				sdp->device->changed = 1;
 		}
 	}
 

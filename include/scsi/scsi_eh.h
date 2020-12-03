@@ -31,7 +31,6 @@ extern int scsi_ioctl_reset(struct scsi_device *, int __user *);
 
 struct scsi_eh_save {
 	/* saved state */
-	unsigned char driver_byte;
 	unsigned char host_byte;
 	unsigned char msg_byte;
 	unsigned char status_byte;

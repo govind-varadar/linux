@@ -323,11 +323,6 @@ static inline void set_host_byte(struct scsi_cmnd *cmd, char status)
 	cmd->result = (cmd->result & 0xff00ffff) | (status << 16);
 }
 
-static inline void set_driver_byte(struct scsi_cmnd *cmd, char status)
-{
-	cmd->result = (cmd->result & 0x00ffffff) | (status << 24);
-}
-
 static inline unsigned char get_status_byte(struct scsi_cmnd *cmd)
 {
 	return (cmd->result) & 0xff;
@@ -341,11 +336,6 @@ static inline unsigned char get_msg_byte(struct scsi_cmnd *cmd)
 static inline unsigned char get_host_byte(struct scsi_cmnd *cmd)
 {
 	return (cmd->result >> 16) & 0xff;
-}
-
-static inline unsigned char get_driver_byte(struct scsi_cmnd *cmd)
-{
-	return (cmd->result >> 24) & 0xff;
 }
 
 static inline bool scsi_result_is_good(struct scsi_cmnd *cmd)

@@ -3820,19 +3820,17 @@ void sd_print_sense_hdr(struct scsi_disk *sdkp, struct scsi_sense_hdr *sshdr)
 void sd_print_result(const struct scsi_disk *sdkp, const char *msg, int result)
 {
 	const char *hb_string = scsi_hostbyte_string(host_byte(result));
-	const char *db_string = scsi_driverbyte_string(driver_byte(result));
 
 	if (result < 0) {
-		db_string = scsi_driverbyte_string(DRIVER_ERROR);
-		hb_string = scsi_hostbyte_string(DID_ERROR);
-	}
-	if (hb_string || db_string)
 		sd_printk(KERN_INFO, sdkp,
-			  "%s: Result: hostbyte=%s driverbyte=%s\n", msg,
-			  hb_string ? hb_string : "invalid",
-			  db_string ? db_string : "invalid");
+			  "%s: Result: hostbyte=DID_ERROR\n", msg);
+	}
+	if (hb_string)
+		sd_printk(KERN_INFO, sdkp,
+			  "%s: Result: hostbyte=%s\n",
+			  msg, hb_string ? hb_string : "invalid");
 	else
 		sd_printk(KERN_INFO, sdkp,
-			  "%s: Result: hostbyte=0x%02x driverbyte=0x%02x\n",
-			  msg, host_byte(result), driver_byte(result));
+			  "%s: Result: hostbyte=0x%02x\n",
+			  msg, host_byte(result));
 }
