@@ -936,7 +936,6 @@ static int nsp32_queuecommand_lck(struct scsi_cmnd *SCpnt, void (*done)(struct s
 	SCpnt->scsi_done     = done;
 	data->CurrentSC      = SCpnt;
 	SCpnt->SCp.Status    = SAM_STAT_CHECK_CONDITION;
-	SCpnt->SCp.Message   = COMMAND_COMPLETE;
 	scsi_set_resid(SCpnt, scsi_bufflen(SCpnt));
 
 	SCpnt->SCp.ptr		    = (char *)scsi_sglist(SCpnt);
@@ -1667,12 +1666,10 @@ static int nsp32_busfree_occur(struct scsi_cmnd *SCpnt, unsigned short execph)
 		nsp32_dbg(NSP32_DEBUG_BUSFREE, "command complete");
 
 		SCpnt->SCp.Status  = nsp32_read1(base, SCSI_CSB_IN);
-		SCpnt->SCp.Message = COMMAND_COMPLETE;
 		nsp32_dbg(NSP32_DEBUG_BUSFREE,
 			  "normal end stat=0x%x resid=0x%x\n",
 			  SCpnt->SCp.Status, scsi_get_resid(SCpnt));
 		set_status_byte(SCpnt, SCpnt->SCp.Status);
-		set_msg_byte(SCpnt, SCpnt->SCp.Message);
 		set_host_byte(SCpnt, DID_OK);
 		nsp32_scsi_done(SCpnt);
 		/* All operation is done */
@@ -1680,7 +1677,6 @@ static int nsp32_busfree_occur(struct scsi_cmnd *SCpnt, unsigned short execph)
 	} else if (execph & MSGIN_04_VALID) {
 		/* MsgIn 04: Disconnect */
 		SCpnt->SCp.Status  = nsp32_read1(base, SCSI_CSB_IN);
-		SCpnt->SCp.Message = DISCONNECT;
 
 		nsp32_dbg(NSP32_DEBUG_BUSFREE, "disconnect");
 		return TRUE;
