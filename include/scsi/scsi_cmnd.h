@@ -315,7 +315,7 @@ static inline void set_status_byte(struct scsi_cmnd *cmd, char status)
 
 static inline void set_msg_byte(struct scsi_cmnd *cmd, char status)
 {
-	cmd->result = (cmd->result & 0xffff00ff) | (status << 8);
+	cmd->SCp.Message = status;
 }
 
 static inline void set_host_byte(struct scsi_cmnd *cmd, char status)
@@ -330,7 +330,7 @@ static inline unsigned char get_status_byte(struct scsi_cmnd *cmd)
 
 static inline unsigned char get_msg_byte(struct scsi_cmnd *cmd)
 {
-	return (cmd->result >> 8) & 0xff;
+	return cmd->SCp.Message & 0xff;
 }
 
 static inline unsigned char get_host_byte(struct scsi_cmnd *cmd)
@@ -340,17 +340,20 @@ static inline unsigned char get_host_byte(struct scsi_cmnd *cmd)
 
 static inline bool scsi_result_is_good(struct scsi_cmnd *cmd)
 {
-	return cmd->result == 0;
+	return (cmd->result == 0) &&
+	    (cmd->SCp.Message == COMMAND_COMPLETE);
 }
 
 static inline void scsi_result_set_good(struct scsi_cmnd *cmd)
 {
 	cmd->result = 0;
+	cmd->SCp.Message = 0;
 }
 
 static inline int scsi_get_result(struct scsi_cmnd *cmd)
 {
-	return cmd->result;
+	return cmd->result & 0x00ff00ff |
+	    ((cmd->SCp.Message & 0xff) << 8);
 }
 
 static inline unsigned scsi_transfer_length(struct scsi_cmnd *scmd)
