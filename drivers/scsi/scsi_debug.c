@@ -7162,7 +7162,7 @@ static bool fake_timeout(struct scsi_cmnd *scp)
 }
 
 /* Response to TUR or media access command when device stopped */
-static int resp_not_ready(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
+static bool resp_not_ready(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 {
 	int stopped_state;
 	u64 diff_ns = 0;
@@ -7176,7 +7176,7 @@ static int resp_not_ready(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			if (diff_ns >= ((u64)sdeb_tur_ms_to_ready * 1000000)) {
 				/* tur_ms_to_ready timer extinguished */
 				atomic_set(&devip->stopped, 0);
-				return 0;
+				return false;
 			}
 		}
 		mk_sense_buffer(scp, NOT_READY, LOGICAL_UNIT_NOT_READY, 0x1);
@@ -7194,14 +7194,14 @@ static int resp_not_ready(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			do_div(diff_ns, 1000000);	/* diff_ns becomes milliseconds */
 			scsi_set_sense_information(scp->sense_buffer, SCSI_SENSE_BUFFERSIZE,
 						   diff_ns);
-			return scp->result;
+			return true;
 		}
 	}
 	mk_sense_buffer(scp, NOT_READY, LOGICAL_UNIT_NOT_READY, 0x2);
 	if (sdebug_verbose)
 		sdev_printk(KERN_INFO, sdp, "%s: Not ready: initializing command required\n",
 			    my_name);
-	return scp->result;
+	return true;
 }
 
 static int scsi_debug_queuecommand(struct Scsi_Host *shost,
@@ -7216,7 +7216,6 @@ static int scsi_debug_queuecommand(struct Scsi_Host *shost,
 	int (*r_pfp)(struct scsi_cmnd *, struct sdebug_dev_info *);
 	int (*pfp)(struct scsi_cmnd *, struct sdebug_dev_info *) = NULL;
 	int k, na;
-	int errsts = 0;
 	u64 lun_index = sdp->lun & 0x3FFF;
 	u32 flags;
 	u16 sa;
@@ -7325,14 +7324,12 @@ static int scsi_debug_queuecommand(struct Scsi_Host *shost,
 	if (unlikely(!(F_SKIP_UA & flags) &&
 		     find_first_bit(devip->uas_bm,
 				    SDEBUG_NUM_UAS) != SDEBUG_NUM_UAS)) {
-		errsts = make_ua(scp, devip);
-		if (errsts)
+		if (make_ua(scp, devip))
 			goto check_cond;
 	}
 	if (unlikely(((F_M_ACCESS & flags) || scp->cmnd[0] == TEST_UNIT_READY) &&
 		     atomic_read(&devip->stopped))) {
-		errsts = resp_not_ready(scp, devip);
-		if (errsts)
+		if (resp_not_ready(scp, devip))
 			goto fini;
 	}
 	if (sdebug_fake_rw && (F_FAKE_RW & flags))
@@ -7348,7 +7345,7 @@ static int scsi_debug_queuecommand(struct Scsi_Host *shost,
 
 fini:
 	if (F_DELAY_OVERR & flags)	/* cmds like INQUIRY respond asap */
-		return schedule_resp(scp, devip, errsts, pfp, 0, 0);
+		return schedule_resp(scp, devip, scp->result, pfp, 0, 0);
 	else if ((flags & F_LONG_DELAY) && (sdebug_jdelay > 0 ||
 					    sdebug_ndelay > 10000)) {
 		/*
@@ -7361,14 +7358,15 @@ fini:
 		int denom = (flags & F_SYNC_DELAY) ? 20 : 1;
 
 		jdelay = mult_frac(USER_HZ * jdelay, HZ, denom * USER_HZ);
-		return schedule_resp(scp, devip, errsts, pfp, jdelay, 0);
+		return schedule_resp(scp, devip, scp->result, pfp, jdelay, 0);
 	} else
-		return schedule_resp(scp, devip, errsts, pfp, sdebug_jdelay,
+		return schedule_resp(scp, devip, scp->result, pfp, sdebug_jdelay,
 				     sdebug_ndelay);
 check_cond:
 	return schedule_resp(scp, devip, scp->result, NULL, 0, 0);
 err_out:
-	return schedule_resp(scp, NULL, DID_NO_CONNECT << 16, NULL, 0, 0);
+	set_host_byte(scp, DID_NO_CONNECT);
+	return schedule_resp(scp, NULL, scp->result, NULL, 0, 0);
 }
 
 static struct scsi_host_template sdebug_driver_template = {
