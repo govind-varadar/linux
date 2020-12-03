@@ -2008,7 +2008,7 @@ static void fas216_rq_sns_done(FAS216_Info *info, struct scsi_cmnd *SCpnt,
 {
 	fas216_log_target(info, LOG_CONNECT, SCpnt->device->id,
 		   "request sense complete, result=0x%02x%02x%02x",
-		   result, SCpnt->SCp.Message, SCpnt->SCp.Status);
+		   result, get_msg_byte(SCpnt), SCpnt->SCp.Status);
 
 	if (result != DID_OK || SCpnt->SCp.Status != GOOD)
 		/*
@@ -2115,7 +2115,7 @@ request_sense:
 	fas216_log_target(info, LOG_CONNECT, SCpnt->device->id,
 			  "requesting sense");
 	init_SCp(SCpnt);
-	SCpnt->SCp.Message = 0;
+	set_msg_byte(SCpnt, COMMAND_COMPLETE);
 	SCpnt->SCp.Status = 0;
 	SCpnt->tag = 0;
 	SCpnt->host_scribble = (void *)fas216_rq_sns_done;
