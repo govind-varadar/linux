@@ -937,19 +937,19 @@ static int scsi_io_completion_nz_result(struct scsi_cmnd *cmd, int result,
  */
 void scsi_io_completion(struct scsi_cmnd *cmd, unsigned int good_bytes)
 {
-	int result = cmd->result;
+	int result = scsi_get_result(cmd);
 	struct request_queue *q = cmd->device->request_queue;
 	struct request *req = cmd->request;
 	blk_status_t blk_stat = BLK_STS_OK;
 
-	if (unlikely(result))	/* a nz result may or may not be an error */
+	if (unlikely(!scsi_result_is_good(cmd)))	/* a nz result may or may not be an error */
 		result = scsi_io_completion_nz_result(cmd, result, &blk_stat);
 
 	if (unlikely(blk_rq_is_passthrough(req))) {
 		/*
 		 * scsi_result_to_blk_status may have reset the host_byte
 		 */
-		scsi_req(req)->result = cmd->result;
+		scsi_req(req)->result = scsi_get_result(cmd);
 	}
 
 	/*
@@ -1476,7 +1476,7 @@ static int scsi_dispatch_cmd(struct scsi_cmnd *cmd)
 		/* in SDEV_DEL we error all commands. DID_NO_CONNECT
 		 * returns an immediate error upwards, and signals
 		 * that the device is no longer present */
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		goto done;
 	}
 
@@ -1510,12 +1510,12 @@ static int scsi_dispatch_cmd(struct scsi_cmnd *cmd)
 			       "queuecommand : command too long. "
 			       "cdb_size=%d host->max_cmd_len=%d\n",
 			       cmd->cmd_len, cmd->device->host->max_cmd_len));
-		cmd->result = (DID_ABORT << 16);
+		set_host_byte(cmd, DID_ABORT);
 		goto done;
 	}
 
 	if (unlikely(host->shost_state == SHOST_DEL)) {
-		cmd->result = (DID_NO_CONNECT << 16);
+		set_host_byte(cmd, DID_NO_CONNECT);
 		goto done;
 
 	}

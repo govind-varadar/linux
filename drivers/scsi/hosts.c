@@ -660,7 +660,7 @@ static bool complete_all_cmds_iter(struct request *rq, void *data, bool rsvd)
 	int status = *(int *)data;
 
 	scsi_dma_unmap(scmd);
-	scmd->result = status << 16;
+	set_host_byte(scmd, status);
 	scmd->scsi_done(scmd);
 	return true;
 }

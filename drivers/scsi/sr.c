@@ -321,15 +321,14 @@ do_tur:
  */
 static int sr_done(struct scsi_cmnd *SCpnt)
 {
-	int result = SCpnt->result;
 	int this_count = scsi_bufflen(SCpnt);
-	int good_bytes = (result == 0 ? this_count : 0);
+	int good_bytes = (scsi_result_is_good(SCpnt) ? this_count : 0);
 	int block_sectors = 0;
 	long error_sector;
 	struct scsi_cd *cd = scsi_cd(SCpnt->request->rq_disk);
 
 #ifdef DEBUG
-	scmd_printk(KERN_INFO, SCpnt, "done: %x\n", result);
+	scmd_printk(KERN_INFO, SCpnt, "done: %x\n", scsi_get_result(SCpnt));
 #endif
 
 	/*
@@ -338,7 +337,7 @@ static int sr_done(struct scsi_cmnd *SCpnt)
 	 * care is taken to avoid unnecessary additional work such as
 	 * memcpy's that could be avoided.
 	 */
-	if (driver_byte(result) != 0 &&		/* An error occurred */
+	if (get_driver_byte(SCpnt) != DRIVER_OK &&	/* An error occurred */
 	    (SCpnt->sense_buffer[0] & 0x7f) == 0x70) { /* Sense current */
 		switch (SCpnt->sense_buffer[2]) {
 		case MEDIUM_ERROR:

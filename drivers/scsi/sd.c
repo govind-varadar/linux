@@ -1932,7 +1932,7 @@ static int sd_eh_action(struct scsi_cmnd *scmd, int eh_disp)
 
 	if (!scsi_device_online(sdev) ||
 	    !scsi_medium_access_command(scmd) ||
-	    host_byte(scmd->result) != DID_TIME_OUT ||
+	    get_host_byte(scmd) != DID_TIME_OUT ||
 	    eh_disp != SUCCESS)
 		return eh_disp;
 
@@ -2018,7 +2018,6 @@ static unsigned int sd_completed_bytes(struct scsi_cmnd *scmd)
  **/
 static int sd_done(struct scsi_cmnd *SCpnt)
 {
-	int result = SCpnt->result;
 	unsigned int good_bytes =
 		scsi_result_is_good(SCpnt) ? 0 : scsi_bufflen(SCpnt);
 	unsigned int sector_size = SCpnt->device->sector_size;
@@ -2071,7 +2070,7 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 	}
 	sdkp->medium_access_timed_out = 0;
 
-	if (driver_byte(result) != DRIVER_SENSE &&
+	if (get_driver_byte(SCpnt) != DRIVER_SENSE &&
 	    (!sense_valid || sense_deferred))
 		goto out;
 

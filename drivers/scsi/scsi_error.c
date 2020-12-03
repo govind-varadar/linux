@@ -781,7 +781,7 @@ static void scsi_eh_done(struct scsi_cmnd *scmd)
 	struct completion *eh_action;
 
 	SCSI_LOG_ERROR_RECOVERY(3, scmd_printk(KERN_INFO, scmd,
-			"%s result: %x\n", __func__, scmd->result));
+			"%s result: %x\n", __func__, scsi_get_result(scmd)));
 
 	eh_action = scmd->device->host->eh_action;
 	if (eh_action)
@@ -1268,7 +1268,8 @@ int scsi_eh_get_sense(struct list_head *work_q,
 			continue;
 
 		SCSI_LOG_ERROR_RECOVERY(3, scmd_printk(KERN_INFO, scmd,
-			"sense requested, result %x\n", scmd->result));
+					"sense requested, result %x\n",
+					scsi_get_result(scmd)));
 		SCSI_LOG_ERROR_RECOVERY(3, scsi_print_sense(scmd));
 
 		rtn = scsi_decide_disposition(scmd);
@@ -2124,7 +2125,7 @@ void scsi_eh_flush_done_q(struct list_head *done_q)
 			 * set, do not set DRIVER_TIMEOUT.
 			 */
 			if (scsi_result_is_good(scmd))
-				scmd->result |= (DRIVER_TIMEOUT << 24);
+				set_driver_byte(scmd, DRIVER_TIMEOUT);
 			SCSI_LOG_ERROR_RECOVERY(3,
 				scmd_printk(KERN_INFO, scmd,
 					     "%s: flush finish cmd\n",
