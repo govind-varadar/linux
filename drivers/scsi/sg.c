@@ -91,6 +91,14 @@ static int scatter_elem_sz_prev = SG_SCATTER_SZ;
 
 #define SG_SECTOR_SZ 512
 
+/*
+ * Originally linux defined non-standard SCSI status values
+ * which were shifted by 1 from the SAM defined ones.
+ * This has been deprecated, but for compability
+ * we need to provide the original value.
+ */
+#define shifted_status_byte(result) (((result) >> 1) & 0x7f)
+
 static int sg_add_device(struct device *, struct class_interface *);
 static void sg_remove_device(struct device *, struct class_interface *);
 
@@ -1372,8 +1380,8 @@ sg_rq_end_io(struct request *rq, blk_status_t status)
 	if (0 != result) {
 		struct scsi_sense_hdr sshdr;
 
-		srp->header.status = 0xff & result;
-		srp->header.masked_status = status_byte(result);
+		srp->header.status = status_byte(result);
+		srp->header.masked_status = shifted_status_byte(result);
 		srp->header.msg_status = msg_byte(result);
 		srp->header.host_status = host_byte(result);
 		srp->header.driver_status = driver_byte(result);

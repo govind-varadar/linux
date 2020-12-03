@@ -207,8 +207,12 @@ static inline int scsi_is_wlun(u64 lun)
  *      msg_byte    = return status from host adapter itself.
  *      host_byte   = set by low-level driver to indicate status.
  *      driver_byte = set by mid-level.
+ *
+ * Warning: Originally the 'status_byte()' macro returned the
+ * linux-specific status values, which were shifted by one
+ * from the standard SAM defined values.
  */
-#define status_byte(result) (((result) >> 1) & 0x7f)
+#define status_byte(result) (((result) >> 0) & 0xff)
 #define msg_byte(result)    (((result) >> 8) & 0xff)
 #define host_byte(result)   (((result) >> 16) & 0xff)
 #define driver_byte(result) (((result) >> 24) & 0xff)
