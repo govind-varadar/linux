@@ -261,8 +261,11 @@ static void scsifront_cdb_cmd_done(struct vscsifrnt_info *info,
 	scsifront_gnttab_done(info, shadow);
 	scsifront_put_rqid(info, id);
 
-	set_driver_byte(sc, driver_byte(ring_rsp->rslt));
-	set_host_byte(sc, host_byte(ring_rsp->rslt));
+	if ((driver_byte(ring_rsp->rslt) == DRIVER_ERROR) &&
+	    (host_byte(ring_rsp->rslt) == DID_OK))
+		set_host_byte(sc, DID_ERROR);
+	else
+		set_host_byte(sc, host_byte(ring_rsp->rslt));
 	set_msg_byte(sc, msg_byte(ring_rsp->rslt));
 	set_status_byte(sc, ring_rsp->rslt & 0xff);
 	scsi_set_resid(sc, ring_rsp->residual_len);
