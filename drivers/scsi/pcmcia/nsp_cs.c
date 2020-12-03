@@ -223,7 +223,7 @@ static int nsp_queuecommand_lck(struct scsi_cmnd *SCpnt,
 	data->CurrentSC		= SCpnt;
 
 	SCpnt->SCp.Status	= SAM_STAT_CHECK_CONDITION;
-	SCpnt->SCp.Message	= COMMAND_COMPLETE;
+	set_msg_byte(SCpnt, COMMAND_COMPLETE);
 	SCpnt->SCp.have_data_in = IO_UNKNOWN;
 	SCpnt->SCp.sent_command = 0;
 	SCpnt->SCp.phase	= PH_UNDETERMINED;
@@ -1035,7 +1035,6 @@ static irqreturn_t nspintr(int irq, void *dev_id)
 		if(data->CurrentSC != NULL) {
 			tmpSC = data->CurrentSC;
 			set_host_byte(tmpSC, DID_RESET);
-			set_msg_byte(tmpSC, tmpSC->SCp.Message);
 			set_status_byte(tmpSC, tmpSC->SCp.Status);
 			nsp_scsi_done(tmpSC);
 		}
@@ -1132,9 +1131,8 @@ static irqreturn_t nspintr(int irq, void *dev_id)
 		//*sync_neg       = SYNC_NOT_YET;
 
 		/* all command complete and return status */
-		if (tmpSC->SCp.Message == COMMAND_COMPLETE) {
+		if (get_msg_byte(tmpSC) == COMMAND_COMPLETE) {
 			set_host_byte(tmpSC, DID_OK);
-			set_msg_byte(tmpSC, COMMAND_COMPLETE);
 			set_status_byte(tmpSC, tmpSC->SCp.Status);
 			nsp_dbg(NSP_DEBUG_INTR, "command complete result=0x%x",
 				scsi_get_result(tmpSC));
@@ -1205,7 +1203,8 @@ static irqreturn_t nspintr(int irq, void *dev_id)
 		tmpSC->SCp.phase = PH_STATUS;
 
 		tmpSC->SCp.Status = nsp_index_read(base, SCSIDATAWITHACK);
-		nsp_dbg(NSP_DEBUG_INTR, "message=0x%x status=0x%x", tmpSC->SCp.Message, tmpSC->SCp.Status);
+		nsp_dbg(NSP_DEBUG_INTR, "message=0x%x status=0x%x",
+			get_msg_byte(tmpSC), tmpSC->SCp.Status);
 
 		break;
 
@@ -1280,9 +1279,10 @@ static irqreturn_t nspintr(int irq, void *dev_id)
 				i += (1 + data->MsgBuffer[i+1]);
 			}
 		}
-		tmpSC->SCp.Message = tmp;
+		set_msg_byte(tmpSC, tmp);
 
-		nsp_dbg(NSP_DEBUG_INTR, "message=0x%x len=%d", tmpSC->SCp.Message, data->MsgLen);
+		nsp_dbg(NSP_DEBUG_INTR, "message=0x%x len=%d",
+			get_msg_byte(tmpSC), data->MsgLen);
 		show_message(data);
 
 		break;
