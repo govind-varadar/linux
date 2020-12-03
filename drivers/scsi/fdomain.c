@@ -332,8 +332,8 @@ static void fdomain_work(struct work_struct *work)
 			outb(MESSAGE_REJECT, fd->base + REG_SCSI_DATA);
 			break;
 		case BSTAT_MSG | BSTAT_CMD | BSTAT_IO:	/* MESSAGE IN */
-			cmd->SCp.Message = inb(fd->base + REG_SCSI_DATA);
-			if (cmd->SCp.Message == COMMAND_COMPLETE)
+			set_msg_byte(cmd, inb(fd->base + REG_SCSI_DATA));
+			if (get_msg_byte(cmd) == COMMAND_COMPLETE)
 				++done;
 			break;
 		}
@@ -360,7 +360,6 @@ static void fdomain_work(struct work_struct *work)
 
 	if (done) {
 		set_status_byte(cmd, cmd->SCp.Status);
-		set_msg_byte(cmd, cmd->SCp.Message);
 		fdomain_finish_cmd(fd, DID_OK);
 	} else {
 		if (cmd->SCp.phase & disconnect) {
@@ -400,7 +399,7 @@ static int fdomain_queue(struct Scsi_Host *sh, struct scsi_cmnd *cmd)
 	unsigned long flags;
 
 	cmd->SCp.Status		= 0;
-	cmd->SCp.Message	= 0;
+	set_msg_byte(cmd, COMMAND_COMPLETE);
 	cmd->SCp.have_data_in	= 0;
 	cmd->SCp.sent_command	= 0;
 	cmd->SCp.phase		= in_arbitration;
