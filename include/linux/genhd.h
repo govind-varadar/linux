@@ -165,12 +165,11 @@ struct blk_integrity {
 };
 
 struct blk_interposer;
-typedef blk_qc_t (*ip_submit_bio_t) (struct blk_interposer *ip, struct bio *bio);
+typedef void (*ip_submit_bio_t) (struct blk_interposer *ip, struct bio *bio);
 
 struct blk_interposer {
-	struct gendisk *ip_disk;
 	ip_submit_bio_t ip_submit_bio;
-	void *ip_private;
+	char ip_holder[32];
 };
 
 struct gendisk {
@@ -420,12 +419,16 @@ static inline dev_t blk_lookup_devt(const char *name, int partno)
 #endif /* CONFIG_BLOCK */
 
 /*
- * Block device interposing
+ * block layer interposer
  */
 #define blk_has_interposer(d) ((d)->interposer != NULL)
-#define blk_interposer_active(ip) ((ip)->ip_disk != NULL)
 
-int blk_interposer_attach(struct gendisk *, struct blk_interposer *);
-struct blk_interposer * blk_interposer_detach(struct gendisk *);
+void blk_disk_freeze(struct gendisk *disk);
+void blk_disk_unfreeze(struct gendisk *disk);
+
+int blk_interposer_attach(struct gendisk *disk, struct blk_interposer *interposer,
+			  const ip_submit_bio_t ip_submit_bio, const char *ip_holder);
+struct blk_interposer *blk_interposer_detach(struct gendisk *disk,
+					     const ip_submit_bio_t ip_submit_bio);
 
 #endif /* _LINUX_GENHD_H */

@@ -2366,55 +2366,85 @@ static void disk_release_events(struct gendisk *disk)
 }
 
 /**
+ *
+ */
+void blk_disk_freeze(struct gendisk *disk)
+{
+	blk_mq_freeze_queue(disk->queue);
+	blk_mq_quiesce_queue(disk->queue);
+}
+EXPORT_SYMBOL_GPL(blk_disk_freeze);
+
+/**
+ *
+ */
+void blk_disk_unfreeze(struct gendisk *disk)
+{
+	blk_mq_unquiesce_queue(disk->queue);
+	blk_mq_unfreeze_queue(disk->queue);
+}
+EXPORT_SYMBOL_GPL(blk_disk_unfreeze);
+
+/**
  * blk_interposer_attach - Attach interposer to disk
  * @disk: target disk
  * @interposer: block device interposer
+ * @ip_submit_bio: hook for submit_bio()
  *
  * Returns:
  *     -EINVAL if @interposer is NULL.
  *     -ENODEV if interposer is not initialized,
  *     -EBUSY if the block device already has interposer.
+ *
+ * Disk must be frozen by blk_disk_freeze() and unfrozen blk_disk_unfreeze().
  */
-int blk_interposer_attach(struct gendisk *disk,
-			  struct blk_interposer *interposer)
+int blk_interposer_attach(struct gendisk *disk, struct blk_interposer *interposer,
+			  const ip_submit_bio_t ip_submit_bio, const char *ip_holder)
 {
-	int ret = 0;
-
 	if (!interposer)
 		return -EINVAL;
 
-	blk_mq_freeze_queue(disk->queue);
-	blk_mq_quiesce_queue(disk->queue);
 	if (blk_has_interposer(disk))
-		ret = -EBUSY;
-	else
-		disk->interposer = interposer;
-	blk_mq_unquiesce_queue(disk->queue);
-	blk_mq_unfreeze_queue(disk->queue);
+		return -EBUSY;
 
-	return ret;
+	interposer->ip_submit_bio = ip_submit_bio;
+
+	strncpy(interposer->ip_holder, ip_holder, sizeof(interposer->ip_holder));
+	interposer->ip_holder[sizeof(interposer->ip_holder)-1] = '\0';
+
+	disk->interposer = interposer;
+
+	return 0;
 }
 EXPORT_SYMBOL_GPL(blk_interposer_attach);
 
 /**
  * blk_interposer_detach - Detach interposer from disk
  * @disk: target disk
+ * @ip_submit_bio: hook for submit_bio()
  *
- * Returns the attached interposer or NULL if none was attached.
+ * Returns the attached interposer or error number if it was not attached,
+ * or a foreign interposer was attached.
+ * Disk must be frozen by blk_disk_freeze() and unfrozen blk_disk_unfreeze().
  */
-struct blk_interposer *blk_interposer_detach(struct gendisk *disk)
+struct blk_interposer *blk_interposer_detach(struct gendisk *disk,
+					     const ip_submit_bio_t ip_submit_bio)
 {
 	struct blk_interposer *interposer;
 
 	if (WARN_ON(!disk))
-		return NULL;
+		return ERR_PTR(-EINVAL);
 
-	blk_mq_freeze_queue(disk->queue);
-	blk_mq_quiesce_queue(disk->queue);
+	/* Check if the interposer is still available. */
+	if (!disk->interposer)
+		return ERR_PTR(-ENOENT);
+
+	/* Check if it is really our interposer. */
+	if (disk->interposer->ip_submit_bio != ip_submit_bio)
+		return ERR_PTR(-EPERM);
+
 	interposer = disk->interposer;
 	disk->interposer = NULL;
-	blk_mq_unquiesce_queue(disk->queue);
-	blk_mq_unfreeze_queue(disk->queue);
 
 	return interposer;
 }
