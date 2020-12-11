@@ -171,6 +171,20 @@ struct dm_table {
 	struct dm_md_mempools *mempools;
 };
 
+/*
+ * Device mapper`s interposer.
+ */
+struct dm_interposer {
+	struct blk_interposer blk_ip;
+	struct gendisk *disk;
+	struct mapped_device *md;
+};
+
+static inline struct dm_interposer *dm_get_interposer(struct blk_interposer *blk_ip)
+{
+	return container_of(blk_ip, struct dm_interposer, blk_ip);
+}
+
 static inline struct completion *dm_get_completion_from_kobject(struct kobject *kobj)
 {
 	return &container_of(kobj, struct dm_kobject_holder, kobj)->completion;

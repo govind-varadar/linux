@@ -1804,24 +1804,23 @@ static int device_activate_interposer(struct dm_target *ti,
 				      struct dm_dev *dev, sector_t start,
 				      sector_t len, void *data)
 {
-	struct blk_interposer *blk_ip = dev->bdev->bd_disk->interposer;
+	struct dm_interposer *ip = dm_get_interposer(dev->bdev->bd_disk->interposer);
 	struct mapped_device *md = data;
 
-	if (!blk_ip)
+	if (!ip)
 		return false;
 	if (md) {
 		struct block_device *bdev;
 
-		bdev = blkdev_get_by_dev(md->bdev->bd_dev,
-					     dev->mode | FMODE_EXCL,
-					     _dm_interposer_claim_ptr);
+		bdev = blkdev_get_by_dev(md->bdev->bd_dev, dev->mode | FMODE_EXCL,
+					 _dm_interposer_claim_ptr);
 		if (!bdev)
 			return false;
-		blk_ip->ip_private = md;
-	} else if (blk_ip->ip_private) {
-		md = blk_ip->ip_private;
+		ip->md = md;
+	} else if (ip->md) {
+		md = ip->md;
 		blkdev_put(md->bdev, dev->mode | FMODE_EXCL);
-		blk_ip->ip_private = NULL;
+		ip->md = NULL;
 	}
 	return true;
 }
@@ -1834,8 +1833,7 @@ bool dm_table_activate_interposer(struct dm_table *t, struct mapped_device *md)
 		ti = t->targets;
 
 		if (!ti->type->iterate_devices ||
-		    !ti->type->iterate_devices(ti,
-				device_activate_interposer, md))
+		    !ti->type->iterate_devices(ti, device_activate_interposer, md))
 			return false;
 		DMINFO("%s: activated interposer", dm_device_name(md));
 	}

@@ -48,7 +48,7 @@ static DEFINE_IDR(_minor_idr);
 static DEFINE_SPINLOCK(_minor_lock);
 
 static void do_deferred_remove(struct work_struct *w);
-static blk_qc_t dm_submit_bio_interposed(struct blk_interposer *ip, struct bio *bio);
+static void dm_submit_bio_interposed(struct blk_interposer *ip, struct bio *bio);
 
 static DECLARE_WORK(deferred_remove_work, do_deferred_remove);
 
@@ -734,33 +734,32 @@ static void dm_put_live_table_fast(struct mapped_device *md) __releases(RCU)
 static inline int dm_install_interposer(struct gendisk *disk,
 					struct mapped_device *md)
 {
-	struct blk_interposer *blk_ip;
+	struct dm_interposer *ip;
 	int ret;
 
-	blk_ip = kzalloc(sizeof(struct blk_interposer), GFP_KERNEL);
-	if (!blk_ip)
+	ip = kzalloc(sizeof(struct dm_interposer), GFP_KERNEL);
+	if (!ip)
 		return -ENOMEM;
 
-	blk_ip->ip_submit_bio = dm_submit_bio_interposed;
-	blk_ip->ip_disk = disk;
-	blk_ip->ip_private = md;
+	ip->disk = disk;
+	ip->md = md;
 
-	ret = blk_interposer_attach(disk, blk_ip);
-	if (ret) {
-		kfree(blk_ip);
-		return ret;
-	}
+	blk_disk_freeze(disk);
+	ret = blk_interposer_attach(disk, &ip->blk_ip, dm_submit_bio_interposed, "device-mapper");
+	blk_disk_unfreeze(disk);
 
-	return 0;
+	if (ret)
+		kfree(ip);
+	return ret;
 }
 
 static inline void dm_uninstall_interposer(struct gendisk *disk)
 {
 	struct blk_interposer *blk_ip;
 
-	blk_ip = blk_interposer_detach(disk);
-	if (blk_ip)
-		kfree(blk_ip);
+	blk_ip = blk_interposer_detach(disk, dm_submit_bio_interposed);
+	if (!IS_ERR(blk_ip))
+		kfree(dm_get_interposer(blk_ip));
 }
 
 static char *_dm_claim_ptr = "I belong to device-mapper";
@@ -1737,17 +1736,17 @@ static void dm_interposed_endio(struct bio *clone)
 	bio_put(clone);
 }
 
-static blk_qc_t dm_submit_bio_interposed(struct blk_interposer *interposer,
+static void dm_submit_bio_interposed(struct blk_interposer *interposer,
 					 struct bio *bio)
 {
-	struct mapped_device *md = interposer->ip_private;
-	blk_qc_t ret = BLK_QC_T_NONE;
+	struct dm_interposer *ip = dm_get_interposer(interposer);
+	struct mapped_device *md = ip->md;
 	int srcu_idx;
 	struct dm_table *map;
 	struct bio *clone;
 
 	if (unlikely(!md))
-		return submit_bio_noacct(bio);
+		submit_bio_noacct(bio);
 
 	map = dm_get_live_table(md, &srcu_idx);
 	if (unlikely(!map)) {
@@ -1772,14 +1771,12 @@ static blk_qc_t dm_submit_bio_interposed(struct blk_interposer *interposer,
 	trace_block_bio_remap(clone->bi_disk->queue, bio, bio_dev(bio),
 			      bio->bi_iter.bi_sector);
 
-	ret = submit_bio_noacct(clone);
+	submit_bio_noacct(clone);
 	dm_put_live_table(md, srcu_idx);
-	return  ret;
 
 out:
 	bio_io_error(bio);
 	dm_put_live_table(md, srcu_idx);
-	return ret;
 }
 
 /*-----------------------------------------------------------------
