@@ -757,7 +757,10 @@ static inline void dm_uninstall_interposer(struct gendisk *disk)
 {
 	struct blk_interposer *blk_ip;
 
+	blk_disk_freeze(disk);
 	blk_ip = blk_interposer_detach(disk, dm_submit_bio_interposed);
+	blk_disk_unfreeze(disk);
+
 	if (!IS_ERR(blk_ip))
 		kfree(dm_get_interposer(blk_ip));
 }
