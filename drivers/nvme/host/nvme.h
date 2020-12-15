@@ -326,6 +326,12 @@ struct nvme_ctrl {
 	struct work_struct ana_work;
 #endif
 
+#ifdef CONFIG_NVME_AUTH
+	u16 transaction;
+	u8 dhchap_hash;
+	u8 dhchap_dhgroup;
+#endif
+
 	/* Power saving configuration */
 	u64 ps_max_latency_us;
 	bool apst_enabled;
@@ -829,6 +835,15 @@ static inline int nvme_hwmon_init(struct nvme_ctrl *ctrl)
 
 static inline void nvme_hwmon_exit(struct nvme_ctrl *ctrl)
 {
+}
+#endif
+
+#ifdef CONFIG_NVME_AUTH
+int nvme_auth_negotiate(struct nvme_ctrl *ctrl, int qid);
+#else
+static inline int nvme_auth_negotiate(struct nvme_ctrl *ctrl, int qid)
+{
+	return -EPROTONOSUPPORT;
 }
 #endif
 
