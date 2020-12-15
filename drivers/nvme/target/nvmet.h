@@ -106,6 +106,17 @@ struct nvmet_sq {
 	u16			size;
 	u32			sqhd;
 	bool			sqhd_disabled;
+#ifdef CONFIG_NVME_TARGET_AUTH
+	bool			authenticated;
+	u16			dhchap_transaction;
+	u16			dhchap_status;
+	int			dhchap_step;
+	u8			dhchap_hash_id;
+	u8			dhchap_hash_len;
+	char			*dhchap_response;
+	u8			*dhchap_skey;
+	int			dhchap_skey_len;
+#endif
 	struct completion	free_done;
 	struct completion	confirm_done;
 };
@@ -207,6 +218,11 @@ struct nvmet_ctrl {
 	u64			err_counter;
 	struct nvme_error_slot	slots[NVMET_ERROR_LOG_SLOTS];
 	bool			pi_support;
+#ifdef CONFIG_NVME_TARGET_AUTH
+	u32			dhchap_seqnum;
+	struct crypto_shash	*shash_tfm;
+	struct crypto_kpp	*dh_tfm;
+#endif
 };
 
 struct nvmet_subsys {
@@ -263,6 +279,11 @@ static inline struct nvmet_subsys *namespaces_to_subsys(
 
 struct nvmet_host {
 	struct config_group	group;
+	u8			*dhchap_secret;
+	size_t			dhchap_key_len;
+	u8			dhchap_key_hash;
+	u8			dhchap_hash_id;
+	u8			dhchap_dhgroup_id;
 };
 
 static inline struct nvmet_host *to_host(struct config_item *item)
@@ -615,5 +636,50 @@ static inline sector_t nvmet_lba_to_sect(struct nvmet_ns *ns, __le64 lba)
 {
 	return le64_to_cpu(lba) << (ns->blksize_shift - SECTOR_SHIFT);
 }
+
+#ifdef CONFIG_NVME_TARGET_AUTH
+void nvmet_execute_auth_send(struct nvmet_req *req);
+void nvmet_execute_auth_receive(struct nvmet_req *req);
+int nvmet_auth_set_host_key(struct nvmet_host *host, const char *secret);
+int nvmet_auth_set_host_hash(struct nvmet_host *host, const char *hash);
+const char *nvmet_auth_get_host_hash(struct nvmet_host *host);
+int nvmet_auth_get_hash(struct nvmet_ctrl *ctrl, unsigned int *hash_len);
+int nvmet_auth_set_host_dhgroup(struct nvmet_host *host, const char *hash);
+const char *nvmet_auth_get_host_dhgroup(struct nvmet_host *host);
+int nvmet_setup_auth(struct nvmet_ctrl *ctrl, struct nvmet_req *req);
+void nvmet_reset_auth(struct nvmet_ctrl *ctrl);
+int nvmet_setup_dhgroup(struct nvmet_ctrl *ctrl, int dhgroup_id);
+bool nvmet_check_auth_status(struct nvmet_req *req);
+int nvmet_auth_host_hash(struct nvmet_ctrl *ctrl, unsigned int hash_len,
+		u8 *challenge, u8 *response,
+		u32 seqnum, u16 transaction);
+int nvmet_auth_controller_hash(struct nvmet_ctrl *ctrl, unsigned int hash_len,
+		u8 *challenge, u8 *response,
+		u32 seqnum, u16 transaction);
+static inline bool nvmet_has_auth(struct nvmet_ctrl *ctrl)
+{
+	return ctrl->shash_tfm != NULL;
+}
+const char *nvmet_dhchap_dhgroup_name(int dhgid);
+int nvmet_auth_ctrl_exponential(struct nvmet_req *req,
+				u8 *buf, int buf_size);
+int nvmet_auth_ctrl_sesskey(struct nvmet_req *req,
+			    u8 *buf, int buf_size);
+#else
+static inline int nvmet_setup_auth(struct nvmet_ctrl *ctrl, struct nvmet_req *req)
+{
+	return 0;
+}
+static inline void nvmet_reset_auth(struct nvmet_ctrl *ctrl) {};
+static inline bool nvmet_check_auth_status(struct nvmet_req *req)
+{
+	return true;
+}
+static inline bool nvmet_has_auth(struct nvmet_ctrl *ctrl)
+{
+	return false;
+}
+const char nvmet_dhchap_dhgroup_name(int dhgid) { return NULL; }
+#endif
 
 #endif /* _NVMET_H */

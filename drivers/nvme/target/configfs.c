@@ -1606,6 +1606,85 @@ static const struct config_item_type nvmet_ports_type = {
 static struct config_group nvmet_subsystems_group;
 static struct config_group nvmet_ports_group;
 
+#ifdef CONFIG_NVME_TARGET_AUTH
+static ssize_t nvmet_host_dhchap_key_show(struct config_item *item,
+		char *page)
+{
+	u8 *dhchap_secret = to_host(item)->dhchap_secret;
+
+	if (!dhchap_secret)
+		return sprintf(page, "\n");
+	return sprintf(page, "%s\n", dhchap_secret);
+}
+
+static ssize_t nvmet_host_dhchap_key_store(struct config_item *item,
+		const char *page, size_t count)
+{
+	struct nvmet_host *host = to_host(item);
+	int ret;
+
+	ret = nvmet_auth_set_host_key(host, page);
+	if (ret < 0)
+		return ret;
+	return count;
+}
+
+CONFIGFS_ATTR(nvmet_host_, dhchap_key);
+
+static ssize_t nvmet_host_dhchap_hash_show(struct config_item *item,
+		char *page)
+{
+	struct nvmet_host *host = to_host(item);
+
+	return sprintf(page, "%s\n", nvmet_auth_get_host_hash(host) ?
+		       nvmet_auth_get_host_hash(host) : "none");
+}
+
+static ssize_t nvmet_host_dhchap_hash_store(struct config_item *item,
+		const char *page, size_t count)
+{
+	struct nvmet_host *host = to_host(item);
+	int ret;
+
+	ret = nvmet_auth_set_host_hash(host, page);
+	if (ret < 0)
+		return ret;
+	return count;
+}
+
+CONFIGFS_ATTR(nvmet_host_, dhchap_hash);
+
+static ssize_t nvmet_host_dhchap_dhgroup_show(struct config_item *item,
+		char *page)
+{
+	struct nvmet_host *host = to_host(item);
+	const char *dhgroup = nvmet_auth_get_host_dhgroup(host);
+
+	return sprintf(page, "%s\n", dhgroup ? dhgroup : "none");
+}
+
+static ssize_t nvmet_host_dhchap_dhgroup_store(struct config_item *item,
+		const char *page, size_t count)
+{
+	struct nvmet_host *host = to_host(item);
+	int ret;
+
+	ret = nvmet_auth_set_host_dhgroup(host, page);
+	if (ret < 0)
+		return ret;
+	return count;
+}
+
+CONFIGFS_ATTR(nvmet_host_, dhchap_dhgroup);
+
+static struct configfs_attribute *nvmet_host_attrs[] = {
+	&nvmet_host_attr_dhchap_key,
+	&nvmet_host_attr_dhchap_hash,
+	&nvmet_host_attr_dhchap_dhgroup,
+	NULL,
+};
+#endif /* CONFIG_NVME_TARGET_AUTH */
+
 static void nvmet_host_release(struct config_item *item)
 {
 	struct nvmet_host *host = to_host(item);
@@ -1619,6 +1698,9 @@ static struct configfs_item_operations nvmet_host_item_ops = {
 
 static const struct config_item_type nvmet_host_type = {
 	.ct_item_ops		= &nvmet_host_item_ops,
+#ifdef CONFIG_NVME_TARGET_AUTH
+	.ct_attrs		= nvmet_host_attrs,
+#endif
 	.ct_owner		= THIS_MODULE,
 };
 
