@@ -381,7 +381,8 @@ wd33c93_queuecommand_lck(struct scsi_cmnd *cmd,
  */
 	cmd->host_scribble = NULL;
 	cmd->scsi_done = done;
-	cmd->result = 0;
+	set_host_byte(cmd, DID_OK);
+	set_status_byte(cmd, SAM_STAT_GOOD);
 
 /* We use the Scsi_Pointer structure that's included with each command
  * as a scratchpad (as it's intended to be used!). The handy thing about
@@ -853,7 +854,7 @@ wd33c93_intr(struct Scsi_Host *instance)
 			hostdata->selecting = NULL;
 		}
 
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		hostdata->busy[cmd->device->id] &= ~(1 << (cmd->device->lun & 0xff));
 		hostdata->state = S_UNCONNECTED;
 		cmd->scsi_done(cmd);
@@ -1177,12 +1178,11 @@ wd33c93_intr(struct Scsi_Host *instance)
 				cmd->SCp.Status = lun;
 			if (cmd->cmnd[0] == REQUEST_SENSE
 			    && cmd->SCp.Status != SAM_STAT_GOOD)
-				cmd->result =
-				    (cmd->
-				     result & 0x00ffff) | (DID_ERROR << 16);
-			else
-				cmd->result =
-				    cmd->SCp.Status | (cmd->SCp.Message << 8);
+				set_host_byte(cmd, DID_ERROR);
+			else {
+				set_status_byte(cmd, cmd->SCp.Status);
+				set_msg_byte(cmd, cmd->SCp.Message);
+			}
 			cmd->scsi_done(cmd);
 
 /* We are no longer  connected to a target - check to see if
@@ -1262,11 +1262,13 @@ wd33c93_intr(struct Scsi_Host *instance)
 		    hostdata->connected = NULL;
 		hostdata->busy[cmd->device->id] &= ~(1 << (cmd->device->lun & 0xff));
 		hostdata->state = S_UNCONNECTED;
-		if (cmd->cmnd[0] == REQUEST_SENSE && cmd->SCp.Status != SAM_STAT_GOOD)
-			cmd->result =
-			    (cmd->result & 0x00ffff) | (DID_ERROR << 16);
-		else
-			cmd->result = cmd->SCp.Status | (cmd->SCp.Message << 8);
+		if (cmd->cmnd[0] == REQUEST_SENSE &&
+		    cmd->SCp.Status != SAM_STAT_GOOD)
+			set_host_byte(cmd, DID_ERROR);
+		else {
+			set_status_byte(cmd, cmd->SCp.Status);
+			set_msg_byte(cmd, cmd->SCp.Message);
+		}
 		cmd->scsi_done(cmd);
 
 /* We are no longer connected to a target - check to see if
@@ -1297,12 +1299,11 @@ wd33c93_intr(struct Scsi_Host *instance)
 			DB(DB_INTR, printk(":%d", cmd->SCp.Status))
 			    if (cmd->cmnd[0] == REQUEST_SENSE
 				&& cmd->SCp.Status != SAM_STAT_GOOD)
-				cmd->result =
-				    (cmd->
-				     result & 0x00ffff) | (DID_ERROR << 16);
-			else
-				cmd->result =
-				    cmd->SCp.Status | (cmd->SCp.Message << 8);
+				    set_host_byte(cmd, DID_ERROR);
+			    else {
+				    set_status_byte(cmd, cmd->SCp.Status);
+				    set_msg_byte(cmd, cmd->SCp.Message);
+			    }
 			cmd->scsi_done(cmd);
 			break;
 		case S_PRE_TMP_DISC:
@@ -1593,7 +1594,7 @@ wd33c93_host_reset(struct scsi_cmnd * SCpnt)
 	hostdata->outgoing_len = 0;
 
 	reset_wd33c93(instance);
-	SCpnt->result = DID_RESET << 16;
+	set_host_byte(SCpnt, DID_RESET);
 	enable_irq(instance->irq);
 	spin_unlock_irq(instance->host_lock);
 	return SUCCESS;
@@ -1628,7 +1629,7 @@ wd33c93_abort(struct scsi_cmnd * cmd)
 				hostdata->input_Q =
 				    (struct scsi_cmnd *) cmd->host_scribble;
 			cmd->host_scribble = NULL;
-			cmd->result = DID_ABORT << 16;
+			set_host_byte(cmd, DID_ABORT);
 			printk
 			    ("scsi%d: Abort - removing command from input_Q. ",
 			     instance->host_no);
@@ -1702,7 +1703,7 @@ wd33c93_abort(struct scsi_cmnd * cmd)
 		hostdata->busy[cmd->device->id] &= ~(1 << (cmd->device->lun & 0xff));
 		hostdata->connected = NULL;
 		hostdata->state = S_UNCONNECTED;
-		cmd->result = DID_ABORT << 16;
+		set_host_byte(cmd, DID_ABORT);
 
 /*      sti();*/
 		wd33c93_execute(instance);
