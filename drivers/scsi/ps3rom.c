@@ -132,14 +132,14 @@ static int ps3rom_atapi_request(struct ps3_storage_device *dev,
 		dev_dbg(&dev->sbd.core,
 			"%s:%u: ATAPI command 0x%02x denied by policy\n",
 			__func__, __LINE__, opcode);
-		return DID_ERROR << 16;
+		return DID_ERROR;
 	}
 
 	if (res) {
 		dev_err(&dev->sbd.core,
 			"%s:%u: ATAPI command 0x%02x failed %d\n", __func__,
 			__LINE__, opcode, res);
-		return DID_ERROR << 16;
+		return DID_ERROR;
 	}
 
 	return 0;
@@ -171,7 +171,7 @@ static int ps3rom_read_request(struct ps3_storage_device *dev,
 	if (res) {
 		dev_err(&dev->sbd.core, "%s:%u: read failed %d\n", __func__,
 			__LINE__, res);
-		return DID_ERROR << 16;
+		return DID_ERROR;
 	}
 
 	return 0;
@@ -194,7 +194,7 @@ static int ps3rom_write_request(struct ps3_storage_device *dev,
 	if (res) {
 		dev_err(&dev->sbd.core, "%s:%u: write failed %d\n", __func__,
 			__LINE__, res);
-		return DID_ERROR << 16;
+		return DID_ERROR;
 	}
 
 	return 0;
@@ -235,7 +235,7 @@ static int ps3rom_queuecommand_lck(struct scsi_cmnd *cmd,
 
 	if (res) {
 		scsi_build_sense(cmd, 0, ILLEGAL_REQUEST, 0, 0);
-		cmd->result = res;
+		set_host_byte(cmd, res);
 		priv->curr_cmd = NULL;
 		cmd->scsi_done(cmd);
 	}
