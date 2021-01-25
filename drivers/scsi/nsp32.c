@@ -1696,7 +1696,6 @@ static int nsp32_busfree_occur(struct scsi_cmnd *SCpnt, unsigned short execph)
 		nsp32_dbg(NSP32_DEBUG_BUSFREE,
 			  "normal end stat=0x%x resid=0x%x\n",
 			  SCpnt->SCp.Status, scsi_get_resid(SCpnt));
-		set_msg_byte(SCpnt, SCpnt->SCp.Message);
 		set_status_byte(SCpnt, SCpnt->SCp.Status);
 		nsp32_scsi_done(SCpnt);
 		/* All operation is done */
