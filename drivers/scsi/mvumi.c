@@ -1303,24 +1303,22 @@ static void mvumi_complete_cmd(struct mvumi_hba *mhba, struct mvumi_cmd *cmd,
 	struct scsi_cmnd *scmd = cmd->scmd;
 
 	cmd->scmd->SCp.ptr = NULL;
-	scmd->result = ob_frame->req_status;
+	set_status_byte(scmd, ob_frame->req_status);
 
 	switch (ob_frame->req_status) {
 	case SAM_STAT_GOOD:
-		scmd->result |= DID_OK << 16;
 		break;
 	case SAM_STAT_BUSY:
-		scmd->result |= DID_BUS_BUSY << 16;
+		set_host_byte(scmd, DID_BUS_BUSY);
 		break;
 	case SAM_STAT_CHECK_CONDITION:
-		scmd->result |= (DID_OK << 16);
 		if (ob_frame->rsp_flag & CL_RSP_FLAG_SENSEDATA) {
 			memcpy(cmd->scmd->sense_buffer, ob_frame->payload,
 				sizeof(struct mvumi_sense_data));
 		}
 		break;
 	default:
-		scmd->result |= (DID_ABORT << 16);
+		set_host_byte(scmd, DID_ABORT);
 		break;
 	}
 
@@ -2086,7 +2084,8 @@ static int mvumi_queue_command(struct Scsi_Host *shost,
 	spin_lock_irqsave(shost->host_lock, irq_flags);
 
 	mhba = (struct mvumi_hba *) shost->hostdata;
-	scmd->result = 0;
+	set_host_byte(scmd, DID_OK);
+	set_status_byte(scmd, SAM_STAT_GOOD);
 	cmd = mvumi_get_cmd(mhba);
 	if (unlikely(!cmd)) {
 		spin_unlock_irqrestore(shost->host_lock, irq_flags);
@@ -2127,7 +2126,7 @@ static enum blk_eh_timer_return mvumi_timed_out(struct scsi_cmnd *scmd)
 	else
 		atomic_dec(&mhba->fw_outstanding);
 
-	scmd->result = (DID_ABORT << 16);
+	set_host_byte(scmd, DID_ABORT);
 	scmd->SCp.ptr = NULL;
 	if (scsi_bufflen(scmd)) {
 		dma_unmap_sg(&mhba->pdev->dev, scsi_sglist(scmd),
