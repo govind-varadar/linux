@@ -795,7 +795,8 @@ static void acornscsi_done(AS_Host *host, struct scsi_cmnd **SCpntp,
 	acornscsi_dma_cleanup(host);
 
 	set_host_byte(SCpnt, result);
-	set_msg_byte(SCpnt, host->scsi.SCp.Message);
+	if (result != DID_OK)
+		translate_msg_byte(SCpnt, host->scsi.SCp.Message);
 	set_status_byte(SCpnt, host->scsi.SCp.Status);
 
 	/*
