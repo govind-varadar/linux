@@ -195,11 +195,9 @@ enum scsi_disposition {
  *  These are set by:
  *
  *      status byte = set from target device
- *      msg_byte    = return status from host adapter itself.
  *      host_byte   = set by low-level driver to indicate status.
  */
 #define status_byte(result) (((result) >> 1) & 0x7f)
-#define msg_byte(result)    (((result) >> 8) & 0xff)
 #define host_byte(result)   (((result) >> 16) & 0xff)
 
 #define sense_class(sense)  (((sense) >> 4) & 0x7)
