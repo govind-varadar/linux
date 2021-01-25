@@ -1442,7 +1442,8 @@ megaraid_queue_command_lck(struct scsi_cmnd *scp, void (*done)(struct scsi_cmnd 
 
 	adapter		= SCP2ADAPTER(scp);
 	scp->scsi_done	= done;
-	scp->result	= 0;
+	set_host_byte(scp, DID_OK);
+	set_status_byte(scp, SAM_STAT_GOOD);
 
 	/*
 	 * Allocate and build a SCB request
@@ -1510,12 +1511,11 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 			 * If no, return success always
 			 */
 			if (!adapter->ha) {
-				scp->result = (DID_OK << 16);
 				return NULL;
 			}
 
 			if (!(scb = megaraid_alloc_scb(adapter, scp))) {
-				scp->result = (DID_ERROR << 16);
+				set_host_byte(scp, DID_ERROR);
 				*busy = 1;
 				return NULL;
 			}
@@ -1552,7 +1552,6 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 						 __LINE__));
 			}
 		}
-		scp->result = (DID_OK << 16);
 		return NULL;
 
 		case INQUIRY:
@@ -1587,18 +1586,18 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 			 * requests for more than 40 logical drives
 			 */
 			if (SCP2LUN(scp)) {
-				scp->result = (DID_BAD_TARGET << 16);
+				set_host_byte(scp, DID_BAD_TARGET);
 				return NULL;
 			}
 			if ((target % 0x80) >= MAX_LOGICAL_DRIVES_40LD) {
-				scp->result = (DID_BAD_TARGET << 16);
+				set_host_byte(scp, DID_BAD_TARGET);
 				return NULL;
 			}
 
 
 			/* Allocate a SCB and initialize passthru */
 			if (!(scb = megaraid_alloc_scb(adapter, scp))) {
-				scp->result = (DID_ERROR << 16);
+				set_host_byte(scp, DID_ERROR);
 				*busy = 1;
 				return NULL;
 			}
@@ -1643,7 +1642,7 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 			 * Allocate a SCB and initialize mailbox
 			 */
 			if (!(scb = megaraid_alloc_scb(adapter, scp))) {
-				scp->result = (DID_ERROR << 16);
+				set_host_byte(scp, DID_ERROR);
 				*busy = 1;
 				return NULL;
 			}
@@ -1710,7 +1709,7 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 
 				megaraid_dealloc_scb(adapter, scb);
 
-				scp->result = (DID_ERROR << 16);
+				set_host_byte(scp, DID_ERROR);
 				return NULL;
 			}
 
@@ -1731,7 +1730,7 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 			 * Do we support clustering and is the support enabled
 			 */
 			if (!adapter->ha) {
-				scp->result = (DID_BAD_TARGET << 16);
+				set_host_byte(scp, DID_BAD_TARGET);
 				return NULL;
 			}
 
@@ -1739,7 +1738,7 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 			 * Allocate a SCB and initialize mailbox
 			 */
 			if (!(scb = megaraid_alloc_scb(adapter, scp))) {
-				scp->result = (DID_ERROR << 16);
+				set_host_byte(scp, DID_ERROR);
 				*busy = 1;
 				return NULL;
 			}
@@ -1757,7 +1756,7 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 			return scb;
 
 		default:
-			scp->result = (DID_BAD_TARGET << 16);
+			set_host_byte(scp, DID_BAD_TARGET);
 			return NULL;
 		}
 	}
@@ -1765,7 +1764,7 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 
 		// Do not allow access to target id > 15 or LUN > 7
 		if (target > 15 || SCP2LUN(scp) > 7) {
-			scp->result = (DID_BAD_TARGET << 16);
+			set_host_byte(scp, DID_BAD_TARGET);
 			return NULL;
 		}
 
@@ -1801,13 +1800,13 @@ megaraid_mbox_build_cmd(adapter_t *adapter, struct scsi_cmnd *scp, int *busy)
 
 		// disable channel sweep if fast load option given
 		if (rdev->fast_load) {
-			scp->result = (DID_BAD_TARGET << 16);
+			set_host_byte(scp, DID_BAD_TARGET);
 			return NULL;
 		}
 
 		// Allocate a SCB and initialize passthru
 		if (!(scb = megaraid_alloc_scb(adapter, scp))) {
-			scp->result = (DID_ERROR << 16);
+			set_host_byte(scp, DID_ERROR);
 			*busy = 1;
 			return NULL;
 		}
@@ -2283,14 +2282,14 @@ megaraid_mbox_dpc(unsigned long devp)
 		}
 
 		// Convert MegaRAID status to Linux error code
+		set_status_byte(scp, status);
 		switch (status) {
 
-		case 0x00:
+		case SAM_STAT_GOOD:
 
-			scp->result = (DID_OK << 16);
 			break;
 
-		case 0x02:
+		case SAM_STAT_CHECK_CONDITION:
 
 			/* set sense_buffer and result fields */
 			if (mbox->cmd == MBOXCMD_PASSTHRU ||
@@ -2299,25 +2298,20 @@ megaraid_mbox_dpc(unsigned long devp)
 				memcpy(scp->sense_buffer, pthru->reqsensearea,
 						14);
 
-				scp->result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
-			}
-			else {
-				if (mbox->cmd == MBOXCMD_EXTPTHRU) {
-
+			} else {
+				if (mbox->cmd == MBOXCMD_EXTPTHRU)
 					memcpy(scp->sense_buffer,
 						epthru->reqsensearea, 14);
 
-					scp->result = DID_OK << 16 |
-						SAM_STAT_CHECK_CONDITION;
-				} else
+				else
 					scsi_build_sense(scp, 0,
 							 ABORTED_COMMAND, 0, 0);
 			}
 			break;
 
-		case 0x08:
+		case SAM_STAT_BUSY:
 
-			scp->result = DID_BUS_BUSY << 16 | status;
+			set_host_byte(scp, DID_BUS_BUSY);
 			break;
 
 		default:
@@ -2327,8 +2321,9 @@ megaraid_mbox_dpc(unsigned long devp)
 			 * failed
 			 */
 			if (scp->cmnd[0] == TEST_UNIT_READY) {
-				scp->result = DID_ERROR << 16 |
-					RESERVATION_CONFLICT << 1;
+				set_host_byte(scp, DID_ERROR);
+				set_status_byte(scp,
+					SAM_STAT_RESERVATION_CONFLICT);
 			}
 			else
 			/*
@@ -2338,11 +2333,11 @@ megaraid_mbox_dpc(unsigned long devp)
 			if (status == 1 && (scp->cmnd[0] == RESERVE ||
 					 scp->cmnd[0] == RELEASE)) {
 
-				scp->result = DID_ERROR << 16 |
-					RESERVATION_CONFLICT << 1;
-			}
-			else {
-				scp->result = DID_BAD_TARGET << 16 | status;
+				set_host_byte(scp, DID_ERROR);
+				set_status_byte(scp,
+					SAM_STAT_RESERVATION_CONFLICT);
+			} else {
+				set_host_byte(scp, DID_BAD_TARGET);
 			}
 		}
 
@@ -2417,7 +2412,7 @@ megaraid_abort_handler(struct scsi_cmnd *scp)
 			"megaraid: %d[%d:%d], abort from completed list\n",
 				scb->sno, scb->dev_channel, scb->dev_target));
 
-			scp->result = (DID_ABORT << 16);
+			set_host_byte(scp, DID_ABORT);
 			scp->scsi_done(scp);
 
 			megaraid_dealloc_scb(adapter, scb);
@@ -2447,7 +2442,7 @@ megaraid_abort_handler(struct scsi_cmnd *scp)
 				"megaraid abort: [%d:%d], driver owner\n",
 				scb->dev_channel, scb->dev_target));
 
-			scp->result = (DID_ABORT << 16);
+			set_host_byte(scp, DID_ABORT);
 			scp->scsi_done(scp);
 
 			megaraid_dealloc_scb(adapter, scb);
@@ -2567,7 +2562,7 @@ megaraid_reset_handler(struct scsi_cmnd *scp)
 				scb->sno, scb->dev_channel, scb->dev_target));
 			}
 
-			scb->scp->result = (DID_RESET << 16);
+			set_host_byte(scb->scp, DID_RESET);
 			scb->scp->scsi_done(scb->scp);
 
 			megaraid_dealloc_scb(adapter, scb);
