@@ -1827,7 +1827,8 @@ static void NCR5380_information_transfer(struct Scsi_Host *instance)
 					hostdata->connected = NULL;
 					hostdata->busy[scmd_id(cmd)] &= ~(1 << cmd->device->lun);
 
-					set_msg_byte(cmd, cmd->SCp.Message);
+					if (cmd->SCp.Message == ABORT)
+						set_host_byte(cmd, DID_ABORT);
 					set_status_byte(cmd, cmd->SCp.Status);
 
 					set_resid_from_SCp(cmd);
