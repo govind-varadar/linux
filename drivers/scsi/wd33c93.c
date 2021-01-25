@@ -1168,7 +1168,6 @@ wd33c93_intr(struct Scsi_Host *instance)
 		write_wd33c93(regs, WD_SOURCE_ID, SRCID_ER);
 		if (phs == 0x60) {
 			DB(DB_INTR, printk("SX-DONE"))
-			    cmd->SCp.Message = COMMAND_COMPLETE;
 			lun = read_wd33c93(regs, WD_TARGET_LUN);
 			DB(DB_INTR, printk(":%d.%d", cmd->SCp.Status, lun))
 			    hostdata->connected = NULL;
@@ -1180,8 +1179,8 @@ wd33c93_intr(struct Scsi_Host *instance)
 			    && cmd->SCp.Status != SAM_STAT_GOOD)
 				set_host_byte(cmd, DID_ERROR);
 			else {
+				set_host_byte(cmd, DID_OK);
 				set_status_byte(cmd, cmd->SCp.Status);
-				set_msg_byte(cmd, cmd->SCp.Message);
 			}
 			cmd->scsi_done(cmd);
 
@@ -1266,8 +1265,9 @@ wd33c93_intr(struct Scsi_Host *instance)
 		    cmd->SCp.Status != SAM_STAT_GOOD)
 			set_host_byte(cmd, DID_ERROR);
 		else {
+			set_host_byte(cmd, DID_OK);
+			translate_msg_byte(cmd, cmd->SCp.Message);
 			set_status_byte(cmd, cmd->SCp.Status);
-			set_msg_byte(cmd, cmd->SCp.Message);
 		}
 		cmd->scsi_done(cmd);
 
@@ -1301,8 +1301,9 @@ wd33c93_intr(struct Scsi_Host *instance)
 				&& cmd->SCp.Status != SAM_STAT_GOOD)
 				    set_host_byte(cmd, DID_ERROR);
 			    else {
+				    set_host_byte(cmd, DID_OK);
+				    translate_msg_byte(cmd, cmd->SCp.Message);
 				    set_status_byte(cmd, cmd->SCp.Status);
-				    set_msg_byte(cmd, cmd->SCp.Message);
 			    }
 			cmd->scsi_done(cmd);
 			break;
