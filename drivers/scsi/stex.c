@@ -573,7 +573,8 @@ static void return_abnormal_state(struct st_hba *hba, int status)
 		ccb->req = NULL;
 		if (ccb->cmd) {
 			scsi_dma_unmap(ccb->cmd);
-			ccb->cmd->result = status << 16;
+			set_host_byte(ccb->cmd, status);
+			set_status_byte(ccb->cmd, SAM_STAT_GOOD);
 			ccb->cmd->scsi_done(ccb->cmd);
 			ccb->cmd = NULL;
 		}
@@ -602,9 +603,11 @@ stex_queuecommand_lck(struct scsi_cmnd *cmd, void (*done)(struct scsi_cmnd *))
 	host = cmd->device->host;
 	id = cmd->device->id;
 	lun = cmd->device->lun;
+	set_host_byte(cmd, DID_OK);
+	set_status_byte(cmd, SAM_STAT_GOOD);
 	hba = (struct st_hba *) &host->hostdata[0];
 	if (hba->mu_status == MU_STATE_NOCONNECT) {
-		cmd->result = DID_NO_CONNECT;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		done(cmd);
 		return 0;
 	}
@@ -622,7 +625,6 @@ stex_queuecommand_lck(struct scsi_cmnd *cmd, void (*done)(struct scsi_cmnd *))
 		if (page == 0x8 || page == 0x3f) {
 			scsi_sg_copy_from_buffer(cmd, ms10_caching_page,
 						 sizeof(ms10_caching_page));
-			cmd->result = DID_OK << 16;
 			done(cmd);
 		} else
 			stex_invalid_field(cmd, done);
@@ -641,14 +643,13 @@ stex_queuecommand_lck(struct scsi_cmnd *cmd, void (*done)(struct scsi_cmnd *))
 		break;
 	case TEST_UNIT_READY:
 		if (id == host->max_id - 1) {
-			cmd->result = DID_OK << 16;
 			done(cmd);
 			return 0;
 		}
 		break;
 	case INQUIRY:
 		if (lun >= host->max_lun) {
-			cmd->result = DID_NO_CONNECT << 16;
+			set_host_byte(cmd, DID_NO_CONNECT);
 			done(cmd);
 			return 0;
 		}
@@ -658,7 +659,6 @@ stex_queuecommand_lck(struct scsi_cmnd *cmd, void (*done)(struct scsi_cmnd *))
 			(cmd->cmnd[1] & INQUIRY_EVPD) == 0) {
 			scsi_sg_copy_from_buffer(cmd, (void *)console_inq_page,
 						 sizeof(console_inq_page));
-			cmd->result = DID_OK << 16;
 			done(cmd);
 		} else
 			stex_invalid_field(cmd, done);
@@ -676,10 +676,8 @@ stex_queuecommand_lck(struct scsi_cmnd *cmd, void (*done)(struct scsi_cmnd *))
 			ver.console_id = host->max_id - 1;
 			ver.host_no = hba->host->host_no;
 			cp_len = scsi_sg_copy_from_buffer(cmd, &ver, cp_len);
-			if (sizeof(ver) == cp_len)
-				cmd->result = DID_OK << 16;
-			else
-				cmd->result = DID_ERROR << 16;
+			if (sizeof(ver) != cp_len)
+				set_host_byte(cmd, DID_ERROR);
 			done(cmd);
 			return 0;
 		}
@@ -728,42 +726,38 @@ static DEF_SCSI_QCMD(stex_queuecommand)
 static void stex_scsi_done(struct st_ccb *ccb)
 {
 	struct scsi_cmnd *cmd = ccb->cmd;
-	int result;
 
 	if (ccb->srb_status == SRB_STATUS_SUCCESS || ccb->srb_status == 0) {
-		result = ccb->scsi_status;
+		set_status_byte(cmd, ccb->scsi_status);
 		switch (ccb->scsi_status) {
 		case SAM_STAT_GOOD:
-			result |= DID_OK << 16;
 			break;
 		case SAM_STAT_CHECK_CONDITION:
-			result |= DID_OK << 16;
 			break;
 		case SAM_STAT_BUSY:
-			result |= DID_BUS_BUSY << 16;
+			set_host_byte(cmd, DID_BUS_BUSY);
 			break;
 		default:
-			result |= DID_ERROR << 16;
+			set_host_byte(cmd, DID_ERROR);
 			break;
 		}
 	}
 	else if (ccb->srb_status & SRB_SEE_SENSE)
-		result = DID_OK << 16 | SAM_STAT_CHECK_CONDITION;
+		set_status_byte(cmd, SAM_STAT_CHECK_CONDITION);
 	else switch (ccb->srb_status) {
 		case SRB_STATUS_SELECTION_TIMEOUT:
-			result = DID_NO_CONNECT << 16;
+			set_host_byte(cmd, DID_NO_CONNECT);
 			break;
 		case SRB_STATUS_BUSY:
-			result = DID_BUS_BUSY << 16;
+			set_host_byte(cmd, DID_BUS_BUSY);
 			break;
 		case SRB_STATUS_INVALID_REQUEST:
 		case SRB_STATUS_ERROR:
 		default:
-			result = DID_ERROR << 16;
+			set_host_byte(cmd, DID_ERROR);
 			break;
 	}
 
-	cmd->result = result;
 	cmd->scsi_done(cmd);
 }
 
