@@ -582,7 +582,7 @@ int nvmet_auth_ctrl_sesskey(struct nvmet_req *req,
 	struct scatterlist src, dst;
 	int ret;
 
-	req->sq->dhchap_skey_len = crypto_kpp_maxsize(ctrl->dh_tfm);
+	req->sq->dhchap_skey_len = 64;
 	req->sq->dhchap_skey = kzalloc(req->sq->dhchap_skey_len, GFP_KERNEL);
 	if (!req->sq->dhchap_skey)
 		return -ENOMEM;
