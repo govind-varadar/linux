@@ -222,6 +222,7 @@ struct nvmet_ctrl {
 	u32			dhchap_seqnum;
 	struct crypto_shash	*shash_tfm;
 	struct crypto_kpp	*dh_tfm;
+	u8			dh_gid;
 #endif
 };
 

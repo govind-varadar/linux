@@ -14,7 +14,7 @@ static u16 nvmet_auth_negotiate(struct nvmet_req *req, void *d)
 {
 	struct nvmet_ctrl *ctrl = req->sq->ctrl;
 	struct nvmf_auth_dhchap_negotiate_data *data = d;
-	int i, hash_id, null_dh = -1, current_dh = -1;
+	int i, hash_id, null_dh = -1;
 	unsigned int hash_len;
 
 	pr_debug("%s: ctrl %d qid %d: data sc_d %d napd %d authid %d halen %d dhlen %d\n",
@@ -62,7 +62,6 @@ static u16 nvmet_auth_negotiate(struct nvmet_req *req, void *d)
 			continue;
 		}
 		if (nvmet_setup_dhgroup(ctrl, dhgid) == 0) {
-			current_dh = dhgid;
 			break;
 		}
 	}
@@ -73,13 +72,13 @@ static u16 nvmet_auth_negotiate(struct nvmet_req *req, void *d)
 		req->sq->dhchap_response = NULL;
 		return NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
 	}
-	if (current_dh == -1) {
-		current_dh = null_dh;
+	if (ctrl->dh_gid == -1) {
+		ctrl->dh_gid = null_dh;
 		ctrl->dh_tfm = NULL;
 	}
 	pr_debug("%s: ctrl %d qid %d: DH group %s (%d)\n",
 		 __func__, ctrl->cntlid, req->sq->qid,
-		 nvmet_dhchap_dhgroup_name(current_dh), current_dh);
+		 nvmet_dhchap_dhgroup_name(ctrl->dh_gid), ctrl->dh_gid);
 	return 0;
 }
 
@@ -306,16 +305,19 @@ static int nvmet_auth_challenge(struct nvmet_req *req, void *d, int al)
 		return -ENOMEM;
 	get_random_bytes(challenge, data->hl);
 	memcpy(data->cval, challenge, data->hl);
-	pr_debug("%s: ctrl %d qid %d seq %d transaction %d\n", __func__,
-		 ctrl->cntlid, req->sq->qid, seqnum,
-		 req->sq->dhchap_transaction);
 	ret = nvmet_auth_host_hash(ctrl, data->hl, challenge,
 				   req->sq->dhchap_response,
 				   req->sq->dhchap_transaction, seqnum);
 	kfree(challenge);
-	if (ctrl->dh_tfm)
+	if (ctrl->dh_tfm) {
+		data->dhgid = ctrl->dh_gid;
+		data->dhvlen = crypto_kpp_maxsize(ctrl->dh_tfm);
 		ret = nvmet_auth_ctrl_exponential(req, data->cval + data->hl,
 						  data->dhvlen);
+	}
+	pr_debug("%s: ctrl %d qid %d seq %d transaction %d hl %d dhvlen %d\n",
+		 __func__,  ctrl->cntlid, req->sq->qid, seqnum,
+		 req->sq->dhchap_transaction, data->hl, data->dhvlen);
 	return ret;
 }
 

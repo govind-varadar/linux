@@ -221,6 +221,11 @@ int nvmet_auth_set_host_dhgroup(struct nvmet_host *host, const char *dhgroup)
 			     strlen(dhgroup_map[i].name))) {
 			if (!crypto_has_kpp(dhgroup_map[i].name, 0, 0))
 				return -EINVAL;
+			/* We only support NULL and ECDH only for now */
+			if (dhgroup_map[i].id != NVME_AUTH_DHCHAP_DHGROUP_ECDH &&
+			    dhgroup_map[i].id != NVME_AUTH_DHCHAP_DHGROUP_NULL)
+				return -EINVAL;
+
 			host->dhchap_dhgroup_id = dhgroup_map[i].id;
 			return 0;
 		}
@@ -248,10 +253,6 @@ int nvmet_setup_dhgroup(struct nvmet_ctrl *ctrl, int dhgroup_id)
 
 	if (dhgroup_id == NVME_AUTH_DHCHAP_DHGROUP_NULL)
 		return 0;
-
-	/* We do support ECDH only for now */
-	if (dhgroup_id != NVME_AUTH_DHCHAP_DHGROUP_ECDH)
-		return -EINVAL;
 
 	down_read(&nvmet_config_sem);
 	if (ctrl->subsys->type == NVME_NQN_DISC)
@@ -283,7 +284,7 @@ int nvmet_setup_dhgroup(struct nvmet_ctrl *ctrl, int dhgroup_id)
 		ret = -ENOTSUPP;
 		ctrl->dh_tfm = NULL;
 	} else
-		host->dhchap_dhgroup_id = dhgroup_id;
+		ctrl->dh_gid = dhgroup_id;
 
 out_unlock:
 	up_read(&nvmet_config_sem);
@@ -604,6 +605,10 @@ int nvmet_auth_ctrl_sesskey(struct nvmet_req *req,
 	kpp_request_free(kpp_req);
 	if (ret)
 		pr_debug("failed to compute shared secred, err %d\n", ret);
+	else
+		pr_debug("%s: shared secret %*ph\n", __func__,
+			 (int)req->sq->dhchap_skey_len,
+			 req->sq->dhchap_skey);
 
 	return ret;
 }
