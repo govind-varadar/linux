@@ -567,14 +567,17 @@ int nvmet_auth_ctrl_exponential(struct nvmet_req *req,
 	if (ret) {
 		pr_debug("failed to generate public key, err %d\n", ret);
 		ret = -ENOKEY;
-	}
+	} else
+		pr_debug("%s: ctrl public key %*ph\n", __func__,
+			 (int)buf_size, buf);
+
 out:
 	kfree_sensitive(pkey);
 	return ret;
 }
 
 int nvmet_auth_ctrl_sesskey(struct nvmet_req *req,
-			    u8 *buf, int buf_size)
+			    u8 *pkey, int pkey_size)
 {
 	struct nvmet_ctrl *ctrl = req->sq->ctrl;
 	struct kpp_request *kpp_req;
@@ -582,7 +585,7 @@ int nvmet_auth_ctrl_sesskey(struct nvmet_req *req,
 	struct scatterlist src, dst;
 	int ret;
 
-	req->sq->dhchap_skey_len = 64;
+	req->sq->dhchap_skey_len = 32;
 	req->sq->dhchap_skey = kzalloc(req->sq->dhchap_skey_len, GFP_KERNEL);
 	if (!req->sq->dhchap_skey)
 		return -ENOMEM;
@@ -593,8 +596,11 @@ int nvmet_auth_ctrl_sesskey(struct nvmet_req *req,
 		return -ENOMEM;
 	}
 
-	sg_init_one(&src, buf, buf_size);
-	kpp_request_set_input(kpp_req, &src, buf_size);
+	pr_debug("%s: host public key %*ph\n", __func__,
+		 (int)pkey_size, pkey);
+	crypto_init_wait(&wait);
+	sg_init_one(&src, pkey, pkey_size);
+	kpp_request_set_input(kpp_req, &src, pkey_size);
 	sg_init_one(&dst, req->sq->dhchap_skey,
 		req->sq->dhchap_skey_len);
 	kpp_request_set_output(kpp_req, &dst, req->sq->dhchap_skey_len);

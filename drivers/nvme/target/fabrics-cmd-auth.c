@@ -87,6 +87,9 @@ static u16 nvmet_auth_reply(struct nvmet_req *req, void *d)
 	struct nvmet_ctrl *ctrl = req->sq->ctrl;
 	struct nvmf_auth_dhchap_reply_data *data = d;
 
+	pr_debug("%s: ctrl %d qid %d: data hl %d cvalid %d dhvlen %d\n",
+		 __func__, ctrl->cntlid, req->sq->qid,
+		 data->hl, data->cvalid, data->dhvlen);
 	if (data->hl != req->sq->dhchap_hash_len)
 		return NVME_AUTH_DHCHAP_FAILURE_INVALID_PAYLOAD;
 
