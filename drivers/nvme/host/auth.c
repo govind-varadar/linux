@@ -219,8 +219,7 @@ int nvme_auth_dhchap_challenge(struct nvme_ctrl *ctrl,
 			chap->dh_tfm = NULL;
 			return -EPROTO;
 		}
-	}
-	if (data->dhgid == NVME_AUTH_DHCHAP_DHGROUP_NULL && data->dhvlen != 0) {
+	} else if (data->dhvlen != 0) {
 		dev_warn(ctrl->device,
 			 "qid %d: DH-HMAC-CHAP: invalid DH value for NULL DH\n",
 			chap->qid);
@@ -252,6 +251,8 @@ int nvme_auth_dhchap_challenge(struct nvme_ctrl *ctrl,
 		chap->ctrl_key_len = data->dhvlen;
 		memcpy(chap->ctrl_key, data->cval + chap->hash_len,
 		       data->dhvlen);
+		dev_dbg(ctrl->device, "ctrl public key %*ph\n",
+			 (int)chap->ctrl_key_len, chap->ctrl_key);
 	}
 
 	return 0;
@@ -264,10 +265,9 @@ int nvme_auth_dhchap_reply(struct nvme_ctrl *ctrl,
 	struct nvmf_auth_dhchap_reply_data *data = buf;
 	size_t size = sizeof(*data);
 
-	size += chap->hash_len;
+	size += 2 * chap->hash_len;
 	if (ctrl->opts->dhchap_auth) {
 		get_random_bytes(chap->challenge, chap->hash_len);
-		size += chap->hash_len;
 		chap->seqnum = nvme_dhchap_seqnum++;
 	} else
 		memset(chap->challenge, 0, chap->hash_len);
@@ -294,10 +294,13 @@ int nvme_auth_dhchap_reply(struct nvme_ctrl *ctrl,
 		memcpy(data->rval + chap->hash_len, chap->challenge,
 		       chap->hash_len);
 	}
-	if (chap->host_key_len)
+	if (chap->host_key_len) {
+		dev_dbg(ctrl->device, "%s: qid %d host public key %*ph\n",
+			__func__, chap->qid,
+			chap->host_key_len, chap->host_key);
 		memcpy(data->rval + 2 * chap->hash_len, chap->host_key,
 		       chap->host_key_len);
-
+	}
 	return size;
 }
 
@@ -616,7 +619,8 @@ int nvme_auth_dhchap_exponential(struct nvme_ctrl *ctrl,
 			"failed to generate public key, error %d\n", ret);
 		goto out_free_host;
 	}
-	chap->sess_key_len = 64;
+
+	chap->sess_key_len = 32;
 	chap->sess_key = kmalloc(chap->sess_key_len, GFP_KERNEL);
 	if (!chap->sess_key)
 		goto out_free_host;
@@ -636,7 +640,9 @@ int nvme_auth_dhchap_exponential(struct nvme_ctrl *ctrl,
 		kfree_sensitive(chap->sess_key);
 		chap->sess_key = NULL;
 		chap->sess_key_len = 0;
-	}
+	} else
+		dev_dbg(ctrl->dev, "shared secret %*ph\n",
+			 (int)chap->sess_key_len, chap->sess_key);
 out_free_host:
 	if (ret) {
 		kfree(chap->host_key);
