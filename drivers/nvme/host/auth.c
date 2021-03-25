@@ -27,7 +27,8 @@ struct nvme_dhchap_context {
 	u8 hash_len;
 	u8 dhgroup_id;
 	u16 dhgroup_size;
-	char challenge[64];
+	char c1[64];
+	char c2[64];
 	char response[64];
 	u8 *ctrl_key;
 	int ctrl_key_len;
@@ -243,7 +244,7 @@ int nvme_auth_dhchap_challenge(struct nvme_ctrl *ctrl,
 	}
 	chap->hash_len = data->hl;
 	chap->seqnum = le32_to_cpu(data->seqnum);
-	memcpy(chap->challenge, data->cval, chap->hash_len);
+	memcpy(chap->c1, data->cval, chap->hash_len);
 	if (data->dhvlen) {
 		chap->ctrl_key = kmalloc(data->dhvlen, GFP_KERNEL);
 		if (!chap->ctrl_key)
@@ -267,10 +268,10 @@ int nvme_auth_dhchap_reply(struct nvme_ctrl *ctrl,
 
 	size += 2 * chap->hash_len;
 	if (ctrl->opts->dhchap_auth) {
-		get_random_bytes(chap->challenge, chap->hash_len);
+		get_random_bytes(chap->c2, chap->hash_len);
 		chap->seqnum = nvme_dhchap_seqnum++;
 	} else
-		memset(chap->challenge, 0, chap->hash_len);
+		memset(chap->c2, 0, chap->hash_len);
 
 	if (chap->host_key_len)
 		size += chap->host_key_len;
@@ -289,9 +290,9 @@ int nvme_auth_dhchap_reply(struct nvme_ctrl *ctrl,
 	if (ctrl->opts->dhchap_auth) {
 		dev_dbg(ctrl->device, "%s: qid %d ctrl challenge %*ph\n",
 			__func__, chap->qid,
-			chap->hash_len, chap->challenge);
+			chap->hash_len, chap->c2);
 		data->cvalid = 1;
-		memcpy(data->rval + chap->hash_len, chap->challenge,
+		memcpy(data->rval + chap->hash_len, chap->c2,
 		       chap->hash_len);
 	}
 	if (chap->host_key_len) {
@@ -443,7 +444,7 @@ int nvme_auth_dhchap_host_response(struct nvme_ctrl *ctrl,
 	ret = crypto_shash_init(shash);
 	if (ret)
 		goto out;
-	ret = crypto_shash_update(shash, chap->challenge, chap->hash_len);
+	ret = crypto_shash_update(shash, chap->c1, chap->hash_len);
 	if (ret)
 		goto out;
 	put_unaligned_le32(chap->seqnum, buf);
@@ -487,7 +488,7 @@ int nvme_auth_dhchap_controller_response(struct nvme_ctrl *ctrl,
 	dev_dbg(ctrl->device, "%s: qid %d host response seq %d transaction %d\n",
 		__func__, chap->qid, chap->seqnum, chap->transaction);
 	dev_dbg(ctrl->device, "%s: qid %d challenge %*ph\n",
-		__func__, chap->qid, chap->hash_len, chap->challenge);
+		__func__, chap->qid, chap->hash_len, chap->c2);
 	dev_dbg(ctrl->device, "%s: qid %d subsysnqn %s\n",
 		__func__, chap->qid, ctrl->opts->subsysnqn);
 	dev_dbg(ctrl->device, "%s: qid %d hostnqn %s\n",
@@ -496,7 +497,7 @@ int nvme_auth_dhchap_controller_response(struct nvme_ctrl *ctrl,
 	ret = crypto_shash_init(shash);
 	if (ret)
 		goto out;
-	ret = crypto_shash_update(shash, chap->challenge, chap->hash_len);
+	ret = crypto_shash_update(shash, chap->c2, chap->hash_len);
 	if (ret)
 		goto out;
 	put_unaligned_le32(chap->seqnum, buf);
