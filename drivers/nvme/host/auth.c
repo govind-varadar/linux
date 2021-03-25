@@ -648,6 +648,7 @@ out_free_host:
 		kfree(chap->host_key);
 		chap->host_key = NULL;
 		chap->host_key_len = 0;
+		chap->status = NVME_AUTH_DHCHAP_FAILURE_INVALID_PAYLOAD;
 	}
 out_free_req:
 	kpp_request_free(req);
