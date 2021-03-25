@@ -223,6 +223,7 @@ struct nvmet_ctrl {
 	struct crypto_shash	*shash_tfm;
 	struct crypto_kpp	*dh_tfm;
 	u8			dh_gid;
+	u8			dh_keysize;
 #endif
 };
 

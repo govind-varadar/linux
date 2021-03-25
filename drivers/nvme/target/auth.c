@@ -12,6 +12,7 @@
 #include <crypto/hash.h>
 #include <crypto/kpp.h>
 #include <crypto/ecdh.h>
+#include <crypto/curve25519.h>
 #include <linux/crc32.h>
 #include <linux/base64.h>
 #include <linux/ctype.h>
@@ -23,23 +24,26 @@
 struct nvmet_dhchap_dhgroup_map {
 	int id;
 	const char name[16];
+	int privkey_size;
+	int pubkey_size;
 } dhgroup_map[] = {
 	{ .id = NVME_AUTH_DHCHAP_DHGROUP_NULL,
-	  .name = "NULL" },
+	  .name = "NULL", .privkey_size = 0, .pubkey_size = 0 },
 	{ .id = NVME_AUTH_DHCHAP_DHGROUP_2048,
-	  .name = "ffdhe2048" },
+	  .name = "ffdhe2048", .privkey_size = 64, .pubkey_size = 64 },
 	{ .id = NVME_AUTH_DHCHAP_DHGROUP_3072,
-	  .name = "ffdhe3072" },
+	  .name = "ffdhe3072", .privkey_size = 64, .pubkey_size = 64 },
 	{ .id = NVME_AUTH_DHCHAP_DHGROUP_4096,
-	  .name = "ffdhe4096" },
+	  .name = "ffdhe4096", .privkey_size = 64, .pubkey_size = 64 },
 	{ .id = NVME_AUTH_DHCHAP_DHGROUP_6144,
-	  .name = "ffdhe6144" },
+	  .name = "ffdhe6144", .privkey_size = 64, .pubkey_size = 64 },
 	{ .id = NVME_AUTH_DHCHAP_DHGROUP_8192,
-	  .name = "ffdhe8192" },
+	  .name = "ffdhe8192", .privkey_size = 64, .pubkey_size = 64 },
 	{ .id = NVME_AUTH_DHCHAP_DHGROUP_ECDH,
-	  .name = "ecdh" },
+	  .name = "ecdh", .privkey_size = 32, .pubkey_size = 64 },
 	{ .id = NVME_AUTH_DHCHAP_DHGROUP_25519,
-	  .name = "curve25519" },
+	  .name = "curve25519", .privkey_size = CURVE25519_KEY_SIZE,
+	  .pubkey_size = CURVE25519_KEY_SIZE },
 };
 
 const char *nvmet_dhchap_dhgroup_name( int dhgid )
@@ -221,8 +225,9 @@ int nvmet_auth_set_host_dhgroup(struct nvmet_host *host, const char *dhgroup)
 			     strlen(dhgroup_map[i].name))) {
 			if (!crypto_has_kpp(dhgroup_map[i].name, 0, 0))
 				return -EINVAL;
-			/* We only support NULL and ECDH only for now */
+			/* We only support NULL, ECDH, and curve25519 for now */
 			if (dhgroup_map[i].id != NVME_AUTH_DHCHAP_DHGROUP_ECDH &&
+			    dhgroup_map[i].id != NVME_AUTH_DHCHAP_DHGROUP_25519 &&
 			    dhgroup_map[i].id != NVME_AUTH_DHCHAP_DHGROUP_NULL)
 				return -EINVAL;
 
@@ -242,6 +247,28 @@ const char *nvmet_auth_get_host_dhgroup(struct nvmet_host *host)
 			return dhgroup_map[i].name;
 	}
 	return NULL;
+}
+
+static int nvmet_auth_dhgroup_pubkey_size(int dhgroup_id)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(dhgroup_map); i++) {
+		if (dhgroup_map[i].id == dhgroup_id)
+			return dhgroup_map[i].pubkey_size;
+	}
+	return -1;
+}
+
+static int nvmet_auth_dhgroup_privkey_size(int dhgroup_id)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(dhgroup_map); i++) {
+		if (dhgroup_map[i].id == dhgroup_id)
+			return dhgroup_map[i].privkey_size;
+	}
+	return -1;
 }
 
 int nvmet_setup_dhgroup(struct nvmet_ctrl *ctrl, int dhgroup_id)
@@ -283,8 +310,10 @@ int nvmet_setup_dhgroup(struct nvmet_ctrl *ctrl, int dhgroup_id)
 			 dhgroup_id, PTR_ERR(ctrl->dh_tfm));
 		ret = -ENOTSUPP;
 		ctrl->dh_tfm = NULL;
-	} else
+	} else {
 		ctrl->dh_gid = dhgroup_id;
+		ctrl->dh_keysize = nvmet_auth_dhgroup_pubkey_size(dhgroup_id);
+	}
 
 out_unlock:
 	up_read(&nvmet_config_sem);
@@ -525,22 +554,35 @@ int nvmet_auth_ctrl_exponential(struct nvmet_req *req,
 	struct nvmet_ctrl *ctrl = req->sq->ctrl;
 	struct kpp_request *kpp_req;
 	struct crypto_wait wait;
-	struct ecdh p = {0};
 	char *pkey;
 	struct scatterlist dst;
 	int ret, pkey_len;
 
-	p.curve_id = ECC_CURVE_NIST_P256;
-	pkey_len = crypto_ecdh_key_len(&p);
-	pkey = kmalloc(pkey_len, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
+	if (ctrl->dh_gid == NVME_AUTH_DHCHAP_DHGROUP_ECDH) {
+		struct ecdh p = {0};
 
-	get_random_bytes(pkey, pkey_len);
-	ret = crypto_ecdh_encode_key(pkey, pkey_len, &p);
-	if (ret) {
-		pr_debug("failed to encode private key, error %d\n", ret);
-		goto out;
+		p.curve_id = ECC_CURVE_NIST_P256;
+		pkey_len = crypto_ecdh_key_len(&p);
+		pkey = kmalloc(pkey_len, GFP_KERNEL);
+		if (!pkey)
+			return -ENOMEM;
+
+		get_random_bytes(pkey, pkey_len);
+		ret = crypto_ecdh_encode_key(pkey, pkey_len, &p);
+		if (ret) {
+			pr_debug("failed to encode private key, error %d\n",
+				 ret);
+			goto out;
+		}
+	} else if (ctrl->dh_gid == NVME_AUTH_DHCHAP_DHGROUP_25519) {
+		pkey_len = CURVE25519_KEY_SIZE;
+		pkey = kmalloc(pkey_len, GFP_KERNEL);
+		if (!pkey)
+			return -ENOMEM;
+		get_random_bytes(pkey, pkey_len);
+	} else {
+		pr_warn("invalid dh group %d\n", ctrl->dh_gid);
+		return -EINVAL;
 	}
 	ret = crypto_kpp_set_secret(ctrl->dh_tfm, pkey, pkey_len);
 	if (ret) {
@@ -585,7 +627,8 @@ int nvmet_auth_ctrl_sesskey(struct nvmet_req *req,
 	struct scatterlist src, dst;
 	int ret;
 
-	req->sq->dhchap_skey_len = 32;
+	req->sq->dhchap_skey_len =
+		nvmet_auth_dhgroup_privkey_size(ctrl->dh_gid);
 	req->sq->dhchap_skey = kzalloc(req->sq->dhchap_skey_len, GFP_KERNEL);
 	if (!req->sq->dhchap_skey)
 		return -ENOMEM;

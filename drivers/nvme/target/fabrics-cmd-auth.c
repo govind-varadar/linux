@@ -290,7 +290,7 @@ static int nvmet_auth_challenge(struct nvmet_req *req, void *d, int al)
 	int data_size = sizeof(*d) + req->sq->dhchap_hash_len;
 
 	if (ctrl->dh_tfm)
-		data_size += 64;
+		data_size += ctrl->dh_keysize;
 	if (al < data_size) {
 		pr_debug("%s: buffer too small (al %d need %d)\n", __func__,
 			 al, data_size);
@@ -314,7 +314,7 @@ static int nvmet_auth_challenge(struct nvmet_req *req, void *d, int al)
 	kfree(challenge);
 	if (ctrl->dh_tfm) {
 		data->dhgid = ctrl->dh_gid;
-		data->dhvlen = 64;
+		data->dhvlen = ctrl->dh_keysize;
 		ret = nvmet_auth_ctrl_exponential(req, data->cval + data->hl,
 						  data->dhvlen);
 	}
