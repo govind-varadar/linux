@@ -935,9 +935,6 @@ u16 nvmet_parse_admin_cmd(struct nvmet_req *req)
 	struct nvme_command *cmd = req->cmd;
 	u16 ret;
 
-	if (nvme_is_fabrics(cmd))
-		return nvmet_parse_fabrics_cmd(req);
-
 	if (unlikely(!nvmet_check_auth_status(req)))
 		return NVME_SC_AUTH_REQUIRED | NVME_SC_DNR;
 
