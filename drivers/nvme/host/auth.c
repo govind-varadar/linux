@@ -9,10 +9,9 @@
 #include <crypto/hash.h>
 #include <crypto/kpp.h>
 #include <crypto/ecdh.h>
+#include <crypto/curve25519.h>
 #include "nvme.h"
 #include "fabrics.h"
-
-#define NVME_FFDHE_MINSIZE 64
 
 static u32 nvme_dhchap_seqnum;
 
@@ -219,6 +218,7 @@ int nvme_auth_dhchap_challenge(struct nvme_ctrl *ctrl,
 			chap->dh_tfm = NULL;
 			return -EPROTO;
 		}
+		chap->dhgroup_id = data->dhgid;
 	} else if (data->dhvlen != 0) {
 		dev_warn(ctrl->device,
 			 "qid %d: DH-HMAC-CHAP: invalid DH value for NULL DH\n",
@@ -570,24 +570,43 @@ int nvme_auth_dhchap_exponential(struct nvme_ctrl *ctrl,
 {
 	struct kpp_request *req;
 	struct crypto_wait wait;
-	struct ecdh p = {0};
 	struct scatterlist src, dst;
 	u8 *pkey;
 	int ret, pkey_len;
 
-	p.curve_id = ECC_CURVE_NIST_P256;
-	pkey_len = crypto_ecdh_key_len(&p);
-	pkey = kzalloc(pkey_len, GFP_KERNEL);
-	if (!pkey)
-		return -ENOMEM;
+	if (chap->dhgroup_id == NVME_AUTH_DHCHAP_DHGROUP_ECDH) {
+		struct ecdh p = {0};
 
-	get_random_bytes(pkey, pkey_len);
-	ret = crypto_ecdh_encode_key(pkey, pkey_len, &p);
-	if (ret) {
-		dev_dbg(ctrl->dev, "failed to encode pkey, error %d\n", ret);
-		kfree(pkey);
-		return ret;
+		p.curve_id = ECC_CURVE_NIST_P256;
+		pkey_len = crypto_ecdh_key_len(&p);
+		pkey = kzalloc(pkey_len, GFP_KERNEL);
+		if (!pkey)
+			return -ENOMEM;
+
+		get_random_bytes(pkey, pkey_len);
+		ret = crypto_ecdh_encode_key(pkey, pkey_len, &p);
+		if (ret) {
+			dev_dbg(ctrl->device,
+				"failed to encode pkey, error %d\n", ret);
+			kfree(pkey);
+			return ret;
+		}
+		chap->host_key_len = 64;
+		chap->sess_key_len = 32;
+	} else if (chap->dhgroup_id == NVME_AUTH_DHCHAP_DHGROUP_25519) {
+		pkey_len = CURVE25519_KEY_SIZE;
+		pkey = kzalloc(pkey_len, GFP_KERNEL);
+		if (!pkey)
+			return -ENOMEM;
+		get_random_bytes(pkey, pkey_len);
+		chap->host_key_len = chap->sess_key_len = CURVE25519_KEY_SIZE;
+	} else {
+		dev_warn(ctrl->device, "Invalid DH group id %d\n",
+			 chap->dhgroup_id);
+		chap->status = NVME_AUTH_DHCHAP_FAILURE_INVALID_PAYLOAD;
+		return -EINVAL;
 	}
+
 	ret = crypto_kpp_set_secret(chap->dh_tfm, pkey, pkey_len);
 	if (ret) {
 		dev_dbg(ctrl->dev, "failed to set secret, error %d\n", ret);
@@ -600,7 +619,6 @@ int nvme_auth_dhchap_exponential(struct nvme_ctrl *ctrl,
 		goto out_free_exp;
 	}
 
-	chap->host_key_len = 64;
 	chap->host_key = kzalloc(chap->host_key_len, GFP_KERNEL);
 	if (!chap->host_key) {
 		ret = -ENOMEM;
@@ -620,7 +638,6 @@ int nvme_auth_dhchap_exponential(struct nvme_ctrl *ctrl,
 		goto out_free_host;
 	}
 
-	chap->sess_key_len = 32;
 	chap->sess_key = kmalloc(chap->sess_key_len, GFP_KERNEL);
 	if (!chap->sess_key)
 		goto out_free_host;
@@ -648,13 +665,13 @@ out_free_host:
 		kfree(chap->host_key);
 		chap->host_key = NULL;
 		chap->host_key_len = 0;
-		chap->status = NVME_AUTH_DHCHAP_FAILURE_INVALID_PAYLOAD;
 	}
 out_free_req:
 	kpp_request_free(req);
 out_free_exp:
 	kfree_sensitive(pkey);
-
+	if (ret)
+		chap->status = NVME_AUTH_DHCHAP_FAILURE_INVALID_PAYLOAD;
 	return ret;
 }
 
