@@ -8,6 +8,7 @@
 #include <asm/unaligned.h>
 #include <crypto/hash.h>
 #include <crypto/kpp.h>
+#include <crypto/ecdh.h>
 #include "nvme.h"
 #include "fabrics.h"
 
@@ -566,34 +567,43 @@ int nvme_auth_dhchap_exponential(struct nvme_ctrl *ctrl,
 {
 	struct kpp_request *req;
 	struct crypto_wait wait;
+	struct ecdh p = {0};
 	struct scatterlist src, dst;
-	u8 *host_secret;
-	int ret;
+	u8 *pkey;
+	int ret, pkey_len;
 
-	host_secret = kzalloc(NVME_FFDHE_MINSIZE, GFP_KERNEL);
-	if (!host_secret)
+	p.curve_id = ECC_CURVE_NIST_P256;
+	pkey_len = crypto_ecdh_key_len(&p);
+	pkey = kzalloc(pkey_len, GFP_KERNEL);
+	if (!pkey)
 		return -ENOMEM;
 
-	get_random_bytes(host_secret, NVME_FFDHE_MINSIZE);
-
+	get_random_bytes(pkey, pkey_len);
+	ret = crypto_ecdh_encode_key(pkey, pkey_len, &p);
+	if (ret) {
+		dev_dbg(ctrl->dev, "failed to encode pkey, error %d\n", ret);
+		kfree(pkey);
+		return ret;
+	}
+	ret = crypto_kpp_set_secret(chap->dh_tfm, pkey, pkey_len);
+	if (ret) {
+		dev_dbg(ctrl->dev, "failed to set secret, error %d\n", ret);
+		kfree(pkey);
+		return ret;
+	}
 	req = kpp_request_alloc(chap->dh_tfm, GFP_KERNEL);
 	if (!req) {
 		ret = -ENOMEM;
 		goto out_free_exp;
 	}
 
-	crypto_init_wait(&wait);
-	ret = crypto_kpp_set_secret(chap->dh_tfm, host_secret,
-				    NVME_FFDHE_MINSIZE);
-	if (ret < 0)
-		goto out_free_req;
-
-	chap->host_key_len = crypto_kpp_maxsize(chap->dh_tfm);
+	chap->host_key_len = 64;
 	chap->host_key = kzalloc(chap->host_key_len, GFP_KERNEL);
 	if (!chap->host_key) {
 		ret = -ENOMEM;
 		goto out_free_req;
 	}
+	crypto_init_wait(&wait);
 	kpp_request_set_input(req, NULL, 0);
 	sg_init_one(&dst, chap->host_key, chap->host_key_len);
 	kpp_request_set_output(req, &dst, chap->host_key_len);
@@ -601,14 +611,17 @@ int nvme_auth_dhchap_exponential(struct nvme_ctrl *ctrl,
 				 crypto_req_done, &wait);
 
 	ret = crypto_wait_req(crypto_kpp_generate_public_key(req), &wait);
-	if (ret)
+	if (ret) {
+		dev_dbg(ctrl->dev,
+			"failed to generate public key, error %d\n", ret);
 		goto out_free_host;
-
-	chap->sess_key_len = crypto_kpp_maxsize(chap->dh_tfm);
+	}
+	chap->sess_key_len = 64;
 	chap->sess_key = kmalloc(chap->sess_key_len, GFP_KERNEL);
 	if (!chap->sess_key)
 		goto out_free_host;
 
+	crypto_init_wait(&wait);
 	sg_init_one(&src, chap->ctrl_key, chap->ctrl_key_len);
 	kpp_request_set_input(req, &src, chap->ctrl_key_len);
 	sg_init_one(&dst, chap->sess_key, chap->sess_key_len);
@@ -618,7 +631,9 @@ int nvme_auth_dhchap_exponential(struct nvme_ctrl *ctrl,
 
 	ret = crypto_wait_req(crypto_kpp_compute_shared_secret(req), &wait);
 	if (ret) {
-		kfree(chap->sess_key);
+		dev_dbg(ctrl->dev,
+			"failed to generate shared secret, error %d\n", ret);
+		kfree_sensitive(chap->sess_key);
 		chap->sess_key = NULL;
 		chap->sess_key_len = 0;
 	}
@@ -631,7 +646,7 @@ out_free_host:
 out_free_req:
 	kpp_request_free(req);
 out_free_exp:
-	kfree(host_secret);
+	kfree_sensitive(pkey);
 
 	return ret;
 }
