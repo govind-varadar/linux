@@ -25,6 +25,8 @@ struct nvme_dhchap_context {
 	u8 status;
 	u8 hash_id;
 	u8 hash_len;
+	u8 dhgroup_id;
+	u16 dhgroup_size;
 	char challenge[64];
 	char response[64];
 	u8 *ctrl_key;
@@ -130,11 +132,13 @@ int nvme_auth_dhchap_negotiate(struct nvme_ctrl *ctrl,
 	data->napd = 1;
 	data->auth_protocol[0].dhchap.authid = NVME_AUTH_DHCHAP_AUTH_ID;
 	data->auth_protocol[0].dhchap.halen = 3;
-	data->auth_protocol[0].dhchap.dhlen = 1;
+	data->auth_protocol[0].dhchap.dhlen = 3;
 	data->auth_protocol[0].dhchap.idlist[0] = NVME_AUTH_DHCHAP_HASH_SHA256;
 	data->auth_protocol[0].dhchap.idlist[1] = NVME_AUTH_DHCHAP_HASH_SHA384;
 	data->auth_protocol[0].dhchap.idlist[2] = NVME_AUTH_DHCHAP_HASH_SHA512;
 	data->auth_protocol[0].dhchap.idlist[3] = NVME_AUTH_DHCHAP_DHGROUP_NULL;
+	data->auth_protocol[0].dhchap.idlist[4] = NVME_AUTH_DHCHAP_DHGROUP_ECDH;
+	data->auth_protocol[0].dhchap.idlist[5] = NVME_AUTH_DHCHAP_DHGROUP_25519;
 
 	return size;
 }
@@ -165,6 +169,27 @@ int nvme_auth_dhchap_challenge(struct nvme_ctrl *ctrl,
 	case NVME_AUTH_DHCHAP_DHGROUP_NULL:
 		gid_name = "null";
 		break;
+	case NVME_AUTH_DHCHAP_DHGROUP_2048:
+		gid_name = "ffdhe2048";
+		break;
+	case NVME_AUTH_DHCHAP_DHGROUP_3072:
+		gid_name = "ffdhe3072";
+		break;
+	case NVME_AUTH_DHCHAP_DHGROUP_4096:
+		gid_name = "ffdhe4096";
+		break;
+	case NVME_AUTH_DHCHAP_DHGROUP_6144:
+		gid_name = "ffdhe6144";
+		break;
+	case NVME_AUTH_DHCHAP_DHGROUP_8192:
+		gid_name = "ffdhe8192";
+		break;
+	case NVME_AUTH_DHCHAP_DHGROUP_ECDH:
+		gid_name = "ecdh";
+		break;
+	case NVME_AUTH_DHCHAP_DHGROUP_25519:
+		gid_name = "curve25519";
+		break;
 	default:
 		gid_name = NULL;
 		break;
@@ -177,8 +202,22 @@ int nvme_auth_dhchap_challenge(struct nvme_ctrl *ctrl,
 		return -EPROTO;
 	}
 	if (data->dhgid != NVME_AUTH_DHCHAP_DHGROUP_NULL) {
-		chap->status = NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
-		return -EPROTO;
+		if (data->dhvlen == 0) {
+			dev_warn(ctrl->device,
+				 "qid %d: DH-HMAC-CHAP: empty DH value\n",
+				 chap->qid);
+			chap->status = NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
+			return -EPROTO;
+		}
+		chap->dh_tfm = crypto_alloc_kpp(gid_name, 0, 0);
+		if (IS_ERR(chap->dh_tfm)) {
+			dev_warn(ctrl->device,
+				 "qid %d: DH-HMAC-CHAP: failed to initialize %s\n",
+				 chap->qid, gid_name);
+			chap->status = NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
+			chap->dh_tfm = NULL;
+			return -EPROTO;
+		}
 	}
 	if (data->dhgid == NVME_AUTH_DHCHAP_DHGROUP_NULL && data->dhvlen != 0) {
 		dev_warn(ctrl->device,
@@ -675,7 +714,8 @@ int nvme_auth_negotiate(struct nvme_ctrl *ctrl, int qid)
 		goto fail2;
 
 	if (chap->ctrl_key_len) {
-		dev_dbg(ctrl->device, "%s: qid %d DH-HMAC-DHAP DH exponent\n",
+		dev_dbg(ctrl->device,
+			"%s: qid %d DH-HMAC-DHAP DH exponential\n",
 			__func__, qid);
 		ret = nvme_auth_dhchap_exponential(ctrl, chap);
 		if (ret)
@@ -750,6 +790,7 @@ out:
 		ret = -EPROTO;
 	if (!ret) {
 		ctrl->dhchap_hash = chap->hash_id;
+		ctrl->dhchap_dhgroup = chap->dhgroup_id;
 	}
 	kfree(buf);
 	if (chap->shash_tfm)
