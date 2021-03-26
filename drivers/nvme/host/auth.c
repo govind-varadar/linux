@@ -748,12 +748,6 @@ int nvme_auth_negotiate(struct nvme_ctrl *ctrl, int qid)
 	if (ret)
 		goto fail2;
 
-	dev_dbg(ctrl->device, "%s: qid %d DH-HMAC-CHAP host response\n",
-		__func__, qid);
-	ret = nvme_auth_dhchap_host_response(ctrl, chap);
-	if (ret)
-		goto fail2;
-
 	if (chap->ctrl_key_len) {
 		dev_dbg(ctrl->device,
 			"%s: qid %d DH-HMAC-DHAP DH exponential\n",
@@ -762,6 +756,12 @@ int nvme_auth_negotiate(struct nvme_ctrl *ctrl, int qid)
 		if (ret)
 			goto fail2;
 	}
+
+	dev_dbg(ctrl->device, "%s: qid %d DH-HMAC-CHAP host response\n",
+		__func__, qid);
+	ret = nvme_auth_dhchap_host_response(ctrl, chap);
+	if (ret)
+		goto fail2;
 
 	/* DH-HMAC-CHAP Step 3: send reply */
 	dev_dbg(ctrl->device, "%s: qid %d DH-HMAC-CHAP reply\n",
