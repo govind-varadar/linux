@@ -117,7 +117,6 @@ struct nvmet_sq {
 	u8			*dhchap_c2;
 	u32			dhchap_s1;
 	u32			dhchap_s2;
-	char			*dhchap_response;
 	u8			*dhchap_skey;
 	int			dhchap_skey_len;
 #endif
