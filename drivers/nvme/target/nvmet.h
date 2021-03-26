@@ -108,11 +108,15 @@ struct nvmet_sq {
 	bool			sqhd_disabled;
 #ifdef CONFIG_NVME_TARGET_AUTH
 	bool			authenticated;
-	u16			dhchap_transaction;
+	u16			dhchap_tid;
 	u16			dhchap_status;
 	int			dhchap_step;
 	u8			dhchap_hash_id;
 	u8			dhchap_hash_len;
+	u8			*dhchap_c1;
+	u8			*dhchap_c2;
+	u32			dhchap_s1;
+	u32			dhchap_s2;
 	char			*dhchap_response;
 	u8			*dhchap_skey;
 	int			dhchap_skey_len;
