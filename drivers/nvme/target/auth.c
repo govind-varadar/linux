@@ -450,10 +450,10 @@ int nvmet_auth_get_hash(struct nvmet_ctrl *ctrl, unsigned int *hash_len)
 	return 0;
 }
 
-int nvmet_auth_host_hash(struct nvmet_ctrl *ctrl,
-		unsigned int shash_len, u8 *challenge, u8 *response,
-		u32 seqnum, u16 transaction)
+int nvmet_auth_host_hash(struct nvmet_req *req, u8 *response,
+			 unsigned int shash_len)
 {
+	struct nvmet_ctrl *ctrl = req->sq->ctrl;
 	SHASH_DESC_ON_STACK(shash, ctrl->shash_tfm);
 	u8 buf[4];
 	int ret;
@@ -462,14 +462,14 @@ int nvmet_auth_host_hash(struct nvmet_ctrl *ctrl,
 	ret = crypto_shash_init(shash);
 	if (ret)
 		goto out;
-	ret = crypto_shash_update(shash, challenge, shash_len);
+	ret = crypto_shash_update(shash, req->sq->dhchap_c1, shash_len);
 	if (ret)
 		goto out;
-	put_unaligned_le32(seqnum, buf);
+	put_unaligned_le32(req->sq->dhchap_s1, buf);
 	ret = crypto_shash_update(shash, buf, 4);
 	if (ret)
 		goto out;
-	put_unaligned_le16(transaction, buf);
+	put_unaligned_le16(req->sq->dhchap_tid, buf);
 	ret = crypto_shash_update(shash, buf, 2);
 	if (ret)
 		goto out;
@@ -495,18 +495,18 @@ out:
 	return 0;
 }
 
-int nvmet_auth_ctrl_hash(struct nvmet_ctrl *ctrl,
-		unsigned int shash_len, u8 *challenge, u8 *response,
-		u32 seqnum, u16 transaction)
+int nvmet_auth_ctrl_hash(struct nvmet_req *req, u8 *response,
+			 unsigned int shash_len)
 {
+	struct nvmet_ctrl *ctrl = req->sq->ctrl;
 	SHASH_DESC_ON_STACK(shash, ctrl->shash_tfm);
 	u8 buf[4];
 	int ret;
 
 	pr_debug("%s: ctrl %d hash seq %d transaction %u\n", __func__,
-		 ctrl->cntlid, seqnum, transaction);
+		 ctrl->cntlid, req->sq->dhchap_s2, req->sq->dhchap_tid);
 	pr_debug("%s: ctrl %d challenge %*ph\n", __func__,
-		 ctrl->cntlid, shash_len, challenge);
+		 ctrl->cntlid, shash_len, req->sq->dhchap_c2);
 	pr_debug("%s: ctrl %d subsysnqn %s\n", __func__,
 		 ctrl->cntlid, ctrl->subsysnqn);
 	pr_debug("%s: ctrl %d hostnqn %s\n", __func__,
@@ -515,14 +515,14 @@ int nvmet_auth_ctrl_hash(struct nvmet_ctrl *ctrl,
 	ret = crypto_shash_init(shash);
 	if (ret)
 		goto out;
-	ret = crypto_shash_update(shash, challenge, shash_len);
+	ret = crypto_shash_update(shash, req->sq->dhchap_c2, shash_len);
 	if (ret)
 		goto out;
-	put_unaligned_le32(seqnum, buf);
+	put_unaligned_le32(req->sq->dhchap_s2, buf);
 	ret = crypto_shash_update(shash, buf, 4);
 	if (ret)
 		goto out;
-	put_unaligned_le16(transaction, buf);
+	put_unaligned_le16(req->sq->dhchap_tid, buf);
 	ret = crypto_shash_update(shash, buf, 2);
 	if (ret)
 		goto out;

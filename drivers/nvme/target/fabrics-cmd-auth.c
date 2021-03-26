@@ -101,9 +101,7 @@ static u16 nvmet_auth_reply(struct nvmet_req *req, void *d)
 	if (!response)
 		return NVME_AUTH_DHCHAP_FAILURE_FAILED;
 
-	if (nvmet_auth_host_hash(ctrl, data->hl, req->sq->dhchap_c1,
-				 response, req->sq->dhchap_tid,
-				 req->sq->dhchap_s1) < 0) {
+	if (nvmet_auth_host_hash(req, response, data->hl) < 0) {
 		pr_debug("ctrl %d qid %d DH-HMAC-CHAP hash failed\n",
 			 ctrl->cntlid, req->sq->qid);
 		kfree(response);
@@ -342,11 +340,7 @@ static int nvmet_auth_success1(struct nvmet_req *req, void *d, int al)
 	data->hl = req->sq->dhchap_hash_len;
 	if (req->sq->dhchap_c2) {
 		data->rvalid = 1;
-		if (nvmet_auth_ctrl_hash(ctrl, data->hl,
-				req->sq->dhchap_c2,
-				data->rval,
-				req->sq->dhchap_s2,
-				req->sq->dhchap_tid))
+		if (nvmet_auth_ctrl_hash(req, data->rval, data->hl))
 			return NVME_AUTH_DHCHAP_FAILURE_HASH_UNUSABLE;
 		pr_debug("ctrl %d qid %d response %*ph\n",
 			 ctrl->cntlid, req->sq->qid, data->hl, data->rval);
