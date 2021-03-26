@@ -60,17 +60,18 @@ const char *nvmet_dhchap_dhgroup_name( int dhgid )
 struct nvmet_dhchap_hash_map {
 	int id;
 	int hash_len;
-	const char name[15];
+	const char hmac[15];
+	const char digest[15];
 } hash_map[] = {
 	{.id = NVME_AUTH_DHCHAP_HASH_SHA256,
 	 .hash_len = 32,
-	 .name = "hmac(sha256)", },
+	 .hmac = "hmac(sha256)", .digest = "sha256" },
 	{.id = NVME_AUTH_DHCHAP_HASH_SHA384,
 	 .hash_len = 48,
-	 .name = "hmac(sha384)", },
+	 .hmac = "hmac(sha384)", .digest = "sha384" },
 	{.id = NVME_AUTH_DHCHAP_HASH_SHA512,
 	 .hash_len = 64,
-	 .name = "hmac(sha512)", },
+	 .hmac = "hmac(sha512)", .digest = "sha512" },
 };
 
 int nvmet_auth_extract_host_key(struct nvmet_host *host,
@@ -128,6 +129,7 @@ int nvmet_auth_extract_host_key(struct nvmet_host *host,
 int nvmet_auth_set_host_key(struct nvmet_host *host, const char *secret)
 {
 	int i, ret;
+	const char *hash_name = NULL;
 	char *end;
 
 	if (sscanf(secret, "DHHC-1:%hhd:%*s", &host->dhchap_key_hash) != 1)
@@ -142,9 +144,9 @@ int nvmet_auth_set_host_key(struct nvmet_host *host, const char *secret)
 		for (i = 0; i < ARRAY_SIZE(hash_map); i++) {
 			if (hash_map[i].id != host->dhchap_key_hash)
 				continue;
-			if (!crypto_has_shash(hash_map[i].name, 0, 0)) {
+			if (!crypto_has_shash(hash_map[i].hmac, 0, 0)) {
 				pr_debug("DH-HMAC-CHAP hash %s unsupported\n",
-					 hash_map[i].name);
+					 hash_map[i].hmac);
 				host->dhchap_key_hash = -1;
 				return -EAGAIN;
 			}
@@ -170,8 +172,9 @@ int nvmet_auth_set_host_key(struct nvmet_host *host, const char *secret)
 	while (--i >= 0 && !host->dhchap_hash_id) {
 		if (hash_map[i].hash_len != host->dhchap_key_len)
 			continue;
-		if (crypto_has_shash(hash_map[i].name, 0, 0)) {
+		if (crypto_has_shash(hash_map[i].hmac, 0, 0)) {
 			host->dhchap_hash_id = hash_map[i].id;
+			hash_name = hash_map[i].hmac;
 			break;
 		}
 	}
@@ -183,7 +186,7 @@ int nvmet_auth_set_host_key(struct nvmet_host *host, const char *secret)
 		host->dhchap_key_len = 0;
 		return -EAGAIN;
 	}
-	pr_debug("Using hash %s\n", nvmet_auth_get_host_hash(host));
+	pr_debug("Using hash %s\n", hash_name);
 	return 0;
 }
 
@@ -192,12 +195,10 @@ int nvmet_auth_set_host_hash(struct nvmet_host *host, const char *hash)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(hash_map); i++) {
-		if (!strncmp(hash_map[i].name, hash,
-			     strlen(hash_map[i].name))) {
-			if (i != NVME_AUTH_DHCHAP_DHGROUP_NULL) {
-				if (!crypto_has_shash(hash_map[i].name, 0, 0))
-					return -ENOTSUPP;
-			}
+		if (!strncmp(hash_map[i].hmac, hash,
+			     strlen(hash_map[i].hmac))) {
+			if (!crypto_has_shash(hash_map[i].hmac, 0, 0))
+				return -ENOTSUPP;
 			host->dhchap_hash_id = hash_map[i].id;
 			return 0;
 		}
@@ -205,13 +206,24 @@ int nvmet_auth_set_host_hash(struct nvmet_host *host, const char *hash)
 	return -EINVAL;
 }
 
-const char *nvmet_auth_get_host_hash(struct nvmet_host *host)
+const char *nvmet_auth_hmac_name(int hmac_id)
 {
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(hash_map); i++) {
-		if (hash_map[i].id == host->dhchap_hash_id)
-			return hash_map[i].name;
+		if (hash_map[i].id == hmac_id)
+			return hash_map[i].hmac;
+	}
+	return NULL;
+}
+
+const char *nvmet_auth_digest_name(int hmac_id)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(hash_map); i++) {
+		if (hash_map[i].id == hmac_id)
+			return hash_map[i].digest;
 	}
 	return NULL;
 }
@@ -350,7 +362,7 @@ int nvmet_setup_auth(struct nvmet_ctrl *ctrl, struct nvmet_req *req)
 		goto out_unlock;
 	}
 
-	hash_name = nvmet_auth_get_host_hash(host);
+	hash_name = nvmet_auth_hmac_name(host->dhchap_hash_id);
 	if (!hash_name) {
 		pr_debug("Hash ID %d invalid\n", host->dhchap_hash_id);
 		ret = -EINVAL;
@@ -380,7 +392,7 @@ int nvmet_setup_auth(struct nvmet_ctrl *ctrl, struct nvmet_req *req)
 		struct crypto_shash *key_tfm;
 
 		if (host->dhchap_key_hash != host->dhchap_hash_id)
-			hash_name = hash_map[host->dhchap_key_hash].name;
+			hash_name = nvmet_auth_hmac_name(host->dhchap_key_hash);
 		key_tfm = crypto_alloc_shash(hash_name, 0, 0);
 		if (IS_ERR(key_tfm)) {
 			ret = PTR_ERR(key_tfm);
@@ -442,7 +454,7 @@ int nvmet_auth_get_hash(struct nvmet_ctrl *ctrl, unsigned int *hash_len)
 		return 0;
 	for (i = 0; i < ARRAY_SIZE(hash_map); i++) {
 		if (!strcmp(crypto_shash_alg_name(ctrl->shash_tfm),
-			    hash_map[i].name)) {
+			    hash_map[i].hmac)) {
 			*hash_len = crypto_shash_digestsize(ctrl->shash_tfm);
 			return hash_map[i].id;
 		}
@@ -450,19 +462,137 @@ int nvmet_auth_get_hash(struct nvmet_ctrl *ctrl, unsigned int *hash_len)
 	return 0;
 }
 
+const char *nvmet_auth_get_digest(struct nvmet_ctrl *ctrl)
+{
+	int i;
+
+	if (!ctrl->shash_tfm)
+		return 0;
+	for (i = 0; i < ARRAY_SIZE(hash_map); i++) {
+		if (!strcmp(crypto_shash_alg_name(ctrl->shash_tfm),
+			    hash_map[i].hmac)) {
+			return hash_map[i].digest;
+		}
+	}
+	return 0;
+}
+
+static int nvmet_auth_hash_sesskey(struct nvmet_req *req, u8 *hashed_key)
+{
+	const char *digest_name;
+	struct crypto_shash *tfm;
+	struct shash_desc *desc;
+	int ret;
+
+	digest_name = nvmet_auth_get_digest(req->sq->ctrl);
+	if (!digest_name)
+		return -EINVAL;
+	tfm = crypto_alloc_shash(digest_name, 0, 0);
+	if (IS_ERR(tfm))
+		return -ENOMEM;
+
+	desc = kmalloc(sizeof(struct shash_desc) + crypto_shash_descsize(tfm),
+		       GFP_KERNEL);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	desc->tfm = tfm;
+
+	if (crypto_shash_digest(desc, req->sq->dhchap_skey,
+				req->sq->dhchap_skey_len, hashed_key))
+		ret = -EINVAL;
+
+	kfree_sensitive(desc);
+
+out:
+	crypto_free_shash(tfm);
+	return ret;
+}
+
+static int nvmet_auth_augmented_challenge(struct nvmet_req *req,
+					  u8 *challenge, u8 *aug)
+{
+	struct nvmet_ctrl *ctrl = req->sq->ctrl;
+	struct crypto_shash *tfm;
+	struct shash_desc *desc;
+	u8 *hashed_key;
+	const char *hash_name;
+	int hash_len = req->sq->dhchap_hash_len;
+	int ret;
+
+	hashed_key = kmalloc(hash_len, GFP_KERNEL);
+	if (!hashed_key)
+		return -ENOMEM;
+
+	ret = nvmet_auth_hash_sesskey(req, hashed_key);
+	if (ret < 0) {
+		pr_debug("failed to hash session key, err %d\n", ret);
+		kfree(hashed_key);
+		return ret;
+	}
+	hash_name = crypto_shash_alg_name(ctrl->shash_tfm);
+	if (!hash_name) {
+		pr_debug("Invalid hash algoritm\n");
+		return -EINVAL;
+	}
+	tfm = crypto_alloc_shash(hash_name, 0, 0);
+	if (IS_ERR(tfm)) {
+		ret = PTR_ERR(tfm);
+		goto out_free_key;
+	}
+	desc = kmalloc(sizeof(struct shash_desc) + crypto_shash_descsize(tfm),
+		       GFP_KERNEL);
+	if (!desc) {
+		ret = -ENOMEM;
+		goto out_free_hash;
+	}
+	desc->tfm = tfm;
+
+	ret = crypto_shash_setkey(tfm, hashed_key, hash_len);
+	if (ret)
+		goto out_free_desc;
+	ret = crypto_shash_init(desc);
+	if (ret)
+		goto out_free_desc;
+	crypto_shash_update(desc, challenge, hash_len);
+	crypto_shash_final(desc, aug);
+
+out_free_desc:
+	kfree_sensitive(desc);
+out_free_hash:
+	crypto_free_shash(tfm);
+out_free_key:
+	kfree(hashed_key);
+	return ret;
+}
+
 int nvmet_auth_host_hash(struct nvmet_req *req, u8 *response,
 			 unsigned int shash_len)
 {
 	struct nvmet_ctrl *ctrl = req->sq->ctrl;
 	SHASH_DESC_ON_STACK(shash, ctrl->shash_tfm);
+	u8 *challenge = req->sq->dhchap_c1;
 	u8 buf[4];
 	int ret;
+
+	if (ctrl->dh_gid != NVME_AUTH_DHCHAP_DHGROUP_NULL) {
+		challenge = kmalloc(shash_len, GFP_KERNEL);
+		if (!challenge) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		ret = nvmet_auth_augmented_challenge(req, req->sq->dhchap_c1,
+						     challenge);
+		if (ret)
+			goto out;
+	}
 
 	shash->tfm = ctrl->shash_tfm;
 	ret = crypto_shash_init(shash);
 	if (ret)
 		goto out;
-	ret = crypto_shash_update(shash, req->sq->dhchap_c1, shash_len);
+	ret = crypto_shash_update(shash, challenge, shash_len);
 	if (ret)
 		goto out;
 	put_unaligned_le32(req->sq->dhchap_s1, buf);
@@ -492,6 +622,8 @@ int nvmet_auth_host_hash(struct nvmet_req *req, u8 *response,
 		goto out;
 	ret = crypto_shash_final(shash, response);
 out:
+	if (challenge != req->sq->dhchap_c1)
+		kfree(challenge);
 	return 0;
 }
 
@@ -500,6 +632,7 @@ int nvmet_auth_ctrl_hash(struct nvmet_req *req, u8 *response,
 {
 	struct nvmet_ctrl *ctrl = req->sq->ctrl;
 	SHASH_DESC_ON_STACK(shash, ctrl->shash_tfm);
+	u8 *challenge = req->sq->dhchap_c2;
 	u8 buf[4];
 	int ret;
 
@@ -511,11 +644,24 @@ int nvmet_auth_ctrl_hash(struct nvmet_req *req, u8 *response,
 		 ctrl->cntlid, ctrl->subsysnqn);
 	pr_debug("%s: ctrl %d hostnqn %s\n", __func__,
 		 ctrl->cntlid, ctrl->hostnqn);
+
+	if (ctrl->dh_gid != NVME_AUTH_DHCHAP_DHGROUP_NULL) {
+		challenge = kmalloc(shash_len, GFP_KERNEL);
+		if (!challenge) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		ret = nvmet_auth_augmented_challenge(req, req->sq->dhchap_c2,
+						     challenge);
+		if (ret)
+			goto out;
+	}
+
 	shash->tfm = ctrl->shash_tfm;
 	ret = crypto_shash_init(shash);
 	if (ret)
 		goto out;
-	ret = crypto_shash_update(shash, req->sq->dhchap_c2, shash_len);
+	ret = crypto_shash_update(shash, challenge, shash_len);
 	if (ret)
 		goto out;
 	put_unaligned_le32(req->sq->dhchap_s2, buf);
@@ -545,6 +691,8 @@ int nvmet_auth_ctrl_hash(struct nvmet_req *req, u8 *response,
 		goto out;
 	ret = crypto_shash_final(shash, response);
 out:
+	if (challenge != req->sq->dhchap_c2)
+		kfree(challenge);
 	return 0;
 }
 

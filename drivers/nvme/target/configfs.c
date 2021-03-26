@@ -1635,9 +1635,9 @@ static ssize_t nvmet_host_dhchap_hash_show(struct config_item *item,
 		char *page)
 {
 	struct nvmet_host *host = to_host(item);
+	const char *hash_name = nvmet_auth_hmac_name(host->dhchap_hash_id);
 
-	return sprintf(page, "%s\n", nvmet_auth_get_host_hash(host) ?
-		       nvmet_auth_get_host_hash(host) : "none");
+	return sprintf(page, "%s\n", hash_name ? hash_name : "none");
 }
 
 static ssize_t nvmet_host_dhchap_hash_store(struct config_item *item,
