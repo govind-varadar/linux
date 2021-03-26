@@ -659,7 +659,7 @@ bool nvmet_check_auth_status(struct nvmet_req *req);
 int nvmet_auth_host_hash(struct nvmet_ctrl *ctrl, unsigned int hash_len,
 		u8 *challenge, u8 *response,
 		u32 seqnum, u16 transaction);
-int nvmet_auth_controller_hash(struct nvmet_ctrl *ctrl, unsigned int hash_len,
+int nvmet_auth_ctrl_hash(struct nvmet_ctrl *ctrl, unsigned int hash_len,
 		u8 *challenge, u8 *response,
 		u32 seqnum, u16 transaction);
 static inline bool nvmet_has_auth(struct nvmet_ctrl *ctrl)

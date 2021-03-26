@@ -495,7 +495,7 @@ out:
 	return 0;
 }
 
-int nvmet_auth_controller_hash(struct nvmet_ctrl *ctrl,
+int nvmet_auth_ctrl_hash(struct nvmet_ctrl *ctrl,
 		unsigned int shash_len, u8 *challenge, u8 *response,
 		u32 seqnum, u16 transaction)
 {
