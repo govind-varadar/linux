@@ -1315,6 +1315,10 @@ struct nvmf_disc_rsp_page_entry {
 			__u16	pkey;
 			__u8	resv10[246];
 		} rdma;
+		struct tcp {
+			__u8	sectype;
+			__u8	resv1[254];
+		} tcp;
 	} tsas;
 };
 
