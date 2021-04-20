@@ -316,9 +316,19 @@ static inline void set_status_byte(struct scsi_cmnd *cmd, char status)
 	cmd->result = (cmd->result & 0xffffff00) | status;
 }
 
+static inline unsigned char get_status_byte(struct scsi_cmnd *cmd)
+{
+	return cmd->result & 0xff;
+}
+
 static inline void set_host_byte(struct scsi_cmnd *cmd, char status)
 {
 	cmd->result = (cmd->result & 0xff00ffff) | (status << 16);
+}
+
+static inline unsigned char get_host_byte(struct scsi_cmnd *cmd)
+{
+	return (cmd->result >> 16) & 0xff;
 }
 
 static inline void translate_msg_byte(struct scsi_cmnd *cmd, u8 msg)
