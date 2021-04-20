@@ -331,6 +331,11 @@ static inline unsigned char get_host_byte(struct scsi_cmnd *cmd)
 	return (cmd->result >> 16) & 0xff;
 }
 
+static inline bool scsi_result_is_good(struct scsi_cmnd *cmd)
+{
+	return (cmd->result == 0);
+}
+
 static inline void translate_msg_byte(struct scsi_cmnd *cmd, u8 msg)
 {
 	switch (msg) {
