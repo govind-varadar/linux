@@ -196,7 +196,8 @@ static void __scsi_queue_insert(struct scsi_cmnd *cmd, int reason, bool unbusy)
 	 * lock such that the kblockd_schedule_work() call happens
 	 * before blk_cleanup_queue() finishes.
 	 */
-	cmd->result = 0;
+	set_host_byte(cmd, DID_OK);
+	set_status_byte(cmd, SAM_STAT_GOOD);
 
 	blk_mq_requeue_request(cmd->request, true);
 }
@@ -941,7 +942,7 @@ static int scsi_io_completion_nz_result(struct scsi_cmnd *cmd, int result,
  */
 void scsi_io_completion(struct scsi_cmnd *cmd, unsigned int good_bytes)
 {
-	int result = cmd->result;
+	int result = scsi_get_compat_result(cmd);
 	struct request_queue *q = cmd->device->request_queue;
 	struct request *req = cmd->request;
 	blk_status_t blk_stat = BLK_STS_OK;
@@ -953,7 +954,7 @@ void scsi_io_completion(struct scsi_cmnd *cmd, unsigned int good_bytes)
 		/*
 		 * scsi_result_to_blk_status may have reset the host_byte
 		 */
-		scsi_req(req)->result = cmd->result;
+		scsi_req(req)->result = scsi_get_compat_result(cmd);
 	}
 
 	/*
@@ -1447,7 +1448,7 @@ static void scsi_complete(struct request *rq)
 	INIT_LIST_HEAD(&cmd->eh_entry);
 
 	atomic_inc(&cmd->device->iodone_cnt);
-	if (cmd->result)
+	if (scsi_result_is_good(cmd))
 		atomic_inc(&cmd->device->ioerr_cnt);
 
 	disposition = scsi_decide_disposition(cmd);
@@ -1491,7 +1492,7 @@ static int scsi_dispatch_cmd(struct scsi_cmnd *cmd)
 		/* in SDEV_DEL we error all commands. DID_NO_CONNECT
 		 * returns an immediate error upwards, and signals
 		 * that the device is no longer present */
-		cmd->result = DID_NO_CONNECT << 16;
+		set_host_byte(cmd, DID_NO_CONNECT);
 		goto done;
 	}
 
@@ -1525,12 +1526,12 @@ static int scsi_dispatch_cmd(struct scsi_cmnd *cmd)
 			       "queuecommand : command too long. "
 			       "cdb_size=%d host->max_cmd_len=%d\n",
 			       cmd->cmd_len, cmd->device->host->max_cmd_len));
-		cmd->result = (DID_ABORT << 16);
+		set_host_byte(cmd, DID_ABORT);
 		goto done;
 	}
 
 	if (unlikely(host->shost_state == SHOST_DEL)) {
-		cmd->result = (DID_NO_CONNECT << 16);
+		set_host_byte(cmd, DID_NO_CONNECT);
 		goto done;
 
 	}
@@ -3277,6 +3278,7 @@ EXPORT_SYMBOL(scsi_vpd_tpg_id);
 void scsi_build_sense(struct scsi_cmnd *scmd, int desc, u8 key, u8 asc, u8 ascq)
 {
 	scsi_build_sense_buffer(desc, scmd->sense_buffer, key, asc, ascq);
-	scmd->result = (DID_OK << 16) | SAM_STAT_CHECK_CONDITION;
+	set_status_byte(scmd, SAM_STAT_CHECK_CONDITION);
+	set_host_byte(scmd, DID_OK);
 }
 EXPORT_SYMBOL_GPL(scsi_build_sense);
