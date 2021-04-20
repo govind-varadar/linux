@@ -2048,27 +2048,28 @@ fas216_std_done(FAS216_Info *info, struct scsi_cmnd *SCpnt, unsigned int result)
 	set_status_byte(SCpnt, info->scsi.SCp.Status);
 
 	fas216_log_command(info, LOG_CONNECT, SCpnt,
-		"command complete, result=0x%08x", SCpnt->result);
+		"command complete, result=0x%08x",
+		scsi_get_compat_result(SCpnt));
 
 	/*
 	 * If the driver detected an error, we're all done.
 	 */
-	if (host_byte(SCpnt->result) != DID_OK)
+	if (get_host_byte(SCpnt) != DID_OK)
 		goto done;
 
 	/*
 	 * If the command returned CHECK_CONDITION or COMMAND_TERMINATED
 	 * status, request the sense information.
 	 */
-	if (status_byte(SCpnt->result) == CHECK_CONDITION ||
-	    status_byte(SCpnt->result) == COMMAND_TERMINATED)
+	if (get_status_byte(SCpnt) == SAM_STAT_CHECK_CONDITION ||
+	    get_status_byte(SCpnt) == SAM_STAT_COMMAND_TERMINATED)
 		goto request_sense;
 
 	/*
 	 * If the command did not complete with GOOD status,
 	 * we are all done here.
 	 */
-	if (status_byte(SCpnt->result) != GOOD)
+	if (get_status_byte(SCpnt) != GOOD)
 		goto done;
 
 	/*
@@ -2088,7 +2089,8 @@ fas216_std_done(FAS216_Info *info, struct scsi_cmnd *SCpnt, unsigned int result)
 		default:
 			scmd_printk(KERN_ERR, SCpnt,
 				    "incomplete data transfer detected: res=%08X ptr=%p len=%X\n",
-				    SCpnt->result, info->scsi.SCp.ptr,
+				    scsi_get_compat_result(SCpnt),
+				    info->scsi.SCp.ptr,
 				    info->scsi.SCp.this_residual);
 			scsi_print_command(SCpnt);
 			set_host_byte(SCpnt, DID_ERROR);
@@ -2217,7 +2219,8 @@ static int fas216_queue_command_lck(struct scsi_cmnd *SCpnt,
 
 	SCpnt->scsi_done = done;
 	SCpnt->host_scribble = (void *)fas216_std_done;
-	SCpnt->result = 0;
+	set_host_byte(SCpnt, DID_OK);
+	set_status_byte(SCpnt, SAM_STAT_GOOD);
 
 	init_SCp(SCpnt);
 
