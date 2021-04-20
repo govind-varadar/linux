@@ -336,6 +336,10 @@ static inline bool scsi_result_is_good(struct scsi_cmnd *cmd)
 	return (cmd->result == 0);
 }
 
+static inline unsigned int scsi_get_compat_result(struct scsi_cmnd *cmd)
+{
+	return (cmd->result & 0x00ff00ff);
+}
 static inline void translate_msg_byte(struct scsi_cmnd *cmd, u8 msg)
 {
 	switch (msg) {
