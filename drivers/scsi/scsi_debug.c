@@ -850,9 +850,6 @@ static struct device_driver sdebug_driverfs_driver = {
 	.bus		= &pseudo_lld_bus,
 };
 
-static const int check_condition_result =
-		(DID_OK << 16) | SAM_STAT_CHECK_CONDITION;
-
 static const int illegal_condition_result =
 	(DID_ABORT << 16) | SAM_STAT_CHECK_CONDITION;
 
@@ -7510,7 +7507,7 @@ fini:
 		return schedule_resp(scp, devip, errsts, pfp, sdebug_jdelay,
 				     sdebug_ndelay);
 check_cond:
-	return schedule_resp(scp, devip, check_condition_result, NULL, 0, 0);
+	return schedule_resp(scp, devip, SAM_STAT_CHECK_CONDITION, NULL, 0, 0);
 err_out:
 	return schedule_resp(scp, NULL, DID_NO_CONNECT << 16, NULL, 0, 0);
 }
