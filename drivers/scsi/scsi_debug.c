@@ -1157,8 +1157,10 @@ static int fill_from_dev_buffer(struct scsi_cmnd *scp, unsigned char *arr,
 
 	if (!sdb->length)
 		return 0;
-	if (scp->sc_data_direction != DMA_FROM_DEVICE)
-		return DID_ERROR << 16;
+	if (scp->sc_data_direction != DMA_FROM_DEVICE) {
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
+	}
 
 	act_len = sg_copy_from_buffer(sdb->table.sgl, sdb->table.nents,
 				      arr, arr_len);
@@ -1181,8 +1183,9 @@ static int p_fill_from_dev_buffer(struct scsi_cmnd *scp, const void *arr,
 
 	if (sdb->length <= off_dst)
 		return 0;
-	if (scp->sc_data_direction != DMA_FROM_DEVICE)
-		return DID_ERROR << 16;
+	if (scp->sc_data_direction != DMA_FROM_DEVICE) {
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
 
 	act_len = sg_pcopy_from_buffer(sdb->table.sgl, sdb->table.nents,
 				       arr, arr_len, skip);
@@ -1568,8 +1571,10 @@ static int resp_inquiry(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 
 	alloc_len = get_unaligned_be16(cmd + 3);
 	arr = kzalloc(SDEBUG_MAX_INQ_ARR_SZ, GFP_ATOMIC);
-	if (! arr)
-		return DID_REQUEUE << 16;
+	if (! arr) {
+		set_host_byte(scp, DID_REQUEUE);
+		return scp->result;
+	}
 	is_disk = (sdebug_ptype == TYPE_DISK);
 	is_zbc = (devip->zmodel != BLK_ZONED_NONE);
 	is_disk_zbc = (is_disk || is_zbc);
@@ -1902,8 +1907,10 @@ static int resp_report_tgtpgs(struct scsi_cmnd *scp,
 
 	alen = get_unaligned_be32(cmd + 6);
 	arr = kzalloc(SDEBUG_MAX_TGTPGS_ARR_SZ, GFP_ATOMIC);
-	if (! arr)
-		return DID_REQUEUE << 16;
+	if (! arr) {
+		set_host_byte(scp, DID_REQUEUE);
+		return scp->result;
+	}
 	/*
 	 * EVPD page 0x88 states we have two ports, one
 	 * real and a fake port with no device connected.
@@ -2491,8 +2498,10 @@ static int resp_mode_select(struct scsi_cmnd *scp,
 		return scp->result;
 	}
 	res = fetch_to_dev_buffer(scp, arr, param_len);
-	if (-1 == res)
-		return DID_ERROR << 16;
+	if (-1 == res) {
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
+	}
 	else if (sdebug_verbose && (res < param_len))
 		sdev_printk(KERN_INFO, scp->device,
 			    "%s: cdb indicated=%d, IO sent=%d bytes\n",
@@ -3209,8 +3218,10 @@ static int resp_read_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 
 	ret = do_device_access(sip, scp, 0, lba, num, false);
 	read_unlock(macc_lckp);
-	if (unlikely(ret == -1))
-		return DID_ERROR << 16;
+	if (unlikely(ret == -1)) {
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
+	}
 
 	scsi_set_resid(scp, scsi_bufflen(scp) - ret);
 
@@ -3501,8 +3512,10 @@ static int resp_write_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 	if (sdebug_dev_is_zoned(devip))
 		zbc_inc_wp(devip, lba, num);
 	write_unlock(macc_lckp);
-	if (unlikely(-1 == ret))
-		return DID_ERROR << 16;
+	if (unlikely(-1 == ret)) {
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
+	}
 	else if (unlikely(sdebug_verbose &&
 			  (ret < (num * sdebug_sector_size))))
 		sdev_printk(KERN_INFO, scp->device,
@@ -3609,7 +3622,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 			my_name, __func__, lbdof_blen);
 	res = fetch_to_dev_buffer(scp, lrdp, lbdof_blen);
 	if (res == -1) {
-		ret = DID_ERROR << 16;
+		set_host_byte(scp, DID_ERROR);
+		ret = scp->result;
 		goto err_out;
 	}
 
@@ -3665,7 +3679,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 		if (unlikely(scsi_debug_lbp()))
 			map_region(sip, lba, num);
 		if (unlikely(-1 == ret)) {
-			ret = DID_ERROR << 16;
+			set_host_byte(scp, DID_ERROR);
+			ret = scp->result;
 			goto err_out_unlock;
 		} else if (unlikely(sdebug_verbose && (ret < num_by)))
 			sdev_printk(KERN_INFO, scp->device,
@@ -3745,7 +3760,8 @@ static int resp_write_same(struct scsi_cmnd *scp, u64 lba, u32 num,
 
 	if (-1 == ret) {
 		write_unlock(&sip->macc_lck);
-		return DID_ERROR << 16;
+		set_host_byte(scp, DID_ERROR);
+		return scp->result;
 	} else if (sdebug_verbose && !ndob && (ret < lb_size))
 		sdev_printk(KERN_INFO, scp->device,
 			    "%s: %s: lb size=%u, IO sent=%d bytes\n",
@@ -3913,7 +3929,8 @@ static int resp_comp_write(struct scsi_cmnd *scp,
 
 	ret = do_dout_fetch(scp, dnum, arr);
 	if (ret == -1) {
-		retval = DID_ERROR << 16;
+		set_host_byte(scp, DID_ERROR);
+		retval = scp->result;
 		goto cleanup;
 	} else if (sdebug_verbose && (ret < (dnum * lb_size)))
 		sdev_printk(KERN_INFO, scp->device, "%s: compare_write: cdb "
@@ -4271,7 +4288,8 @@ static int resp_verify(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 
 	ret = do_dout_fetch(scp, a_num, arr);
 	if (ret == -1) {
-		ret = DID_ERROR << 16;
+		set_host_byte(scp, DID_ERROR);
+		ret = scp->result;
 		goto cleanup;
 	} else if (sdebug_verbose && (ret < (a_num * lb_size))) {
 		sdev_printk(KERN_INFO, scp->device,
