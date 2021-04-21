@@ -862,6 +862,11 @@ static inline void device_qfull_result(struct scsi_cmnd *scp)
 	set_status_byte(scp, SAM_STAT_TASK_SET_FULL);
 }
 
+static inline void status_good_result(struct scsi_cmnd *scp)
+{
+	set_host_byte(scp, DID_OK);
+	set_status_byte(scp, SAM_STAT_GOOD);
+}
 
 /* Only do the extra work involved in logical block provisioning if one or
  * more of the lbpu, lbpws or lbpws10 parameters are given and we are doing
@@ -1823,8 +1828,10 @@ static int resp_start_stop(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 		atomic_xchg(&devip->stopped, want_stop);
 	if (!changing || (cmd[1] & 0x1))  /* state unchanged or IMMED bit set in cdb */
 		return SDEG_RES_IMMED_MASK;
-	else
+	else {
+		status_good_result(scp);
 		return 0;
+	}
 }
 
 static sector_t get_sdebug_capacity(void)
@@ -2566,6 +2573,7 @@ static int resp_mode_select(struct scsi_cmnd *scp,
 	return scp->result;
 set_mode_changed_ua:
 	set_bit(SDEBUG_UA_MODE_CHANGED, devip->uas_bm);
+	status_good_result(scp);
 	return 0;
 }
 
@@ -2809,8 +2817,10 @@ static int check_zbc_access_params(struct scsi_cmnd *scp,
 	struct sdeb_zone_state *zsp_end = zbc_zone(devip, lba + num - 1);
 
 	if (!write) {
-		if (devip->zmodel == BLK_ZONED_HA)
+		if (devip->zmodel == BLK_ZONED_HA) {
+			status_good_result(scp);
 			return 0;
+		}
 		/* For host-managed, reads cannot cross zone types boundaries */
 		if (zsp_end != zsp &&
 		    zbc_zone_is_conv(zsp) &&
@@ -2820,6 +2830,7 @@ static int check_zbc_access_params(struct scsi_cmnd *scp,
 					READ_INVDATA_ASCQ);
 			return scp->result;
 		}
+		status_good_result(scp);
 		return 0;
 	}
 
@@ -2831,6 +2842,7 @@ static int check_zbc_access_params(struct scsi_cmnd *scp,
 					WRITE_BOUNDARY_ASCQ);
 			return scp->result;
 		}
+		status_good_result(scp);
 		return 0;
 	}
 
@@ -2869,6 +2881,7 @@ static int check_zbc_access_params(struct scsi_cmnd *scp,
 		zbc_open_zone(devip, zsp, false);
 	}
 
+	status_good_result(scp);
 	return 0;
 }
 
@@ -2896,6 +2909,7 @@ static inline void check_device_access_params
 	if (sdebug_dev_is_zoned(devip))
 		return check_zbc_access_params(scp, lba, num, write);
 
+	status_good_result(scp);
 	return 0;
 }
 
@@ -3250,6 +3264,7 @@ static int resp_read_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			return scp->result;
 		}
 	}
+	status_good_result(scp);
 	return 0;
 }
 
@@ -3547,6 +3562,7 @@ static int resp_write_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			return scp->result;
 		}
 	}
+	status_good_result(scp);
 	return 0;
 }
 
@@ -3598,8 +3614,10 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 					    "Unprotected WR to DIF device\n");
 		}
 	}
-	if ((num_lrd == 0) || (bt_len == 0))
+	if ((num_lrd == 0) || (bt_len == 0)) {
+		status_good_result(scp);
 		return 0;       /* T10 says these do-nothings are not errors */
+	}
 	if (lbdof == 0) {
 		if (sdebug_verbose)
 			sdev_printk(KERN_INFO, scp->device,
@@ -3784,6 +3802,7 @@ static int resp_write_same(struct scsi_cmnd *scp, u64 lba, u32 num,
 out:
 	write_unlock(macc_lckp);
 
+	status_good_result(scp);
 	return 0;
 }
 
@@ -3886,6 +3905,7 @@ static int resp_write_buffer(struct scsi_cmnd *scp,
 		/* do nothing for this command for other mode values */
 		break;
 	}
+	status_good_result(scp);
 	return 0;
 }
 
@@ -3905,8 +3925,10 @@ static int resp_comp_write(struct scsi_cmnd *scp,
 
 	lba = get_unaligned_be64(cmd + 2);
 	num = cmd[13];		/* 1 to a maximum of 255 logical blocks */
-	if (0 == num)
+	if (0 == num) {
+		status_good_result(scp)
 		return 0;	/* degenerate case, not an error */
+	}
 	if (sdebug_dif == T10_PI_TYPE2_PROTECTION &&
 	    (cmd[1] & 0xe0)) {
 		mk_sense_invalid_opcode(scp);
@@ -3966,8 +3988,10 @@ static int resp_unmap(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 	rwlock_t *macc_lckp = &sip->macc_lck;
 	unsigned int i, payload_len, descriptors;
 
-	if (!scsi_debug_lbp())
+	if (!scsi_debug_lbp()) {
+		status_good_result(scp);
 		return 0;	/* fib and say its done */
+	}
 	payload_len = get_unaligned_be16(scp->cmnd + 7);
 	BUG_ON(scsi_bufflen(scp) != payload_len);
 
@@ -4026,8 +4050,10 @@ static int resp_get_lba_status(struct scsi_cmnd *scp,
 	lba = get_unaligned_be64(cmd + 2);
 	alloc_len = get_unaligned_be32(cmd + 10);
 
-	if (alloc_len < 24)
+	if (alloc_len < 24) {
+		status_good_result(scp);
 		return 0;
+	}
 
 	check_device_access_params(scp, lba, 1, false);
 	if (!scsi_result_is_good(scp))
@@ -4254,6 +4280,7 @@ static int resp_verify(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 
 	bytchk = (cmd[1] >> 1) & 0x3;
 	if (bytchk == 0) {
+		status_good_result(scp);
 		return 0;	/* always claim internal verify okay */
 	} else if (bytchk == 2) {
 		mk_sense_invalid_fld(scp, SDEB_IN_CDB, 2, 2);
