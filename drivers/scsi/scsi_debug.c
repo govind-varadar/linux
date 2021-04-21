@@ -1068,7 +1068,7 @@ static void clear_luns_changed_on_target(struct sdebug_dev_info *devip)
 	spin_unlock(&sdebug_host_list_lock);
 }
 
-static int make_ua(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
+static bool make_ua(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 {
 	int k;
 
@@ -1143,9 +1143,9 @@ static int make_ua(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			sdev_printk(KERN_INFO, scp->device,
 				   "%s reports: Unit attention: %s\n",
 				   my_name, cp);
-		return scp->result;
+		return true;
 	}
-	return 0;
+	return false;
 }
 
 /* Build SCSI "data-in" buffer. Returns 0 if ok else (DID_ERROR << 16). */
@@ -7246,7 +7246,7 @@ static bool fake_timeout(struct scsi_cmnd *scp)
 }
 
 /* Response to TUR or media access command when device stopped */
-static int resp_not_ready(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
+static bool resp_not_ready(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 {
 	int stopped_state;
 	u64 diff_ns = 0;
@@ -7260,7 +7260,7 @@ static int resp_not_ready(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			if (diff_ns >= ((u64)sdeb_tur_ms_to_ready * 1000000)) {
 				/* tur_ms_to_ready timer extinguished */
 				atomic_set(&devip->stopped, 0);
-				return 0;
+				return false;
 			}
 		}
 		mk_sense_buffer(scp, NOT_READY, LOGICAL_UNIT_NOT_READY, 0x1);
@@ -7278,14 +7278,14 @@ static int resp_not_ready(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			do_div(diff_ns, 1000000);	/* diff_ns becomes milliseconds */
 			scsi_set_sense_information(scp->sense_buffer, SCSI_SENSE_BUFFERSIZE,
 						   diff_ns);
-			return scp->result;
+			return true;
 		}
 	}
 	mk_sense_buffer(scp, NOT_READY, LOGICAL_UNIT_NOT_READY, 0x2);
 	if (sdebug_verbose)
 		sdev_printk(KERN_INFO, sdp, "%s: Not ready: initializing command required\n",
 			    my_name);
-	return scp->result;
+	return scsi_result_is_good(scp) ? false : true;
 }
 
 static int sdebug_map_queues(struct Scsi_Host *shost)
@@ -7415,7 +7415,6 @@ static int scsi_debug_queuecommand(struct Scsi_Host *shost,
 	int (*r_pfp)(struct scsi_cmnd *, struct sdebug_dev_info *);
 	int (*pfp)(struct scsi_cmnd *, struct sdebug_dev_info *) = NULL;
 	int k, na;
-	int errsts = 0;
 	u64 lun_index = sdp->lun & 0x3FFF;
 	u32 flags;
 	u16 sa;
@@ -7524,14 +7523,12 @@ static int scsi_debug_queuecommand(struct Scsi_Host *shost,
 	if (unlikely(!(F_SKIP_UA & flags) &&
 		     find_first_bit(devip->uas_bm,
 				    SDEBUG_NUM_UAS) != SDEBUG_NUM_UAS)) {
-		errsts = make_ua(scp, devip);
-		if (errsts)
+		if (make_ua(scp, devip))
 			goto check_cond;
 	}
 	if (unlikely(((F_M_ACCESS & flags) || scp->cmnd[0] == TEST_UNIT_READY) &&
 		     atomic_read(&devip->stopped))) {
-		errsts = resp_not_ready(scp, devip);
-		if (errsts)
+		if (resp_not_ready(scp, devip))
 			goto fini;
 	}
 	if (sdebug_fake_rw && (F_FAKE_RW & flags))
