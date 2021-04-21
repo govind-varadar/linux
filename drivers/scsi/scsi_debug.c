@@ -850,8 +850,11 @@ static struct device_driver sdebug_driverfs_driver = {
 	.bus		= &pseudo_lld_bus,
 };
 
-static const int illegal_condition_result =
-	(DID_ABORT << 16) | SAM_STAT_CHECK_CONDITION;
+static inline void illegal_condition_result(struct scsi_cmnd *scp)
+{
+	set_host_byte(scp, DID_ABORT);
+	set_status_byte(scp, SAM_STAT_CHECK_CONDITION);
+}
 
 static const int device_qfull_result =
 	(DID_OK << 16) | SAM_STAT_TASK_SET_FULL;
@@ -3198,7 +3201,8 @@ static int resp_read_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 		if (prot_ret) {
 			read_unlock(macc_lckp);
 			mk_sense_buffer(scp, ABORTED_COMMAND, 0x10, prot_ret);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		}
 	}
 
@@ -3219,11 +3223,13 @@ static int resp_read_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			/* Logical block guard check failed */
 			mk_sense_buffer(scp, ABORTED_COMMAND, 0x10, 1);
 			atomic_set(&sdeb_inject_pending, 0);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		} else if (SDEBUG_OPT_DIX_ERR & sdebug_opts) {
 			mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10, 1);
 			atomic_set(&sdeb_inject_pending, 0);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		}
 	}
 	return 0;
@@ -3482,7 +3488,8 @@ static int resp_write_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 		if (prot_ret) {
 			write_unlock(macc_lckp);
 			mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10, prot_ret);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		}
 	}
 
@@ -3511,11 +3518,13 @@ static int resp_write_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			/* Logical block guard check failed */
 			mk_sense_buffer(scp, ABORTED_COMMAND, 0x10, 1);
 			atomic_set(&sdeb_inject_pending, 0);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		} else if (sdebug_opts & SDEBUG_OPT_DIX_ERR) {
 			mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10, 1);
 			atomic_set(&sdeb_inject_pending, 0);
-			return illegal_condition_result;
+			illegal_condition_result(scp);
+			return scp->result;
 		}
 	}
 	return 0;
@@ -3559,7 +3568,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 			if (sdebug_dif == T10_PI_TYPE2_PROTECTION &&
 			    wrprotect) {
 				mk_sense_invalid_opcode(scp);
-				return illegal_condition_result;
+				illegal_condition_result(scp);
+				return scp->result;
 			}
 			if ((sdebug_dif == T10_PI_TYPE1_PROTECTION ||
 			     sdebug_dif == T10_PI_TYPE3_PROTECTION) &&
@@ -3576,7 +3586,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				"%s: %s: LB Data Offset field bad\n",
 				my_name, __func__);
 		mk_sense_buffer(scp, ILLEGAL_REQUEST, INVALID_FIELD_IN_CDB, 0);
-		return illegal_condition_result;
+		illegal_condition_result(scp);
+		return scp->result;
 	}
 	lbdof_blen = lbdof * lb_size;
 	if ((lrd_size + (num_lrd * lrd_size)) > lbdof_blen) {
@@ -3585,7 +3596,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				"%s: %s: LBA range descriptors don't fit\n",
 				my_name, __func__);
 		mk_sense_buffer(scp, ILLEGAL_REQUEST, INVALID_FIELD_IN_CDB, 0);
-		return illegal_condition_result;
+		illegal_condition_result(scp);
+		return scp->result;
 	}
 	lrdp = kzalloc(lbdof_blen, GFP_ATOMIC);
 	if (lrdp == NULL)
@@ -3626,7 +3638,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				    my_name, __func__);
 			mk_sense_buffer(scp, ILLEGAL_REQUEST, WRITE_ERROR_ASC,
 					0);
-			ret = illegal_condition_result;
+			illegal_condition_result(scp);
+			ret = scp->result;
 			goto err_out_unlock;
 		}
 
@@ -3638,7 +3651,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 			if (prot_ret) {
 				mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10,
 						prot_ret);
-				ret = illegal_condition_result;
+				illegal_condition_result(scp);
+				ret = scp->result;
 				goto err_out_unlock;
 			}
 		}
@@ -3668,12 +3682,14 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				/* Logical block guard check failed */
 				mk_sense_buffer(scp, ABORTED_COMMAND, 0x10, 1);
 				atomic_set(&sdeb_inject_pending, 0);
-				ret = illegal_condition_result;
+				illegal_condition_result(scp);
+				ret = scp->result;
 				goto err_out_unlock;
 			} else if (sdebug_opts & SDEBUG_OPT_DIX_ERR) {
 				mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10, 1);
 				atomic_set(&sdeb_inject_pending, 0);
-				ret = illegal_condition_result;
+				illegal_condition_result(scp);
+				ret = scp->result;
 				goto err_out_unlock;
 			}
 		}
