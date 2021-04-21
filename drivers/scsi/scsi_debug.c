@@ -2872,7 +2872,7 @@ static int check_zbc_access_params(struct scsi_cmnd *scp,
 	return 0;
 }
 
-static inline int check_device_access_params
+static inline void check_device_access_params
 			(struct scsi_cmnd *scp, unsigned long long lba,
 			 unsigned int num, bool write)
 {
@@ -3189,9 +3189,9 @@ static int resp_read_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 		atomic_set(&sdeb_inject_pending, 0);
 	}
 
-	ret = check_device_access_params(scp, lba, num, false);
-	if (ret)
-		return ret;
+	check_device_access_params(scp, lba, num, false);
+	if (!scsi_result_is_good(scp))
+		return scp->result;
 	if (unlikely((SDEBUG_OPT_MEDIUM_ERR & sdebug_opts) &&
 		     (lba <= (sdebug_medium_error_start + sdebug_medium_error_count - 1)) &&
 		     ((lba + num) > sdebug_medium_error_start))) {
@@ -3493,10 +3493,10 @@ static int resp_write_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 	}
 
 	write_lock(macc_lckp);
-	ret = check_device_access_params(scp, lba, num, true);
-	if (ret) {
+	check_device_access_params(scp, lba, num, true);
+	if (!scsi_result_is_good(scp)) {
 		write_unlock(macc_lckp);
-		return ret;
+		return scp->result;
 	}
 
 	/* DIX + T10 DIF */
@@ -3629,7 +3629,6 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 	res = fetch_to_dev_buffer(scp, lrdp, lbdof_blen);
 	if (res == -1) {
 		set_host_byte(scp, DID_ERROR);
-		ret = scp->result;
 		goto err_out;
 	}
 
@@ -3646,8 +3645,8 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				my_name, __func__, k, lba, num, sg_off);
 		if (num == 0)
 			continue;
-		ret = check_device_access_params(scp, lba, num, true);
-		if (ret)
+		check_device_access_params(scp, lba, num, true);
+		if (scsi_result_is_good(scp))
 			goto err_out_unlock;
 		num_by = num * lb_size;
 		ei_lba = is_16 ? 0 : get_unaligned_be32(up + 12);
@@ -3660,7 +3659,6 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 			mk_sense_buffer(scp, ILLEGAL_REQUEST, WRITE_ERROR_ASC,
 					0);
 			illegal_condition_result(scp);
-			ret = scp->result;
 			goto err_out_unlock;
 		}
 
@@ -3673,7 +3671,6 @@ static int resp_write_scat(struct scsi_cmnd *scp,
 				mk_sense_buffer(scp, ILLEGAL_REQUEST, 0x10,
 						prot_ret);
 				illegal_condition_result(scp);
-				ret = scp->result;
 				goto err_out_unlock;
 			}
 		}
@@ -3743,10 +3740,10 @@ static int resp_write_same(struct scsi_cmnd *scp, u64 lba, u32 num,
 
 	write_lock(macc_lckp);
 
-	ret = check_device_access_params(scp, lba, num, true);
-	if (ret) {
+	check_device_access_params(scp, lba, num, true);
+	if (!scsi_result_is_god(scp)) {
 		write_unlock(macc_lckp);
-		return ret;
+		return scp->result;
 	}
 
 	if (unmap && scsi_debug_lbp()) {
@@ -3920,9 +3917,9 @@ static int resp_comp_write(struct scsi_cmnd *scp,
 	    (cmd[1] & 0xe0) == 0)
 		sdev_printk(KERN_ERR, scp->device, "Unprotected WR "
 			    "to DIF device\n");
-	ret = check_device_access_params(scp, lba, num, false);
-	if (ret)
-		return ret;
+	check_device_access_params(scp, lba, num, false);
+	if (!scsi_result_is_good(scp))
+		return scp->result;
 	dnum = 2 * num;
 	arr = kcalloc(lb_size, dnum, GFP_ATOMIC);
 	if (NULL == arr) {
@@ -3968,7 +3965,6 @@ static int resp_unmap(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 	struct sdeb_store_info *sip = devip2sip(devip, true);
 	rwlock_t *macc_lckp = &sip->macc_lck;
 	unsigned int i, payload_len, descriptors;
-	int ret;
 
 	if (!scsi_debug_lbp())
 		return 0;	/* fib and say its done */
@@ -4001,20 +3997,19 @@ static int resp_unmap(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 		unsigned long long lba = get_unaligned_be64(&desc[i].lba);
 		unsigned int num = get_unaligned_be32(&desc[i].blocks);
 
-		ret = check_device_access_params(scp, lba, num, true);
-		if (ret)
+		check_device_access_params(scp, lba, num, true);
+		if (!scsi_result_is_good(scp))
 			goto out;
 
 		unmap_region(sip, lba, num);
 	}
 
-	ret = 0;
 
 out:
 	write_unlock(macc_lckp);
 	kfree(buf);
 
-	return ret;
+	return scp->result;
 }
 
 #define SDEBUG_GET_LBA_STATUS_LEN 32
@@ -4034,9 +4029,9 @@ static int resp_get_lba_status(struct scsi_cmnd *scp,
 	if (alloc_len < 24)
 		return 0;
 
-	ret = check_device_access_params(scp, lba, 1, false);
-	if (ret)
-		return ret;
+	check_device_access_params(scp, lba, 1, false);
+	if (!scsi_result_is_good(scp))
+		return scp->result;
 
 	if (scsi_debug_lbp()) {
 		struct sdeb_store_info *sip = devip2sip(devip, true);
@@ -4281,9 +4276,9 @@ static int resp_verify(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 	}
 	a_num = is_bytchk3 ? 1 : vnum;
 	/* Treat following check like one for read (i.e. no write) access */
-	ret = check_device_access_params(scp, lba, a_num, false);
-	if (ret)
-		return ret;
+	check_device_access_params(scp, lba, a_num, false);
+	if (!scsi_result_is_good(scp))
+		return scp->result;
 
 	arr = kcalloc(lb_size, vnum, GFP_ATOMIC);
 	if (!arr) {
