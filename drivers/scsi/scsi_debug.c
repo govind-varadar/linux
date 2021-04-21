@@ -1174,18 +1174,18 @@ static void fill_from_dev_buffer(struct scsi_cmnd *scp, unsigned char *arr,
  * calls, not required to write in ascending offset order. Assumes resid
  * set to scsi_bufflen() prior to any calls.
  */
-static int p_fill_from_dev_buffer(struct scsi_cmnd *scp, const void *arr,
-				  int arr_len, unsigned int off_dst)
+static void p_fill_from_dev_buffer(struct scsi_cmnd *scp, const void *arr,
+				   int arr_len, unsigned int off_dst)
 {
 	unsigned int act_len, n;
 	struct scsi_data_buffer *sdb = &scp->sdb;
 	off_t skip = off_dst;
 
 	if (sdb->length <= off_dst)
-		return 0;
+		return;
 	if (scp->sc_data_direction != DMA_FROM_DEVICE) {
 		set_host_byte(scp, DID_ERROR);
-		return scp->result;
+		return;
 
 	act_len = sg_pcopy_from_buffer(sdb->table.sgl, sdb->table.nents,
 				       arr, arr_len, skip);
@@ -1194,7 +1194,7 @@ static int p_fill_from_dev_buffer(struct scsi_cmnd *scp, const void *arr,
 		 scsi_get_resid(scp));
 	n = scsi_bufflen(scp) - (off_dst + act_len);
 	scsi_set_resid(scp, min_t(int, scsi_get_resid(scp), n));
-	return 0;
+	return;
 }
 
 /* Fetches from SCSI "data-out" buffer. Returns number of bytes fetched into
@@ -4229,9 +4229,9 @@ static int resp_report_luns(struct scsi_cmnd *scp,
 		if (j < RL_BUCKET_ELEMS)
 			break;
 		n = j * sz_lun;
-		res = p_fill_from_dev_buffer(scp, arr, n, off_rsp);
-		if (res)
-			return res;
+		p_fill_from_dev_buffer(scp, arr, n, off_rsp);
+		if (!scsi_result_is_good(scp))
+			return scp->result;
 		off_rsp += n;
 	}
 	if (wlun_cnt) {
@@ -4239,8 +4239,9 @@ static int resp_report_luns(struct scsi_cmnd *scp,
 		++j;
 	}
 	if (j > 0)
-		res = p_fill_from_dev_buffer(scp, arr, j * sz_lun, off_rsp);
-	return res;
+		p_fill_from_dev_buffer(scp, arr, j * sz_lun, off_rsp);
+
+	return scp->result;
 }
 
 static int resp_verify(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
