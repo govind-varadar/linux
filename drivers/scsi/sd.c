@@ -1935,7 +1935,7 @@ static int sd_eh_action(struct scsi_cmnd *scmd, int eh_disp)
 
 	if (!scsi_device_online(sdev) ||
 	    !scsi_medium_access_command(scmd) ||
-	    host_byte(scmd->result) != DID_TIME_OUT ||
+	    get_host_byte(scmd) != DID_TIME_OUT ||
 	    eh_disp != SUCCESS)
 		return eh_disp;
 
@@ -2021,8 +2021,7 @@ static unsigned int sd_completed_bytes(struct scsi_cmnd *scmd)
  **/
 static int sd_done(struct scsi_cmnd *SCpnt)
 {
-	int result = SCpnt->result;
-	unsigned int good_bytes = result ? 0 : scsi_bufflen(SCpnt);
+	unsigned int good_bytes = scsi_result_is_good(SCpnt) ? scsi_bufflen(SCpnt) : 0;
 	unsigned int sector_size = SCpnt->device->sector_size;
 	unsigned int resid;
 	struct scsi_sense_hdr sshdr;
@@ -2040,7 +2039,7 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 	case REQ_OP_ZONE_OPEN:
 	case REQ_OP_ZONE_CLOSE:
 	case REQ_OP_ZONE_FINISH:
-		if (!result) {
+		if (scsi_result_is_good(SCpnt)) {
 			good_bytes = blk_rq_bytes(req);
 			scsi_set_resid(SCpnt, 0);
 		} else {
@@ -2066,14 +2065,14 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 		}
 	}
 
-	if (result) {
+	if (!scsi_result_is_good(SCpnt)) {
 		sense_valid = scsi_command_normalize_sense(SCpnt, &sshdr);
 		if (sense_valid)
 			sense_deferred = scsi_sense_is_deferred(&sshdr);
 	}
 	sdkp->medium_access_timed_out = 0;
 
-	if (status_byte(result) != SAM_STAT_CHECK_CONDITION &&
+	if (get_status_byte(SCpnt) != SAM_STAT_CHECK_CONDITION &&
 	    (!sense_valid || sense_deferred))
 		goto out;
 
@@ -2090,7 +2089,8 @@ static int sd_done(struct scsi_cmnd *SCpnt)
 		 * unknown amount of data was transferred so treat it as an
 		 * error.
 		 */
-		SCpnt->result = 0;
+		set_host_byte(SCpnt, DID_OK);
+		set_status_byte(SCpnt, SAM_STAT_GOOD);
 		memset(SCpnt->sense_buffer, 0, SCSI_SENSE_BUFFERSIZE);
 		break;
 	case ABORTED_COMMAND:
