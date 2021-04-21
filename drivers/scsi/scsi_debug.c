@@ -862,8 +862,6 @@ static inline void device_qfull_result(struct scsi_cmnd *scp)
 	set_status_byte(scp, SAM_STAT_TASK_SET_FULL);
 }
 
-static const int condition_met_result = SAM_STAT_CONDITION_MET;
-
 
 /* Only do the extra work involved in logical block provisioning if one or
  * more of the lbpu, lbpws or lbpws10 parameters are given and we are doing
@@ -4113,7 +4111,9 @@ static int resp_pre_fetch(struct scsi_cmnd *scp,
 fini:
 	if (cmd[1] & 0x2)
 		res = SDEG_RES_IMMED_MASK;
-	return res | condition_met_result;
+	set_host_byte(scp, DID_OK);
+	set_status_byte(scp, SAM_STAT_CONDITION_MET);
+	return res | scp->result;
 }
 
 #define RL_BUCKET_ELEMS 8
