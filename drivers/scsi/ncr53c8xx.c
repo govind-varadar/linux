@@ -4909,7 +4909,8 @@ void ncr_complete (struct ncb *np, struct ccb *cp)
 	/*
 	**	Check the status.
 	*/
-	cmd->result = 0;
+	set_host_byte(cmd, DID_OK);
+	set_status_byte(cmd, SAM_STAT_GOOD);
 	if (   (cp->host_status == HS_COMPLETE)
 		&& (cp->scsi_status == SAM_STAT_GOOD ||
 		    cp->scsi_status == SAM_STAT_CONDITION_MET)) {
