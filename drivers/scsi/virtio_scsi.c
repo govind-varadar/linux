@@ -115,7 +115,7 @@ static void virtscsi_complete_cmd(struct virtio_scsi *vscsi, void *buf)
 		"cmd %p response %u status %#02x sense_len %u\n",
 		sc, resp->response, resp->status, resp->sense_len);
 
-	sc->result = resp->status;
+	set_status_byte(sc, resp->status);
 	virtscsi_compute_resid(sc, virtio32_to_cpu(vscsi->vdev, resp->resid));
 	switch (resp->response) {
 	case VIRTIO_SCSI_S_OK:
