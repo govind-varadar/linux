@@ -1149,24 +1149,24 @@ static bool make_ua(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 }
 
 /* Build SCSI "data-in" buffer. Returns 0 if ok else (DID_ERROR << 16). */
-static int fill_from_dev_buffer(struct scsi_cmnd *scp, unsigned char *arr,
+static void fill_from_dev_buffer(struct scsi_cmnd *scp, unsigned char *arr,
 				int arr_len)
 {
 	int act_len;
 	struct scsi_data_buffer *sdb = &scp->sdb;
 
 	if (!sdb->length)
-		return 0;
+		return;
 	if (scp->sc_data_direction != DMA_FROM_DEVICE) {
 		set_host_byte(scp, DID_ERROR);
-		return scp->result;
+		return;
 	}
 
 	act_len = sg_copy_from_buffer(sdb->table.sgl, sdb->table.nents,
 				      arr, arr_len);
 	scsi_set_resid(scp, scsi_bufflen(scp) - act_len);
 
-	return 0;
+	return;
 }
 
 /* Partial build of SCSI "data-in" buffer. Returns 0 if ok else
@@ -1566,7 +1566,7 @@ static int resp_inquiry(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 	unsigned char pq_pdt;
 	unsigned char *arr;
 	unsigned char *cmd = scp->cmnd;
-	int alloc_len, n, ret;
+	int alloc_len, n;
 	bool have_wlun, is_disk, is_zbc, is_disk_zbc;
 
 	alloc_len = get_unaligned_be16(cmd + 3);
@@ -1683,10 +1683,10 @@ static int resp_inquiry(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 			return scp->result;
 		}
 		len = min(get_unaligned_be16(arr + 2) + 4, alloc_len);
-		ret = fill_from_dev_buffer(scp, arr,
+		fill_from_dev_buffer(scp, arr,
 			    min(len, SDEBUG_MAX_INQ_ARR_SZ));
 		kfree(arr);
-		return ret;
+		return scp->result;
 	}
 	/* drops through here for a standard inquiry */
 	arr[1] = sdebug_removable ? 0x80 : 0;	/* Removable disk */
@@ -1719,10 +1719,10 @@ static int resp_inquiry(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 		n += 2;
 	}
 	put_unaligned_be16(0x2100, arr + n);	/* SPL-4 no version claimed */
-	ret = fill_from_dev_buffer(scp, arr,
-			    min_t(int, alloc_len, SDEBUG_LONG_INQ_SZ));
+	fill_from_dev_buffer(scp, arr,
+			min_t(int, alloc_len, SDEBUG_LONG_INQ_SZ));
 	kfree(arr);
-	return ret;
+	return scp->result;
 }
 
 /* See resp_iec_m_pg() for how this data is manipulated */
@@ -1780,7 +1780,8 @@ static int resp_requests(struct scsi_cmnd *scp,
 			arr[7] = 0xa;
 		}
 	}
-	return fill_from_dev_buffer(scp, arr, min_t(int, len, alloc_len));
+	fill_from_dev_buffer(scp, arr, min_t(int, len, alloc_len));
+	return scp->result;
 }
 
 static int resp_start_stop(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
@@ -1853,7 +1854,8 @@ static int resp_readcap(struct scsi_cmnd *scp,
 	} else
 		put_unaligned_be32(0xffffffff, arr + 0);
 	put_unaligned_be16(sdebug_sector_size, arr + 6);
-	return fill_from_dev_buffer(scp, arr, SDEBUG_READCAP_ARR_SZ);
+	fill_from_dev_buffer(scp, arr, SDEBUG_READCAP_ARR_SZ);
+	return scp->result;
 }
 
 #define SDEBUG_READCAP16_ARR_SZ 32
@@ -1890,8 +1892,9 @@ static int resp_readcap16(struct scsi_cmnd *scp,
 		arr[12] |= 1; /* PROT_EN */
 	}
 
-	return fill_from_dev_buffer(scp, arr,
-			    min_t(int, alloc_len, SDEBUG_READCAP16_ARR_SZ));
+	fill_from_dev_buffer(scp, arr,
+			min_t(int, alloc_len, SDEBUG_READCAP16_ARR_SZ));
+	return scp->result;
 }
 
 #define SDEBUG_MAX_TGTPGS_ARR_SZ 1412
@@ -1968,10 +1971,10 @@ static int resp_report_tgtpgs(struct scsi_cmnd *scp,
 	 * - The maximum array size
 	 */
 	rlen = min_t(int, alen, n);
-	ret = fill_from_dev_buffer(scp, arr,
-			   min_t(int, rlen, SDEBUG_MAX_TGTPGS_ARR_SZ));
+	fill_from_dev_buffer(scp, arr,
+			min_t(int, rlen, SDEBUG_MAX_TGTPGS_ARR_SZ));
 	kfree(arr);
-	return ret;
+	return scp->result;
 }
 
 static int resp_rsup_opcodes(struct scsi_cmnd *scp,
@@ -1981,7 +1984,7 @@ static int resp_rsup_opcodes(struct scsi_cmnd *scp,
 	u8 reporting_opts, req_opcode, sdeb_i, supp;
 	u16 req_sa, u;
 	u32 alloc_len, a_len;
-	int k, offset, len, errsts, count, bump, na;
+	int k, offset, len, count, bump, na;
 	const struct opcode_info_t *oip;
 	const struct opcode_info_t *r_oip;
 	u8 *arr;
@@ -2120,9 +2123,9 @@ static int resp_rsup_opcodes(struct scsi_cmnd *scp,
 	}
 	offset = (offset < a_len) ? offset : a_len;
 	len = (offset < alloc_len) ? offset : alloc_len;
-	errsts = fill_from_dev_buffer(scp, arr, len);
+	fill_from_dev_buffer(scp, arr, len);
 	kfree(arr);
-	return errsts;
+	return scp->result;
 }
 
 static int resp_rsup_tmfs(struct scsi_cmnd *scp,
@@ -2149,7 +2152,8 @@ static int resp_rsup_tmfs(struct scsi_cmnd *scp,
 		len = 4;
 
 	len = (len < alloc_len) ? len : alloc_len;
-	return fill_from_dev_buffer(scp, arr, len);
+	fill_from_dev_buffer(scp, arr, len);
+	return scp->result;
 }
 
 /* <<Following mode page info copied from ST318451LW>> */
@@ -2475,7 +2479,8 @@ static int resp_mode_sense(struct scsi_cmnd *scp,
 		arr[0] = offset - 1;
 	else
 		put_unaligned_be16((offset - 2), arr + 0);
-	return fill_from_dev_buffer(scp, arr, min_t(int, alloc_len, offset));
+	fill_from_dev_buffer(scp, arr, min_t(int, alloc_len, offset));
+	return scp->result;
 }
 
 #define SDEBUG_MAX_MSELECT_SZ 512
@@ -2663,8 +2668,9 @@ static int resp_log_sense(struct scsi_cmnd *scp,
 		return scp->result;
 	}
 	len = min_t(int, get_unaligned_be16(arr + 2) + 4, alloc_len);
-	return fill_from_dev_buffer(scp, arr,
+	fill_from_dev_buffer(scp, arr,
 		    min_t(int, len, SDEBUG_MAX_INQ_ARR_SZ));
+	return scp->result;
 }
 
 static inline bool sdebug_dev_is_zoned(struct sdebug_dev_info *devip)
@@ -4052,7 +4058,8 @@ static int resp_get_lba_status(struct scsi_cmnd *scp,
 	put_unaligned_be32(num, arr + 16);	/* Number of blocks */
 	arr[20] = !mapped;		/* prov_stat=0: mapped; 1: dealloc */
 
-	return fill_from_dev_buffer(scp, arr, SDEBUG_GET_LBA_STATUS_LEN);
+	fill_from_dev_buffer(scp, arr, SDEBUG_GET_LBA_STATUS_LEN);
+	return scp->result;
 }
 
 static int resp_sync_cache(struct scsi_cmnd *scp,
@@ -4319,7 +4326,6 @@ static int resp_report_zones(struct scsi_cmnd *scp,
 			     struct sdebug_dev_info *devip)
 {
 	unsigned int i, max_zones, rep_max_zones, nrz = 0;
-	int ret = 0;
 	u32 alloc_len, rep_opts, rep_len;
 	bool partial;
 	u64 lba, zs_lba;
@@ -4412,7 +4418,6 @@ static int resp_report_zones(struct scsi_cmnd *scp,
 		default:
 			mk_sense_buffer(scp, ILLEGAL_REQUEST,
 					INVALID_FIELD_IN_CDB, 0);
-			ret = scp->result;
 			goto fini;
 		}
 
@@ -4439,12 +4444,12 @@ static int resp_report_zones(struct scsi_cmnd *scp,
 	put_unaligned_be64(sdebug_capacity - 1, arr + 8);
 
 	rep_len = (unsigned long)desc - (unsigned long)arr;
-	ret = fill_from_dev_buffer(scp, arr, min_t(int, alloc_len, rep_len));
+	fill_from_dev_buffer(scp, arr, min_t(int, alloc_len, rep_len));
 
 fini:
 	read_unlock(macc_lckp);
 	kfree(arr);
-	return ret;
+	return scp->result;
 }
 
 /* Logic transplanted from tcmu-runner, file_zbc.c */
