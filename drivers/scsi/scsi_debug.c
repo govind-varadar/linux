@@ -856,8 +856,11 @@ static inline void illegal_condition_result(struct scsi_cmnd *scp)
 	set_status_byte(scp, SAM_STAT_CHECK_CONDITION);
 }
 
-static const int device_qfull_result =
-	(DID_OK << 16) | SAM_STAT_TASK_SET_FULL;
+static inline void device_qfull_result(struct scsi_cmnd *scp)
+{
+	set_host_byte(scp, DID_OK);
+	set_status_byte(scp, SAM_STAT_TASK_SET_FULL);
+}
 
 static const int condition_met_result = SAM_STAT_CONDITION_MET;
 
@@ -5377,6 +5380,7 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 {
 	bool new_sd_dp;
 	bool inject = false;
+	bool qfull = false;
 	bool hipri = (cmnd->request->cmd_flags & REQ_HIPRI);
 	int k, num_in_q, qdepth;
 	unsigned long iflags;
@@ -5408,8 +5412,11 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 		if (scsi_result) {
 			spin_unlock_irqrestore(&sqp->qc_lock, iflags);
 			goto respond_in_thread;
-		} else
-			scsi_result = device_qfull_result;
+		} else {
+			device_qfull_result(scp);
+			scsi_result = scp->result;
+			qfull = true;
+		}
 	} else if (unlikely(sdebug_every_nth &&
 			    (SDEBUG_OPT_RARE_TSF & sdebug_opts) &&
 			    (scsi_result == 0))) {
@@ -5418,7 +5425,9 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 		     abs(sdebug_every_nth))) {
 			atomic_set(&sdebug_a_tsf, 0);
 			inject = true;
-			scsi_result = device_qfull_result;
+			device_qfull_result(scp);
+			qfull = true;
+			scsi_result = scp->result;
 		}
 	}
 
@@ -5427,14 +5436,17 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 		spin_unlock_irqrestore(&sqp->qc_lock, iflags);
 		if (scsi_result)
 			goto respond_in_thread;
-		else if (SDEBUG_OPT_ALL_TSF & sdebug_opts)
-			scsi_result = device_qfull_result;
+		else if (SDEBUG_OPT_ALL_TSF & sdebug_opts) {
+			device_qfull_result(scp);
+			qfull = true;
+			scsi_result = scp->result;
+		}
 		if (SDEBUG_OPT_Q_NOISE & sdebug_opts)
 			sdev_printk(KERN_INFO, sdp,
 				    "%s: max_queue=%d exceeded, %s\n",
 				    __func__, sdebug_max_queue,
-				    (scsi_result ?  "status: TASK SET FULL" :
-						    "report: host busy"));
+				    (qfull ?  "status: TASK SET FULL" :
+					      "report: host busy"));
 		if (scsi_result)
 			goto respond_in_thread;
 		else
@@ -5585,7 +5597,7 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 			sd_dp->aborted = false;
 		}
 	}
-	if (unlikely((SDEBUG_OPT_Q_NOISE & sdebug_opts) && scsi_result == device_qfull_result))
+	if (unlikely((SDEBUG_OPT_Q_NOISE & sdebug_opts) && qfull))
 		sdev_printk(KERN_INFO, sdp, "%s: num_in_q=%d +1, %s%s\n", __func__,
 			    num_in_q, (inject ? "<inject> " : ""), "status: TASK SET FULL");
 	return 0;
