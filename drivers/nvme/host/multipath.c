@@ -266,6 +266,8 @@ inline struct nvme_ns *nvme_find_path(struct nvme_ns_head *head)
 	int node = numa_node_id();
 	struct nvme_ns *ns;
 
+	if (!head->disk || !(head->disk->flags & GENHD_FL_UP))
+		return NULL;
 	ns = srcu_dereference(head->current_path[node], &head->srcu);
 	if (unlikely(!ns))
 		return __nvme_find_path(head, node);
@@ -281,6 +283,8 @@ static bool nvme_available_path(struct nvme_ns_head *head)
 {
 	struct nvme_ns *ns;
 
+	if (!head->disk || !(head->disk->flags & GENHD_FL_UP))
+		return false;
 	list_for_each_entry_rcu(ns, &head->list, siblings) {
 		if (test_bit(NVME_CTRL_FAILFAST_EXPIRED, &ns->ctrl->flags))
 			continue;
@@ -771,20 +775,36 @@ void nvme_mpath_add_disk(struct nvme_ns *ns, struct nvme_id_ns *id)
 #endif
 }
 
+void nvme_mpath_check_last_path(struct nvme_ns_head *head)
+{
+	bool last_path = false;
+	if (!head->disk)
+		return;
+
+	/* Synchronize with nvme_init_ns_head() */
+	mutex_lock(&head->subsys->lock);
+	if (list_empty(&head->list))
+		last_path = true;
+	mutex_unlock(&head->subsys->lock);
+	if (last_path) {
+		kblockd_schedule_work(&head->requeue_work);
+		if (head->disk->flags & GENHD_FL_UP) {
+			nvme_cdev_del(&head->cdev, &head->cdev_device);
+			del_gendisk(head->disk);
+		}
+	}
+}
+
 void nvme_mpath_remove_disk(struct nvme_ns_head *head)
 {
 	if (!head->disk)
 		return;
-	if (head->disk->flags & GENHD_FL_UP) {
-		nvme_cdev_del(&head->cdev, &head->cdev_device);
-		del_gendisk(head->disk);
-	}
 	blk_set_queue_dying(head->disk->queue);
 	/* make sure all pending bios are cleaned up */
 	kblockd_schedule_work(&head->requeue_work);
 	flush_work(&head->requeue_work);
 	blk_cleanup_queue(head->disk->queue);
-	if (!test_bit(NVME_NSHEAD_DISK_LIVE, &head->flags)) {
+	if (!test_and_clear_bit(NVME_NSHEAD_DISK_LIVE, &head->flags)) {
 		/*
 		 * if device_add_disk wasn't called, prevent
 		 * disk release to put a bogus reference on the
