@@ -44,6 +44,7 @@ static struct req {
 	kuid_t uid;
 	kgid_t gid;
 	struct device *dev;
+	struct user_namespace *user_ns;
 } *requests;
 
 static int __init mount_param(char *str)
@@ -130,7 +131,7 @@ int devtmpfs_create_node(struct device *dev)
 		req.mode |= S_IFCHR;
 
 	req.dev = dev;
-
+	req.user_ns = &init_user_ns;
 	return devtmpfs_submit_req(&req, tmp);
 }
 
@@ -152,7 +153,7 @@ int devtmpfs_delete_node(struct device *dev)
 	return devtmpfs_submit_req(&req, tmp);
 }
 
-static int dev_mkdir(const char *name, umode_t mode)
+static int dev_mkdir(const char *name, umode_t mode, struct user_namespace *ns)
 {
 	struct dentry *dentry;
 	struct path path;
@@ -162,7 +163,7 @@ static int dev_mkdir(const char *name, umode_t mode)
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 
-	err = vfs_mkdir(&init_user_ns, d_inode(path.dentry), dentry, mode);
+	err = vfs_mkdir(ns, d_inode(path.dentry), dentry, mode);
 	if (!err)
 		/* mark as kernel-created inode */
 		d_inode(dentry)->i_private = &thread;
@@ -170,7 +171,7 @@ static int dev_mkdir(const char *name, umode_t mode)
 	return err;
 }
 
-static int create_path(const char *nodepath)
+static int create_path(const char *nodepath, struct user_namespace *ns)
 {
 	char *path;
 	char *s;
@@ -187,7 +188,7 @@ static int create_path(const char *nodepath)
 		if (!s)
 			break;
 		s[0] = '\0';
-		err = dev_mkdir(path, 0755);
+		err = dev_mkdir(path, 0755, ns);
 		if (err && err != -EEXIST)
 			break;
 		s[0] = '/';
@@ -198,7 +199,8 @@ static int create_path(const char *nodepath)
 }
 
 static int handle_create(const char *nodename, umode_t mode, kuid_t uid,
-			 kgid_t gid, struct device *dev)
+			 kgid_t gid, struct device *dev,
+			 struct user_namespace *ns)
 {
 	struct dentry *dentry;
 	struct path path;
@@ -206,13 +208,13 @@ static int handle_create(const char *nodename, umode_t mode, kuid_t uid,
 
 	dentry = kern_path_create(AT_FDCWD, nodename, &path, 0);
 	if (dentry == ERR_PTR(-ENOENT)) {
-		create_path(nodename);
+		create_path(nodename, ns);
 		dentry = kern_path_create(AT_FDCWD, nodename, &path, 0);
 	}
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 
-	err = vfs_mknod(&init_user_ns, d_inode(path.dentry), dentry, mode,
+	err = vfs_mknod(ns, d_inode(path.dentry), dentry, mode,
 			dev->devt);
 	if (!err) {
 		struct iattr newattrs;
@@ -222,7 +224,7 @@ static int handle_create(const char *nodename, umode_t mode, kuid_t uid,
 		newattrs.ia_gid = gid;
 		newattrs.ia_valid = ATTR_MODE|ATTR_UID|ATTR_GID;
 		inode_lock(d_inode(dentry));
-		notify_change(&init_user_ns, dentry, &newattrs, NULL);
+		notify_change(ns, dentry, &newattrs, NULL);
 		inode_unlock(d_inode(dentry));
 
 		/* mark as kernel-created inode */
@@ -374,10 +376,10 @@ int __init devtmpfs_mount(void)
 static __initdata DECLARE_COMPLETION(setup_done);
 
 static int handle(const char *name, umode_t mode, kuid_t uid, kgid_t gid,
-		  struct device *dev)
+		  struct device *dev, struct user_namespace *ns)
 {
 	if (mode)
-		return handle_create(name, mode, uid, gid, dev);
+		return handle_create(name, mode, uid, gid, dev, ns);
 	else
 		return handle_remove(name, dev);
 }
@@ -393,7 +395,8 @@ static void __noreturn devtmpfs_work_loop(void)
 			while (req) {
 				struct req *next = req->next;
 				req->err = handle(req->name, req->mode,
-						  req->uid, req->gid, req->dev);
+						  req->uid, req->gid,
+						  req->dev, req->user_ns);
 				complete(&req->done);
 				req = next;
 			}
