@@ -1083,12 +1083,14 @@ struct nvme_feat_host_behavior {
 	__u8 acre;
 	__u8 etdas;
 	__u8 lbafee;
-	__u8 resv1[509];
+	__u8 hdisns;
+	__u8 resv1[508];
 };
 
 enum {
 	NVME_ENABLE_ACRE	= 1,
 	NVME_ENABLE_LBAFEE	= 1,
+	NVME_ENABLE_HDISNS	= 1,
 };
 
 /* Admin commands */

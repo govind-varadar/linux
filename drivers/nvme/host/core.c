@@ -2399,7 +2399,7 @@ static int nvme_configure_timestamp(struct nvme_ctrl *ctrl)
 static int nvme_configure_host_options(struct nvme_ctrl *ctrl)
 {
 	struct nvme_feat_host_behavior *host;
-	u8 acre = 0, lbafee = 0;
+	u8 acre = 0, lbafee = 0, hdisns = 0;
 	int ret;
 
 	/* Don't bother enabling the feature if retry delay is not reported */
@@ -2407,8 +2407,10 @@ static int nvme_configure_host_options(struct nvme_ctrl *ctrl)
 		acre = NVME_ENABLE_ACRE;
 	if (ctrl->ctratt & NVME_CTRL_ATTR_ELBAS)
 		lbafee = NVME_ENABLE_LBAFEE;
+	if (ns_subsys)
+		hdisns = NVME_ENABLE_HDISNS;
 
-	if (!acre && !lbafee)
+	if (!acre && !lbafee && !hdisns)
 		return 0;
 
 	host = kzalloc(sizeof(*host), GFP_KERNEL);
@@ -2417,6 +2419,7 @@ static int nvme_configure_host_options(struct nvme_ctrl *ctrl)
 
 	host->acre = acre;
 	host->lbafee = lbafee;
+	host->hdisns = hdisns;
 	ret = nvme_set_features(ctrl, NVME_FEAT_HOST_BEHAVIOR, 0,
 				host, sizeof(*host), NULL);
 	kfree(host);
