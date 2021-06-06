@@ -2718,19 +2718,20 @@ static bool nvme_validate_cntlid(struct nvme_subsystem *subsys,
 	return true;
 }
 
-static int nvme_init_subsystem(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
+static struct nvme_subsystem *nvme_init_subsystem(struct nvme_ctrl *ctrl,
+		struct nvme_id_ctrl *id)
 {
 	struct nvme_subsystem *subsys, *found;
 	int ret;
 
 	subsys = kzalloc(sizeof(*subsys), GFP_KERNEL);
 	if (!subsys)
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 
 	ret = ida_alloc(&nvme_subsystem_ida, GFP_KERNEL);
 	if (ret < 0) {
 		kfree(subsys);
-		return ret;
+		return ERR_PTR(ret);
 	}
 	subsys->instance = ret;
 	mutex_init(&subsys->lock);
@@ -2756,7 +2757,7 @@ static int nvme_init_subsystem(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
 			"Subsystem %s is not a discovery controller",
 			subsys->subnqn);
 		kfree(subsys);
-		return -EINVAL;
+		return ERR_PTR(-EINVAL);
 	}
 	nvme_mpath_default_iopolicy(subsys);
 
@@ -2799,13 +2800,13 @@ static int nvme_init_subsystem(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
 	ctrl->subsys = subsys;
 	list_add_tail(&ctrl->subsys_entry, &subsys->ctrls);
 	mutex_unlock(&nvme_subsystems_lock);
-	return 0;
+	return subsys;
 
 out_put_subsystem:
 	nvme_put_subsystem(subsys);
 out_unlock:
 	mutex_unlock(&nvme_subsystems_lock);
-	return ret;
+	return ERR_PTR(ret);
 }
 
 int nvme_get_log(struct nvme_ctrl *ctrl, u32 nsid, u8 log_page, u8 lsp, u8 csi,
@@ -2918,6 +2919,7 @@ free_data:
 static int nvme_init_identify(struct nvme_ctrl *ctrl)
 {
 	struct nvme_id_ctrl *id;
+	struct nvme_subsystem *subsys;
 	u32 max_hw_sectors;
 	bool prev_apst_enabled;
 	int ret;
@@ -2946,9 +2948,11 @@ static int nvme_init_identify(struct nvme_ctrl *ctrl)
 			dev_warn(ctrl->device,
 				 "missing or invalid SUBNQN field.\n");
 
-		ret = nvme_init_subsystem(ctrl, id);
-		if (ret)
+		subsys = nvme_init_subsystem(ctrl, id);
+		if (IS_ERR(subsys)) {
+			ret = PTR_ERR(subsys);
 			goto out_free;
+		}
 
 		/*
 		 * Check for quirks.  Quirk can depend on firmware version,
