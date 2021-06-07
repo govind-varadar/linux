@@ -466,6 +466,8 @@ struct nvme_ns {
 	struct kref kref;
 	struct nvme_ns_head *head;
 
+	unsigned ns_id;
+
 	int lba_shift;
 	u16 ms;
 	u16 pi_size;

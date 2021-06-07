@@ -748,7 +748,7 @@ static inline void nvme_setup_flush(struct nvme_ns *ns,
 {
 	memset(cmnd, 0, sizeof(*cmnd));
 	cmnd->common.opcode = nvme_cmd_flush;
-	cmnd->common.nsid = cpu_to_le32(ns->head->ns_id);
+	cmnd->common.nsid = cpu_to_le32(ns->ns_id);
 }
 
 static blk_status_t nvme_setup_discard(struct nvme_ns *ns, struct request *req,
@@ -800,7 +800,7 @@ static blk_status_t nvme_setup_discard(struct nvme_ns *ns, struct request *req,
 
 	memset(cmnd, 0, sizeof(*cmnd));
 	cmnd->dsm.opcode = nvme_cmd_dsm;
-	cmnd->dsm.nsid = cpu_to_le32(ns->head->ns_id);
+	cmnd->dsm.nsid = cpu_to_le32(ns->ns_id);
 	cmnd->dsm.nr = cpu_to_le32(segments - 1);
 	cmnd->dsm.attributes = cpu_to_le32(NVME_DSMGMT_AD);
 
@@ -845,7 +845,7 @@ static inline blk_status_t nvme_setup_write_zeroes(struct nvme_ns *ns,
 		return nvme_setup_discard(ns, req, cmnd);
 
 	cmnd->write_zeroes.opcode = nvme_cmd_write_zeroes;
-	cmnd->write_zeroes.nsid = cpu_to_le32(ns->head->ns_id);
+	cmnd->write_zeroes.nsid = cpu_to_le32(ns->ns_id);
 	cmnd->write_zeroes.slba =
 		cpu_to_le64(nvme_sect_to_lba(ns, blk_rq_pos(req)));
 	cmnd->write_zeroes.length =
@@ -882,7 +882,7 @@ static inline blk_status_t nvme_setup_rw(struct nvme_ns *ns,
 
 	cmnd->rw.opcode = op;
 	cmnd->rw.flags = 0;
-	cmnd->rw.nsid = cpu_to_le32(ns->head->ns_id);
+	cmnd->rw.nsid = cpu_to_le32(ns->ns_id);
 	cmnd->rw.cdw2 = 0;
 	cmnd->rw.cdw3 = 0;
 	cmnd->rw.metadata = 0;
@@ -1741,7 +1741,7 @@ static int nvme_init_ms(struct nvme_ns *ns, struct nvme_id_ns *id)
 		return -ENOMEM;
 
 	c.identify.opcode = nvme_admin_identify;
-	c.identify.nsid = cpu_to_le32(ns->head->ns_id);
+	c.identify.nsid = cpu_to_le32(ns->ns_id);
 	c.identify.cns = NVME_ID_CNS_CS_NS;
 	c.identify.csi = NVME_CSI_NVM;
 
@@ -2094,7 +2094,7 @@ static int nvme_send_ns_head_pr_command(struct block_device *bdev,
 	int ret = -EWOULDBLOCK;
 
 	if (ns) {
-		c->common.nsid = cpu_to_le32(ns->head->ns_id);
+		c->common.nsid = cpu_to_le32(ns->ns_id);
 		ret = nvme_submit_sync_cmd(ns->queue, c, data, 16);
 	}
 	srcu_read_unlock(&head->srcu, srcu_idx);
@@ -2104,7 +2104,7 @@ static int nvme_send_ns_head_pr_command(struct block_device *bdev,
 static int nvme_send_ns_pr_command(struct nvme_ns *ns, struct nvme_command *c,
 		u8 data[16])
 {
-	c->common.nsid = cpu_to_le32(ns->head->ns_id);
+	c->common.nsid = cpu_to_le32(ns->ns_id);
 	return nvme_submit_sync_cmd(ns->queue, c, data, 16);
 }
 
@@ -3359,6 +3359,7 @@ static ssize_t wwid_show(struct device *dev, struct device_attribute *attr,
 	struct nvme_subsystem *subsys = head->subsys;
 	int serial_len = sizeof(subsys->serial);
 	int model_len = sizeof(subsys->model);
+	unsigned nsid = nvme_get_ns_from_dev(dev)->ns_id;
 
 	if (!uuid_is_null(&ids->uuid))
 		return sysfs_emit(buf, "uuid.%pU\n", &ids->uuid);
@@ -3377,8 +3378,7 @@ static ssize_t wwid_show(struct device *dev, struct device_attribute *attr,
 		model_len--;
 
 	return sysfs_emit(buf, "nvme.%04x-%*phN-%*phN-%08x\n", subsys->vendor_id,
-		serial_len, subsys->serial, model_len, subsys->model,
-		head->ns_id);
+		serial_len, subsys->serial, model_len, subsys->model, nsid);
 }
 static DEVICE_ATTR_RO(wwid);
 
@@ -3416,7 +3416,7 @@ static DEVICE_ATTR_RO(eui);
 static ssize_t nsid_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
-	return sysfs_emit(buf, "%d\n", dev_to_ns_head(dev)->ns_id);
+	return sysfs_emit(buf, "%d\n", nvme_get_ns_from_dev(dev)->ns_id);
 }
 static DEVICE_ATTR_RO(nsid);
 
@@ -4150,13 +4150,13 @@ struct nvme_ns *nvme_find_get_ns(struct nvme_ctrl *ctrl, unsigned nsid)
 
 	down_read(&ctrl->namespaces_rwsem);
 	list_for_each_entry(ns, &ctrl->namespaces, list) {
-		if (ns->head->ns_id == nsid) {
+		if (ns->ns_id == nsid) {
 			if (!nvme_get_ns(ns))
 				continue;
 			ret = ns;
 			break;
 		}
-		if (ns->head->ns_id > nsid)
+		if (ns->ns_id > nsid)
 			break;
 	}
 	up_read(&ctrl->namespaces_rwsem);
@@ -4172,7 +4172,7 @@ static void nvme_ns_add_to_ctrl_list(struct nvme_ns *ns)
 	struct nvme_ns *tmp;
 
 	list_for_each_entry_reverse(tmp, &ns->ctrl->namespaces, list) {
-		if (tmp->head->ns_id < ns->head->ns_id) {
+		if (tmp->ns_id < ns->ns_id) {
 			list_add(&ns->list, &tmp->list);
 			return;
 		}
@@ -4207,6 +4207,7 @@ static void nvme_alloc_ns(struct nvme_ctrl *ctrl, struct nvme_ns_info *info)
 		blk_queue_flag_set(QUEUE_FLAG_PCI_P2PDMA, ns->queue);
 
 	ns->ctrl = ctrl;
+	ns->ns_id = info->nsid;
 	kref_init(&ns->kref);
 
 	if (nvme_init_ns_head(ns, info))
@@ -4340,7 +4341,7 @@ static void nvme_validate_ns(struct nvme_ns *ns, struct nvme_ns_info *info)
 	ret = NVME_SC_INVALID_NS | NVME_SC_DNR;
 	if (!nvme_ns_ids_equal(&ns->head->ids, &info->ids)) {
 		dev_err(ns->ctrl->device,
-			"identifiers changed for nsid %d\n", ns->head->ns_id);
+			"identifiers changed for nsid %d\n", ns->ns_id);
 		goto out;
 	}
 
@@ -4408,7 +4409,7 @@ static void nvme_remove_invalid_namespaces(struct nvme_ctrl *ctrl,
 
 	down_write(&ctrl->namespaces_rwsem);
 	list_for_each_entry_safe(ns, next, &ctrl->namespaces, list) {
-		if (ns->head->ns_id > nsid || test_bit(NVME_NS_DEAD, &ns->flags))
+		if (ns->ns_id > nsid || test_bit(NVME_NS_DEAD, &ns->flags))
 			list_move_tail(&ns->list, &rm_list);
 	}
 	up_write(&ctrl->namespaces_rwsem);
