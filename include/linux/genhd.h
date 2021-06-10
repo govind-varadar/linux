@@ -167,6 +167,9 @@ struct gendisk {
 	int node_id;
 	struct badblocks *bb;
 	struct lockdep_map lockdep_map;
+#ifdef CONFIG_BLK_DEV_USER_NS
+	struct user_namespace *user_ns;
+#endif
 };
 
 /*

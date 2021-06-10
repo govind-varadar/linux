@@ -114,6 +114,13 @@ config BLK_DEV_THROTTLING_LOW
 
 	Note, this is an experimental interface and could be changed someday.
 
+config BLK_DEV_USER_NS
+       bool "Block user namespace support (EXPERIMENTAL)"
+       help
+        Make block devices namespace-aware.
+
+	This is an experimental feature; functionality may be limited.
+
 config BLK_CMDLINE_PARSER
 	bool "Block device command line partition parser"
 	help
