@@ -22,7 +22,6 @@ enum nvme_tcp_fatal_error_status {
 	NVME_TCP_FES_PDU_SEQ_ERR		= 0x02,
 	NVME_TCP_FES_HDR_DIGEST_ERR		= 0x03,
 	NVME_TCP_FES_DATA_OUT_OF_RANGE		= 0x04,
-	NVME_TCP_FES_R2T_LIMIT_EXCEEDED		= 0x05,
 	NVME_TCP_FES_DATA_LIMIT_EXCEEDED	= 0x05,
 	NVME_TCP_FES_UNSUPPORTED_PARAM		= 0x06,
 };
@@ -184,6 +183,7 @@ union nvme_tcp_pdu {
 	struct nvme_tcp_rsp_pdu		rsp;
 	struct nvme_tcp_r2t_pdu		r2t;
 	struct nvme_tcp_data_pdu	data;
+	struct nvme_tcp_term_pdu	term;
 };
 
 #endif /* _LINUX_NVME_TCP_H */
