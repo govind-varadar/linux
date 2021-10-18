@@ -649,6 +649,55 @@ static int nvme_tcp_handle_r2t(struct nvme_tcp_queue *queue,
 	return 0;
 }
 
+struct fes_status_map {
+	enum nvme_tcp_fatal_error_status fes;
+	const char *desc;
+} fes_status[] = {
+	{ NVME_TCP_FES_INVALID_PDU_HDR, "invalid pdu header"},
+	{ NVME_TCP_FES_PDU_SEQ_ERR, "pdu sequence error" },
+	{ NVME_TCP_FES_HDR_DIGEST_ERR, "header digest error" },
+	{ NVME_TCP_FES_DATA_OUT_OF_RANGE, "data transfer out of range" },
+	{ NVME_TCP_FES_DATA_LIMIT_EXCEEDED, "data limit exceeded" },
+	{ NVME_TCP_FES_UNSUPPORTED_PARAM, "unsupported parameter" },
+};
+
+static int nvme_tcp_handle_c2h_term(struct nvme_tcp_queue *queue,
+		struct nvme_tcp_term_pdu *pdu)
+{
+	struct nvme_tcp_hdr *ref_pdu;
+	struct fes_status_map *map;
+	const char *fes_desc = NULL;
+	int i;
+	u32 pdu_offset;
+
+	for (i = 0; i < ARRAY_SIZE(fes_status); i++) {
+		if (map[i].fes == pdu->fes) {
+			fes_desc = map[i].desc;
+			break;
+		}
+	}
+	if (!fes_desc)
+		fes_desc = "unknown fatal error status";
+
+	if (pdu->hdr.plen > sizeof(struct nvme_tcp_term_pdu))
+		ref_pdu = (struct nvme_tcp_hdr *)((u8 *)pdu + 1);
+
+	if (pdu->fes == NVME_TCP_FES_INVALID_PDU_HDR ||
+	    pdu->fes == NVME_TCP_FES_HDR_DIGEST_ERR ||
+	    pdu->fes == NVME_TCP_FES_UNSUPPORTED_PARAM) {
+		pdu_offset = le32_to_cpu(pdu->fei);
+
+		dev_err(queue->ctrl->ctrl.device,
+			"queue %d c2h term, %s, pdu type %u offset %u\n",
+			nvme_tcp_queue_id(queue), fes_desc, ref_pdu->type, pdu_offset);
+	} else
+		dev_err(queue->ctrl->ctrl.device,
+			"queue %d c2h term, %s, pdu type %u\n",
+			nvme_tcp_queue_id(queue), fes_desc, ref_pdu->type);
+
+	return -ECONNRESET;
+}
+
 static int nvme_tcp_recv_pdu(struct nvme_tcp_queue *queue, struct sk_buff *skb,
 		unsigned int *offset, size_t *len)
 {
@@ -692,6 +741,9 @@ static int nvme_tcp_recv_pdu(struct nvme_tcp_queue *queue, struct sk_buff *skb,
 	case nvme_tcp_r2t:
 		nvme_tcp_init_recv_ctx(queue);
 		return nvme_tcp_handle_r2t(queue, (void *)queue->pdu);
+	case nvme_tcp_c2h_term:
+		nvme_tcp_init_recv_ctx(queue);
+		return nvme_tcp_handle_c2h_term(queue, (void *)queue->pdu);
 	default:
 		dev_err(queue->ctrl->ctrl.device,
 			"unsupported pdu type (%d)\n", hdr->type);
