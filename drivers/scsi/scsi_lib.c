@@ -452,6 +452,8 @@ static void scsi_run_queue(struct request_queue *q)
 {
 	struct scsi_device *sdev = q->queuedata;
 
+	if (!sdev)
+		return;
 	if (scsi_target(sdev)->single_lun)
 		scsi_single_lun_run(sdev);
 	if (!list_empty(&sdev->host->starved_list))
@@ -1240,6 +1242,9 @@ static inline int scsi_dev_queue_ready(struct request_queue *q,
 {
 	int token;
 
+	if (!sdev)
+		return -1;
+
 	token = sbitmap_get(&sdev->budget_map);
 	if (atomic_read(&sdev->device_blocked)) {
 		if (token < 0)
@@ -1389,6 +1394,8 @@ static bool scsi_mq_lld_busy(struct request_queue *q)
 	struct scsi_device *sdev = q->queuedata;
 	struct Scsi_Host *shost;
 
+	if (!sdev)
+		return false;
 	if (blk_queue_dying(q))
 		return false;
 
@@ -1535,9 +1542,11 @@ static blk_status_t scsi_prepare_cmd(struct request *req)
 {
 	struct scsi_cmnd *cmd = blk_mq_rq_to_pdu(req);
 	struct scsi_device *sdev = req->q->queuedata;
-	struct Scsi_Host *shost = sdev->host;
+	struct Scsi_Host *shost;
 	struct scatterlist *sg;
 
+	if (!sdev)
+		return BLK_STS_OK;
 	scsi_init_command(sdev, cmd);
 
 	cmd->prot_op = SCSI_PROT_NORMAL;
@@ -1546,6 +1555,7 @@ static blk_status_t scsi_prepare_cmd(struct request *req)
 	else
 		cmd->sc_data_direction = DMA_NONE;
 
+	shost = sdev->host;
 	sg = (void *)cmd + sizeof(struct scsi_cmnd) + shost->hostt->cmd_size;
 	cmd->sdb.table.sgl = sg;
 
@@ -1607,6 +1617,9 @@ static int scsi_mq_get_budget(struct request_queue *q)
 	struct scsi_device *sdev = q->queuedata;
 	int token = scsi_dev_queue_ready(q, sdev);
 
+	if (!sdev)
+		return -1;
+	token = scsi_device_queue_ready(q, sdev);
 	if (token >= 0)
 		return token;
 
@@ -1653,11 +1666,15 @@ static blk_status_t scsi_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct request *req = bd->rq;
 	struct request_queue *q = req->q;
 	struct scsi_device *sdev = q->queuedata;
-	struct Scsi_Host *shost = sdev->host;
+	struct Scsi_Host *shost;
 	struct scsi_cmnd *cmd = blk_mq_rq_to_pdu(req);
 	blk_status_t ret;
 	int reason;
 
+	if (!sdev)
+		return BLK_STS_IOERR;
+
+	shost = sdev->host;
 	WARN_ON_ONCE(cmd->budget_token < 0);
 
 	/*
