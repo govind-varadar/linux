@@ -811,6 +811,9 @@ extern int scsi_host_unblock(struct Scsi_Host *shost, int new_state);
 void scsi_host_busy_iter(struct Scsi_Host *,
 			 bool (*fn)(struct scsi_cmnd *, void *, bool), void *priv);
 
+void *scsi_host_get_internal_cmd(struct Scsi_Host *, int data_direction,
+				 int op);
+
 struct class_container;
 
 /*

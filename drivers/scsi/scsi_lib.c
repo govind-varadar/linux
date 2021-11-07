@@ -1980,6 +1980,26 @@ void scsi_mq_destroy_tags(struct Scsi_Host *shost)
 	blk_mq_free_tag_set(&shost->tag_set);
 }
 
+void *scsi_host_get_internal_cmd(struct Scsi_Host *shost,
+				 int data_direction, int op_flags)
+{
+	struct request *rq;
+	blk_mq_req_flags_t flags = 0;
+	unsigned int op = REQ_INTERNAL | op_flags;
+
+	op |= (data_direction == DMA_TO_DEVICE) ?
+		REQ_OP_DRV_OUT : REQ_OP_DRV_IN;
+
+	if (WARN_ON(!shost->admin_q))
+		return NULL;
+
+	rq = blk_mq_alloc_request(shost->admin_q, op, flags);
+	if (IS_ERR(rq))
+		return NULL;
+	return blk_mq_rq_to_pdu(rq);
+}
+EXPORT_SYMBOL_GPL(scsi_host_get_internal_cmd);
+
 /**
  * scsi_get_internal_cmd - allocate an intenral SCSI command
  * @sdev: SCSI device from which to allocate the command
