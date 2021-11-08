@@ -339,6 +339,8 @@ static inline int aac_valid_context(struct scsi_cmnd *scsicmd,
 		return 0;
 	}
 	fibptr->owner = AAC_OWNER_MIDLEVEL;
+	if (fibptr->flags & FIB_CONTEXT_INTERNAL_CMD)
+		return 1;
 	device = scsicmd->device;
 	if (unlikely(!device)) {
 		dprintk((KERN_WARNING "aac_valid_context: scsi device corrupt\n"));
@@ -637,16 +639,17 @@ static void _aac_probe_container2(void * context, struct fib * fibptr)
 	struct fsa_dev_info *fsa_dev_ptr;
 	int (*callback)(struct scsi_cmnd *);
 	struct scsi_cmnd * scsicmd = (struct scsi_cmnd *)context;
-	int cid = scmd_id(scsicmd);
+	int cid;
 	int i;
 
+	fibptr->owner = AAC_OWNER_MIDLEVEL;
 
-	if (!aac_valid_context(scsicmd, fibptr))
-		return;
-
-	scsicmd->SCp.Status = 0;
-	if (scsicmd->host_scribble)
-		cid = *(int *)scsicmd->host_scribble;
+	scsicmd->result = 0;
+	if (!scsicmd->host_scribble)
+		goto out_callback;
+	if (!(fibptr->flags & FIB_CONTEXT_INTERNAL_CMD))
+		goto out_callback;
+	cid = *(int *)scsicmd->host_scribble;
 
 	fsa_dev_ptr = fibptr->dev->fsa_dev;
 	if (fsa_dev_ptr && cid < fibptr->dev->maximum_num_containers) {
@@ -685,8 +688,9 @@ static void _aac_probe_container2(void * context, struct fib * fibptr)
 		}
 		if ((fsa_dev_ptr->valid & 1) == 0)
 			fsa_dev_ptr->valid = 0;
-		scsicmd->SCp.Status = le32_to_cpu(dresp->count);
+		scsicmd->result = le32_to_cpu(dresp->count);
 	}
+out_callback:
 	callback = fibptr->scsi_callback;
 	fibptr->scsi_callback = NULL;
 	aac_fib_complete(fibptr);
@@ -699,7 +703,7 @@ static void _aac_probe_container1(void * context, struct fib * fibptr)
 	struct scsi_cmnd * scsicmd;
 	struct aac_mount * dresp;
 	struct aac_query_mount *dinfo;
-	int cid;
+	int cid = -1;
 	int status;
 
 	dresp = (struct aac_mount *) fib_data(fibptr);
@@ -712,12 +716,11 @@ static void _aac_probe_container1(void * context, struct fib * fibptr)
 		}
 	}
 	scsicmd = (struct scsi_cmnd *) context;
-	if (!aac_valid_context(scsicmd, fibptr))
-		return;
-	cid = scmd_id(scsicmd);
-	if (scsicmd->host_scribble)
+	fibptr->owner = AAC_OWNER_MIDLEVEL;
+	if ((fibptr->flags & FIB_CONTEXT_INTERNAL_CMD) &&
+	    scsicmd->host_scribble)
 		cid = *(int *)scsicmd->host_scribble;
-	if (cid >= fibptr->dev->maximum_num_containers) {
+	if (cid < 0 || cid >= fibptr->dev->maximum_num_containers) {
 		_aac_probe_container2(context, fibptr);
 		return;
 	}
@@ -848,7 +851,7 @@ int aac_probe_container(struct aac_dev *dev, int cid)
 	if (_aac_probe_container(fibptr, aac_probe_container_callback1) == 0)
 		while (scsicmd->host_scribble == (unsigned char *)&cid)
 			schedule();
-	status = scsicmd->SCp.Status;
+	status = scsicmd->result;
 	aac_fib_free(fibptr);
 	return status;
 }
