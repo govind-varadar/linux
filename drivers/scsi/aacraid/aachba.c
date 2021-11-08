@@ -2775,8 +2775,11 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 	struct aac_dev *dev = (struct aac_dev *)host->hostdata;
 	struct fsa_dev_info *fsa_dev_ptr = dev->fsa_dev;
 
-	if (fsa_dev_ptr == NULL)
-		return -1;
+	if (fsa_dev_ptr == NULL) {
+		scsicmd->result = DID_NO_CONNECT << 16;
+		goto scsi_done_ret;
+	}
+
 	/*
 	 *	If the bus, id or lun is out of range, return fail
 	 *	Test does not apply to ID 16, the pseudo id for the controller
@@ -2809,7 +2812,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				case READ_CAPACITY:
 				case TEST_UNIT_READY:
 					if (dev->in_reset)
-						return -1;
+						return SCSI_MLQUEUE_DEVICE_BUSY;
 					return _aac_probe_container(scsicmd,
 							aac_probe_container_callback2);
 				default:
@@ -2823,12 +2826,12 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				dev->hba_map[bus][cid].devtype
 					== AAC_DEVTYPE_NATIVE_RAW) {
 				if (dev->in_reset)
-					return -1;
+					return SCSI_MLQUEUE_DEVICE_BUSY;
 				return aac_send_hba_fib(scsicmd);
 			} else if (dev->nondasd_support || expose_physicals ||
 				dev->jbod) {
 				if (dev->in_reset)
-					return -1;
+					return SCSI_MLQUEUE_DEVICE_BUSY;
 				return aac_send_srb_fib(scsicmd);
 			} else {
 				scsicmd->result = DID_NO_CONNECT << 16;
@@ -2859,7 +2862,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 	case READ_12:
 	case READ_16:
 		if (dev->in_reset)
-			return -1;
+			return SCSI_MLQUEUE_DEVICE_BUSY;
 		return aac_read(scsicmd);
 
 	case WRITE_6:
@@ -2867,7 +2870,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 	case WRITE_12:
 	case WRITE_16:
 		if (dev->in_reset)
-			return -1;
+			return SCSI_MLQUEUE_DEVICE_BUSY;
 		return aac_write(scsicmd);
 
 	case SYNCHRONIZE_CACHE:
@@ -2954,7 +2957,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 			break;
 		}
 		if (dev->in_reset)
-			return -1;
+			return SCSI_MLQUEUE_DEVICE_BUSY;
 		setinqstr(dev, (void *) (inq_data.inqd_vid), fsa_dev_ptr[cid].type);
 		inq_data.inqd_pdt = INQD_PDT_DA;	/* Direct/random access device */
 		scsi_sg_copy_from_buffer(scsicmd, &inq_data, sizeof(inq_data));
