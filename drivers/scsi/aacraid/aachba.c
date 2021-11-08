@@ -687,9 +687,9 @@ static void _aac_probe_container2(void * context, struct fib * fibptr)
 			fsa_dev_ptr->valid = 0;
 		scsicmd->SCp.Status = le32_to_cpu(dresp->count);
 	}
+	callback = fibptr->scsi_callback;
+	fibptr->scsi_callback = NULL;
 	aac_fib_complete(fibptr);
-	callback = (int (*)(struct scsi_cmnd *))(scsicmd->SCp.ptr);
-	scsicmd->SCp.ptr = NULL;
 	(*callback)(scsicmd);
 	return;
 }
@@ -781,7 +781,7 @@ static int _aac_probe_container(struct fib * fibptr, int (*callback)(struct scsi
 
 	dinfo->count = cpu_to_le32(cid);
 	dinfo->type = cpu_to_le32(FT_FILESYS);
-	scsicmd->SCp.ptr = (char *)callback;
+	fibptr->scsi_callback = callback;
 	scsicmd->SCp.phase = AAC_OWNER_FIRMWARE;
 
 	status = aac_fib_send(ContainerCommand,
@@ -800,7 +800,7 @@ out_status:
 	if (status < 0) {
 		struct fsa_dev_info *fsa_dev_ptr = dev->fsa_dev;
 
-		scsicmd->SCp.ptr = NULL;
+		fibptr->scsi_callback = NULL;
 		aac_fib_complete(fibptr);
 		if (fsa_dev_ptr && cid < dev->maximum_num_containers) {
 			fsa_dev_ptr += cid;

@@ -1301,6 +1301,12 @@ struct fib {
 	 * The associated scsi command
 	 */
 	struct scsi_cmnd 	*scmd;
+
+	/*
+	 * The associated callback
+	 */
+	int (*scsi_callback)(struct scsi_cmnd *scmd);
+
 	/*
 	 *	This is the event the sendfib routine will wait on if the
 	 *	caller did not pass one and this is synch io.
