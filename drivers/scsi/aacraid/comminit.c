@@ -282,7 +282,8 @@ static bool wait_for_io_iter(struct scsi_cmnd *cmd, void *data, bool rsvd)
 	struct wait_for_io_iter_data *iter_data = data;
 	struct fib *fibptr = &iter_data->dev->fibs[scsi_cmd_to_rq(cmd)->tag];
 
-	if (fibptr->owner == AAC_OWNER_FIRMWARE)
+	if (fibptr->scmd == cmd &&
+	    fibptr->owner == AAC_OWNER_FIRMWARE)
 		iter_data->active++;
 	return true;
 }
