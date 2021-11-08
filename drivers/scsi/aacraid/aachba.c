@@ -2818,6 +2818,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 			  (fsa_dev_ptr[cid].sense_data.sense_key ==
 			   NOT_READY)) {
 				struct fib * fibptr;
+				int status;
 
 				switch (scsicmd->cmnd[0]) {
 				case SERVICE_ACTION_IN_16:
@@ -2832,8 +2833,16 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 					if (dev->in_reset)
 						return SCSI_MLQUEUE_DEVICE_BUSY;
 					fibptr = aac_fib_alloc_tag(dev, scsicmd);
-					return _aac_probe_container(fibptr,
+					status = _aac_probe_container(fibptr,
 							aac_probe_container_callback2);
+					if (status == -ENODEV) {
+						scsicmd->result = DID_NO_CONNECT << 16;
+						goto out_done_ret;
+					}
+					if (status < 0) {
+						scsicmd->result = DID_ERROR << 16;
+						goto out_done_ret;
+					}
 				default:
 					break;
 				}
