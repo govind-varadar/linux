@@ -242,7 +242,6 @@ static int aac_queuecommand(struct Scsi_Host *shost,
 			    struct scsi_cmnd *cmd)
 {
 	int r = 0;
-	cmd->SCp.phase = AAC_OWNER_LOWLEVEL;
 	r = (aac_scsi_cmd(cmd) ? FAILED : 0);
 	return r;
 }
@@ -640,15 +639,16 @@ static bool fib_count_iter(struct scsi_cmnd *scmnd, void *data, bool reserved)
 	struct fib_count_data *fib_count = data;
 	struct fib *fibptr = &data->dev->fibs[scsi_cmd_to_rq(scmnd)->tag];
 
+	if (!fibptr->scmd) {
+		fib_count->llcnt++;
+		return true;
+	}
 	switch (fibptr->owner) {
 	case AAC_OWNER_FIRMWARE:
 		fib_count->fwcnt++;
 		break;
 	case AAC_OWNER_ERROR_HANDLER:
 		fib_count->ehcnt++;
-		break;
-	case AAC_OWNER_LOWLEVEL:
-		fib_count->llcnt++;
 		break;
 	case AAC_OWNER_MIDLEVEL:
 		fib_count->mlcnt++;
