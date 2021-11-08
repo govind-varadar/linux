@@ -627,6 +627,7 @@ static int aac_ioctl(struct scsi_device *sdev, unsigned int cmd,
 }
 
 struct fib_count_data {
+	struct aac_dev *dev;
 	int mlcnt;
 	int llcnt;
 	int ehcnt;
@@ -637,8 +638,9 @@ struct fib_count_data {
 static bool fib_count_iter(struct scsi_cmnd *scmnd, void *data, bool reserved)
 {
 	struct fib_count_data *fib_count = data;
+	struct fib *fibptr = &data->dev->fibs[scsi_cmd_to_rq(scmnd)->tag];
 
-	switch (scmnd->SCp.phase) {
+	switch (fibptr->owner) {
 	case AAC_OWNER_FIRMWARE:
 		fib_count->fwcnt++;
 		break;
@@ -663,7 +665,9 @@ static int get_num_of_incomplete_fibs(struct aac_dev *aac)
 {
 	struct Scsi_Host *shost = aac->scsi_host_ptr;
 	struct device *ctrl_dev;
-	struct fib_count_data fcnt = { };
+	struct fib_count_data fcnt = {
+		.dev = aac,
+	};
 
 	scsi_host_busy_iter(shost, fib_count_iter, &fcnt);
 
@@ -784,7 +788,7 @@ static int aac_eh_abort(struct scsi_cmnd* cmd)
 				(fib->callback_data == cmd)) {
 					fib->flags |=
 						FIB_CONTEXT_FLAG_TIMED_OUT;
-					cmd->SCp.phase =
+					fib->owner =
 						AAC_OWNER_ERROR_HANDLER;
 					ret = SUCCESS;
 				}
@@ -811,7 +815,7 @@ static int aac_eh_abort(struct scsi_cmnd* cmd)
 					(command->device == cmd->device)) {
 					fib->flags |=
 						FIB_CONTEXT_FLAG_TIMED_OUT;
-					command->SCp.phase =
+					fib->owner =
 						AAC_OWNER_ERROR_HANDLER;
 					if (command == cmd)
 						ret = SUCCESS;
@@ -1058,7 +1062,7 @@ static int aac_eh_bus_reset(struct scsi_cmnd* cmd)
 			if (bus >= AAC_MAX_BUSES || cid >= AAC_MAX_TARGETS ||
 			    info->devtype != AAC_DEVTYPE_NATIVE_RAW) {
 				fib->flags |= FIB_CONTEXT_FLAG_EH_RESET;
-				cmd->SCp.phase = AAC_OWNER_ERROR_HANDLER;
+				fib->owner = AAC_OWNER_ERROR_HANDLER;
 			}
 		}
 	}

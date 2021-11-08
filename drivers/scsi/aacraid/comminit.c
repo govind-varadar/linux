@@ -272,35 +272,44 @@ static void aac_queue_init(struct aac_dev * dev, struct aac_queue * q, u32 *mem,
 	q->entries = qsize;
 }
 
+struct wait_for_io_iter_data {
+	struct aac_dev *dev;
+	int active;
+};
+
 static bool wait_for_io_iter(struct scsi_cmnd *cmd, void *data, bool rsvd)
 {
-	int *active = data;
+	struct wait_for_io_iter_data *iter_data = data;
+	struct fib *fibptr = &iter_data->dev->fibs[scsi_cmd_to_rq(cmd)->tag];
 
-	if (cmd->SCp.phase == AAC_OWNER_FIRMWARE)
-		*active = *active + 1;
+	if (fibptr->owner == AAC_OWNER_FIRMWARE)
+		iter_data->active++;
 	return true;
 }
 static void aac_wait_for_io_completion(struct aac_dev *aac)
 {
-	int i = 0, active;
+	struct wait_for_io_iter_data data = {
+		.dev = aac,
+	};
+	int i = 0;
 
 	for (i = 60; i; --i) {
 
-		active = 0;
+		data.active = 0;
 		scsi_host_busy_iter(aac->scsi_host_ptr,
-				    wait_for_io_iter, &active);
+				    wait_for_io_iter, &data);
 		/*
 		 * We can exit If all the commands are complete
 		 */
-		if (active == 0)
+		if (data.active == 0)
 			break;
 		dev_info(&aac->pdev->dev,
-			 "Wait for %d commands to complete\n", active);
+			 "Wait for %d commands to complete\n", data.active);
 		ssleep(1);
 	}
-	if (active)
+	if (data.active)
 		dev_err(&aac->pdev->dev,
-			"%d outstanding commands during shutdown\n", active);
+			"%d outstanding commands during shutdown\n", data.active);
 }
 
 /**

@@ -1308,6 +1308,11 @@ struct fib {
 	int (*scsi_callback)(struct scsi_cmnd *scmd);
 
 	/*
+	 * The current owner of the command
+	 */
+	int owner;
+
+	/*
 	 *	This is the event the sendfib routine will wait on if the
 	 *	caller did not pass one and this is synch io.
 	 */
