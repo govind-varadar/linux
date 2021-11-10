@@ -292,6 +292,12 @@ struct blk_mq_ops {
 				 const struct blk_mq_queue_data *);
 
 	/**
+	 * @reserved_queue_rq: Queue a new reserved request.
+	 */
+	blk_status_t (*queue_reserved_rq)(struct blk_mq_hw_ctx *,
+					  const struct blk_mq_queue_data *);
+
+	/**
 	 * @commit_rqs: If a driver uses bd->last to judge when to submit
 	 * requests to hardware, it must define this function. In case of errors
 	 * that make us stop issuing further requests, this hook serves the

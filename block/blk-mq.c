@@ -1359,7 +1359,10 @@ bool blk_mq_dispatch_rq_list(struct blk_mq_hw_ctx *hctx, struct list_head *list,
 		 */
 		if (nr_budgets)
 			nr_budgets--;
-		ret = q->mq_ops->queue_rq(hctx, &bd);
+		if (blk_rq_is_reserved(rq) && q->mq_ops->queue_reserved_rq)
+			ret = q->mq_ops->queue_reserved_rq(hctx, &bd);
+		else
+			ret = q->mq_ops->queue_rq(hctx, &bd);
 		switch (ret) {
 		case BLK_STS_OK:
 			queued++;

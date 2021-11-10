@@ -3405,9 +3405,10 @@ static bool mtip_check_unal_depth(struct blk_mq_hw_ctx *hctx,
 }
 
 static blk_status_t mtip_issue_reserved_cmd(struct blk_mq_hw_ctx *hctx,
-		struct request *rq)
+		const struct blk_mq_queue_data *bd)
 {
 	struct driver_data *dd = hctx->queue->queuedata;
+	struct request *rq = bd->rq;
 	struct mtip_cmd *cmd = blk_mq_rq_to_pdu(rq);
 	struct mtip_int_cmd *icmd = cmd->icmd;
 	struct mtip_cmd_hdr *hdr =
@@ -3447,9 +3448,6 @@ static blk_status_t mtip_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct driver_data *dd = hctx->queue->queuedata;
 	struct request *rq = bd->rq;
 	struct mtip_cmd *cmd = blk_mq_rq_to_pdu(rq);
-
-	if (blk_rq_is_passthrough(rq))
-		return mtip_issue_reserved_cmd(hctx, rq);
 
 	if (unlikely(mtip_check_unal_depth(hctx, rq)))
 		return BLK_STS_DEV_RESOURCE;
@@ -3517,6 +3515,7 @@ exit_handler:
 
 static const struct blk_mq_ops mtip_mq_ops = {
 	.queue_rq	= mtip_queue_rq,
+	.queue_reserved_rq = mtip_issue_reserved_cmd,
 	.init_request	= mtip_init_cmd,
 	.exit_request	= mtip_free_cmd,
 	.complete	= mtip_softirq_done_fn,
