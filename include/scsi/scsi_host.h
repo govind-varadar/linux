@@ -811,6 +811,9 @@ extern int scsi_host_unblock(struct Scsi_Host *shost, int new_state);
 void scsi_host_busy_iter(struct Scsi_Host *,
 			 bool (*fn)(struct scsi_cmnd *, void *, bool), void *priv);
 
+u32 scsi_host_get_internal_tag(struct Scsi_Host *, blk_mq_req_flags_t op);
+void scsi_host_put_internal_tag(struct Scsi_Host *, u32 unique_tag);
+
 struct class_container;
 
 /*

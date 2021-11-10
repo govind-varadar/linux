@@ -480,6 +480,7 @@ struct request *blk_mq_alloc_request_hctx(struct request_queue *q,
 struct request *blk_mq_tag_to_rq(struct blk_mq_tags *tags, unsigned int tag);
 
 enum {
+	BLK_MQ_NO_TAG	       = -1U,
 	BLK_MQ_UNIQUE_TAG_BITS = 16,
 	BLK_MQ_UNIQUE_TAG_MASK = (1 << BLK_MQ_UNIQUE_TAG_BITS) - 1,
 };

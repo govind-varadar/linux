@@ -1964,6 +1964,55 @@ void scsi_mq_destroy_tags(struct Scsi_Host *shost)
 }
 
 /**
+ * scsi_host_get_internal_tag - allocate a tag for internal use
+ * @shost: SCSI host from which to allocate the tag
+ * @op_flags: request allocation flags
+ *
+ * Returns a valid block layer tag for internal LLDD use.
+ * The associated request is not started and needs to returned
+ * with scsi_host_put_internal_tag().
+ */
+u32 scsi_host_get_internal_tag(struct Scsi_Host *shost,
+			       blk_mq_req_flags_t op_flags)
+{
+	struct request *rq;
+	blk_mq_req_flags_t flags = BLK_MQ_REQ_RESERVED | op_flags;
+
+	if (WARN_ON(!shost->admin_q))
+		return BLK_MQ_NO_TAG;
+
+	rq = blk_mq_alloc_request(shost->admin_q, REQ_OP_DRV_IN, flags);
+	if (IS_ERR(rq))
+		return BLK_MQ_NO_TAG;
+	return blk_mq_unique_tag(rq);
+}
+EXPORT_SYMBOL_GPL(scsi_host_get_internal_tag);
+
+/**
+ * scsi_host_put_internal_tag - return an internal tag
+ * @shost: SCSI host from which the tag was allocated
+ * @unique_tag: tag returned from scsi_host_get_internal_tag()
+ *
+ * Invalidates an internal tag.
+ */
+void scsi_host_put_internal_tag(struct Scsi_Host *shost, u32 unique_tag)
+{
+	struct request *rq = NULL;
+	u16 hwq;
+
+	if (unique_tag == BLK_MQ_NO_TAG)
+		return;
+	hwq = blk_mq_unique_tag_to_hwq(unique_tag);
+	if (hwq < shost->tag_set.nr_hw_queues)
+		rq = blk_mq_tag_to_rq(shost->tag_set.tags[hwq],
+				      blk_mq_unique_tag_to_tag(unique_tag));
+	WARN_ON(!blk_rq_is_reserved(rq));
+	if (rq)
+		blk_mq_free_request(rq);
+}
+EXPORT_SYMBOL_GPL(scsi_host_put_internal_tag);
+
+/**
  * scsi_device_from_queue - return sdev associated with a request_queue
  * @q: The request queue to return the sdev from
  *
