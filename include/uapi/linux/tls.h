@@ -40,6 +40,10 @@
 #define TLS_TX			1	/* Set transmit parameters */
 #define TLS_RX			2	/* Set receive parameters */
 
+/* TLSH socket options */
+#define TLSH_PRIORITIES		1	/* Retrieve TLS priorities string */
+#define TLSH_PEERID		2	/* Retrieve peer identity */
+
 /* Supported versions */
 #define TLS_VERSION_MINOR(ver)	((ver) & 0xFF)
 #define TLS_VERSION_MAJOR(ver)	(((ver) >> 8) & 0xFF)

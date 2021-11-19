@@ -51,6 +51,18 @@
 #include <uapi/linux/tls.h>
 
 
+struct tlsh_sock {
+	/* struct sock must remain the first field */
+	struct sock	th_sk;
+
+	int		th_bind_family;
+};
+
+static inline struct tlsh_sock *tlsh_sk(struct sock *sk)
+{
+	return (struct tlsh_sock *)sk;
+}
+
 /* Maximum data size carried in a TLS record */
 #define TLS_MAX_PAYLOAD_SIZE		((size_t)1 << 14)
 
@@ -355,6 +367,9 @@ struct tls_offload_context_rx {
 struct tls_context *tls_ctx_create(struct sock *sk);
 void tls_ctx_free(struct sock *sk, struct tls_context *ctx);
 void update_sk_prot(struct sock *sk, struct tls_context *ctx);
+
+int tlsh_pf_create(struct net *net, struct socket *sock, int protocol,
+		   int kern);
 
 int wait_on_pending_writer(struct sock *sk, long *timeo);
 int tls_sk_query(struct sock *sk, int optname, char __user *optval,

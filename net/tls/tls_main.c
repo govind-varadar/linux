@@ -49,6 +49,7 @@ MODULE_AUTHOR("Mellanox Technologies");
 MODULE_DESCRIPTION("Transport Layer Security Support");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_ALIAS_TCP_ULP("tls");
+MODULE_ALIAS_NETPROTO(PF_TLSH);
 
 enum {
 	TLSV4,
@@ -988,6 +989,12 @@ static struct tcp_ulp_ops tcp_tls_ulp_ops __read_mostly = {
 	.get_info_size		= tls_get_info_size,
 };
 
+static const struct net_proto_family tlsh_pf_ops = {
+	.family = PF_TLSH,
+	.create = tlsh_pf_create,
+	.owner	= THIS_MODULE,
+};
+
 static int __init tls_register(void)
 {
 	int err;
@@ -999,11 +1006,14 @@ static int __init tls_register(void)
 	tls_device_init();
 	tcp_register_ulp(&tcp_tls_ulp_ops);
 
+	sock_register(&tlsh_pf_ops);
+
 	return 0;
 }
 
 static void __exit tls_unregister(void)
 {
+	sock_unregister(PF_TLSH);
 	tcp_unregister_ulp(&tcp_tls_ulp_ops);
 	tls_device_cleanup();
 	unregister_pernet_subsys(&tls_proc_ops);
