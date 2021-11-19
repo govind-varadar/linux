@@ -356,6 +356,10 @@ struct tls_context *tls_ctx_create(struct sock *sk);
 void tls_ctx_free(struct sock *sk, struct tls_context *ctx);
 void update_sk_prot(struct sock *sk, struct tls_context *ctx);
 
+int tlsh_pf_create(struct net *net, struct socket *sock, int protocol,
+		   int kern);
+void tlsh_handshake_done(struct sock *sk, int status);
+
 int wait_on_pending_writer(struct sock *sk, long *timeo);
 int tls_sk_query(struct sock *sk, int optname, char __user *optval,
 		int __user *optlen);

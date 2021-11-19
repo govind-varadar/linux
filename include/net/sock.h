@@ -350,6 +350,12 @@ struct bpf_local_storage;
   *	@sk_txtime_deadline_mode: set deadline mode for SO_TXTIME
   *	@sk_txtime_report_errors: set report errors mode for SO_TXTIME
   *	@sk_txtime_unused: unused txtime flags
+  *     @sk_tls_bind_family: Address family to match handshake requests
+  *	@sk_tls_handshake_done: TLS handshake completion callback
+  *	@sk_tls_data: TLS handshake completion data
+  *	@sk_saved_wq: saved sock wait queue and async head
+  *	@sk_saved_socket: saved identd and reporting IO signals
+  *	@sk_saved_uid: saved user id of owner
   */
 struct sock {
 	/*
@@ -536,6 +542,13 @@ struct sock {
 	struct bpf_local_storage __rcu	*sk_bpf_storage;
 #endif
 	struct rcu_head		sk_rcu;
+
+	int			sk_tls_bind_family;
+	void			(*sk_tls_handshake_done)(void *data, int status);
+	void			*sk_tls_data;
+	struct socket_wq	*sk_saved_wq;
+	struct socket		*sk_saved_socket;
+	kuid_t			sk_saved_uid;
 };
 
 enum sk_pacing {
