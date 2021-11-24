@@ -459,6 +459,9 @@ struct scsi_host_template {
 	/* True if the host uses host-wide tagspace */
 	unsigned host_tagset:1;
 
+	/* True if a host sdev should be allocated */
+	unsigned alloc_host_sdev:1;
+
 	/*
 	 * Countdown for host blocking with no commands outstanding.
 	 */
@@ -705,6 +708,12 @@ struct Scsi_Host {
 	struct device *dma_dev;
 
 	/*
+	 * Points to a virtual SCSI device used for sending
+	 * internal commands to the HBA.
+	 */
+	struct scsi_device *shost_sdev;
+
+	/*
 	 * We should ensure that this is aligned, both for better performance
 	 * and also because some compilers (m68k) don't automatically force
 	 * alignment to a long boundary.
@@ -792,6 +801,18 @@ void scsi_host_busy_iter(struct Scsi_Host *,
 			 bool (*fn)(struct scsi_cmnd *, void *, bool), void *priv);
 
 struct class_container;
+
+/*
+ * These functions are used to allocate and test a pseudo device
+ * which will refer to the host adapter itself rather than any
+ * physical device.  The device will be deallocated together with
+ * all other scsi devices, so there is no need to have a separate
+ * function to free it.
+ * This device will not show up in sysfs and won't be available
+ * from any high-level drivers.
+ */
+struct scsi_device *scsi_get_host_dev(struct Scsi_Host *);
+bool scsi_device_is_host_dev(struct scsi_device *sdev);
 
 /*
  * DIF defines the exchange of protection information between

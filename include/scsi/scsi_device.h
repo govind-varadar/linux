@@ -604,7 +604,7 @@ static inline int scsi_device_busy(struct scsi_device *sdev)
 	return sbitmap_weight(&sdev->budget_map);
 }
 
-#define MODULE_ALIAS_SCSI_DEVICE(type) \
+#define MODULE_ALIAS_SCSI_DEVICE(type)			\
 	MODULE_ALIAS("scsi:t-" __stringify(type) "*")
 #define SCSI_DEVICE_MODALIAS_FMT "scsi:t-0x%02x"
 

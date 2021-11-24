@@ -1139,6 +1139,12 @@ static int scsi_probe_and_add_lun(struct scsi_target *starget,
 	if (!sdev)
 		goto out;
 
+	if (scsi_device_is_host_dev(sdev)) {
+		if (bflagsp)
+			*bflagsp = BLIST_NOLUN;
+		return SCSI_SCAN_LUN_PRESENT;
+	}
+
 	result = kmalloc(result_len, GFP_KERNEL);
 	if (!result)
 		goto out_free_sdev;
@@ -1755,6 +1761,9 @@ static void scsi_sysfs_add_devices(struct Scsi_Host *shost)
 		/* If device is already visible, skip adding it to sysfs */
 		if (sdev->is_visible)
 			continue;
+		/* Host devices should never be visible in sysfs */
+		if (scsi_device_is_host_dev(sdev))
+			continue;
 		if (!scsi_host_scan_allowed(shost) ||
 		    scsi_sysfs_add_sdev(sdev) != 0)
 			__scsi_remove_device(sdev);
@@ -1919,12 +1928,16 @@ EXPORT_SYMBOL(scsi_scan_host);
 
 void scsi_forget_host(struct Scsi_Host *shost)
 {
-	struct scsi_device *sdev;
+	struct scsi_device *sdev, *host_sdev = NULL;
 	unsigned long flags;
 
  restart:
 	spin_lock_irqsave(shost->host_lock, flags);
 	list_for_each_entry(sdev, &shost->__devices, siblings) {
+		if (scsi_device_is_host_dev(sdev)) {
+			host_sdev = sdev;
+			continue;
+		}
 		if (sdev->sdev_state == SDEV_DEL)
 			continue;
 		spin_unlock_irqrestore(shost->host_lock, flags);
@@ -1932,5 +1945,57 @@ void scsi_forget_host(struct Scsi_Host *shost)
 		goto restart;
 	}
 	spin_unlock_irqrestore(shost->host_lock, flags);
+	/* Remove host device last, might be needed to send commands */
+	if (host_sdev)
+		__scsi_remove_device(host_sdev);
 }
 
+/**
+ * scsi_get_host_dev - Create a virtual scsi_device to the host adapter
+ * @shost: Host that needs a scsi_device
+ *
+ * Lock status: None assumed.
+ *
+ * Returns:     The scsi_device or NULL
+ *
+ * Notes:
+ *	Attach a single scsi_device to the Scsi_Host. The primary aim
+ *	for this device is to serve as a container from which valid
+ *	scsi commands can be allocated from. Each scsi command will carry
+ *	an unused/free command tag, which then can be used by the LLDD to
+ *	send internal or passthrough commands without having to find a
+ *	valid command tag internally.
+ */
+struct scsi_device *scsi_get_host_dev(struct Scsi_Host *shost)
+{
+	struct scsi_device *sdev = NULL;
+	struct scsi_target *starget;
+
+	mutex_lock(&shost->scan_mutex);
+	if (!scsi_host_scan_allowed(shost))
+		goto out;
+	starget = scsi_alloc_target(&shost->shost_gendev, 0,
+				    shost->max_id);
+	if (!starget)
+		goto out;
+
+	sdev = scsi_alloc_sdev(starget, 0, NULL);
+	if (sdev)
+		sdev->borken = 0;
+	else
+		scsi_target_reap(starget);
+	put_device(&starget->dev);
+ out:
+	mutex_unlock(&shost->scan_mutex);
+	return sdev;
+}
+EXPORT_SYMBOL(scsi_get_host_dev);
+
+/*
+ * Test if a given device is a SCSI host device
+ */
+bool scsi_device_is_host_dev(struct scsi_device *sdev)
+{
+	return sdev == sdev->host->shost_sdev;
+}
+EXPORT_SYMBOL_GPL(scsi_device_is_host_dev);
