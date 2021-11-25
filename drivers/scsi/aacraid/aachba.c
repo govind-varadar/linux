@@ -636,49 +636,44 @@ static void _aac_probe_container2(void * context, struct fib * fibptr)
 	int (*callback)(struct scsi_cmnd *);
 	struct scsi_cmnd * scsicmd = (struct scsi_cmnd *)context;
 	int i;
+	struct aac_mount * dresp = (struct aac_mount *) fib_data(fibptr);
+	__le32 sup_options2;
 
 
 	if (!aac_valid_context(scsicmd, fibptr))
 		return;
 
-	fsa_dev_ptr = fibptr->dev->fsa_dev;
-	if (fsa_dev_ptr) {
-		struct aac_mount * dresp = (struct aac_mount *) fib_data(fibptr);
-		__le32 sup_options2;
+	fsa_dev_ptr = &fibptr->dev->fsa_dev[fibptr->cid];
+	sup_options2 = fibptr->dev->supplement_adapter_info.supported_options2;
 
-		fsa_dev_ptr += fibptr->cid;
-		sup_options2 =
-			fibptr->dev->supplement_adapter_info.supported_options2;
-
-		if ((le32_to_cpu(dresp->status) == ST_OK) &&
-		    (le32_to_cpu(dresp->mnt[0].vol) != CT_NONE) &&
-		    (le32_to_cpu(dresp->mnt[0].state) != FSCS_HIDDEN)) {
-			if (!(sup_options2 & AAC_OPTION_VARIABLE_BLOCK_SIZE)) {
-				dresp->mnt[0].fileinfo.bdevinfo.block_size = 0x200;
-				fsa_dev_ptr->block_size = 0x200;
-			} else {
-				fsa_dev_ptr->block_size =
-					le32_to_cpu(dresp->mnt[0].fileinfo.bdevinfo.block_size);
-			}
-			for (i = 0; i < 16; i++)
-				fsa_dev_ptr->identifier[i] =
-					dresp->mnt[0].fileinfo.bdevinfo
-								.identifier[i];
-			fsa_dev_ptr->valid = 1;
-			/* sense_key holds the current state of the spin-up */
-			if (dresp->mnt[0].state & cpu_to_le32(FSCS_NOT_READY))
-				fsa_dev_ptr->sense_data.sense_key = NOT_READY;
-			else if (fsa_dev_ptr->sense_data.sense_key == NOT_READY)
-				fsa_dev_ptr->sense_data.sense_key = NO_SENSE;
-			fsa_dev_ptr->type = le32_to_cpu(dresp->mnt[0].vol);
-			fsa_dev_ptr->size
-			  = ((u64)le32_to_cpu(dresp->mnt[0].capacity)) +
-			    (((u64)le32_to_cpu(dresp->mnt[0].capacityhigh)) << 32);
-			fsa_dev_ptr->ro = ((le32_to_cpu(dresp->mnt[0].state) & FSCS_READONLY) != 0);
+	if ((le32_to_cpu(dresp->status) == ST_OK) &&
+	    (le32_to_cpu(dresp->mnt[0].vol) != CT_NONE) &&
+	    (le32_to_cpu(dresp->mnt[0].state) != FSCS_HIDDEN)) {
+		if (!(sup_options2 & AAC_OPTION_VARIABLE_BLOCK_SIZE)) {
+			dresp->mnt[0].fileinfo.bdevinfo.block_size = 0x200;
+			fsa_dev_ptr->block_size = 0x200;
+		} else {
+			fsa_dev_ptr->block_size =
+				le32_to_cpu(dresp->mnt[0].fileinfo.bdevinfo.block_size);
 		}
-		if ((fsa_dev_ptr->valid & 1) == 0)
-			fsa_dev_ptr->valid = 0;
+		for (i = 0; i < 16; i++)
+			fsa_dev_ptr->identifier[i] =
+				dresp->mnt[0].fileinfo.bdevinfo.identifier[i];
+		fsa_dev_ptr->valid = 1;
+		/* sense_key holds the current state of the spin-up */
+		if (dresp->mnt[0].state & cpu_to_le32(FSCS_NOT_READY))
+			fsa_dev_ptr->sense_data.sense_key = NOT_READY;
+		else if (fsa_dev_ptr->sense_data.sense_key == NOT_READY)
+			fsa_dev_ptr->sense_data.sense_key = NO_SENSE;
+		fsa_dev_ptr->type = le32_to_cpu(dresp->mnt[0].vol);
+		fsa_dev_ptr->size
+			= ((u64)le32_to_cpu(dresp->mnt[0].capacity)) +
+			(((u64)le32_to_cpu(dresp->mnt[0].capacityhigh)) << 32);
+		fsa_dev_ptr->ro = ((le32_to_cpu(dresp->mnt[0].state) & FSCS_READONLY) != 0);
 	}
+	if ((fsa_dev_ptr->valid & 1) == 0)
+		fsa_dev_ptr->valid = 0;
+
 	aac_fib_complete(fibptr);
 	aac_fib_free(fibptr);
 	callback = (int (*)(struct scsi_cmnd *))(scsicmd->SCp.ptr);
@@ -742,10 +737,12 @@ static void _aac_probe_container1(void * context, struct fib * fibptr)
 static int _aac_probe_container(struct scsi_cmnd * scsicmd, unsigned int cid,
 				int (*callback)(struct scsi_cmnd *))
 {
+	struct aac_dev * dev =
+		(struct aac_dev *)scsicmd->device->host->hostdata;
 	struct fib * fibptr;
 	int status = -ENOMEM;
 
-	if ((fibptr = aac_fib_alloc((struct aac_dev *)scsicmd->device->host->hostdata))) {
+	if ((fibptr = aac_fib_alloc(dev))) {
 		struct aac_query_mount *dinfo;
 
 		aac_fib_init(fibptr);
@@ -784,13 +781,9 @@ static int _aac_probe_container(struct scsi_cmnd * scsicmd, unsigned int cid,
 		}
 	}
 	if (status < 0) {
-		struct fsa_dev_info *fsa_dev_ptr = ((struct aac_dev *)(scsicmd->device->host->hostdata))->fsa_dev;
-		if (fsa_dev_ptr) {
-			fsa_dev_ptr += cid;
-			if ((fsa_dev_ptr->valid & 1) == 0) {
-				fsa_dev_ptr->valid = 0;
-				return (*callback)(scsicmd);
-			}
+		if ((dev->fsa_dev[cid].valid & 1) == 0) {
+			dev->fsa_dev[cid].valid = 0;
+			return (*callback)(scsicmd);
 		}
 	}
 	return status;
