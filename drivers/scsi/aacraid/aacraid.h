@@ -1299,6 +1299,10 @@ struct fib {
 	 */
 	struct aac_dev		*dev;
 	/*
+	 *	The Container that this I/O is destined for.
+	 */
+	u32			cid;
+	/*
 	 *	This is the event the sendfib routine will wait on if the
 	 *	caller did not pass one and this is synch io.
 	 */
@@ -2734,7 +2738,7 @@ int aac_fib_adapter_complete(struct fib * fibptr, unsigned short size);
 struct aac_driver_ident* aac_get_driver_ident(int devtype);
 int aac_get_adapter_info(struct aac_dev* dev);
 int aac_send_shutdown(struct aac_dev *dev);
-int aac_probe_container(struct aac_dev *dev, int cid);
+int aac_probe_container(struct aac_dev *dev, unsigned int cid);
 int _aac_rx_init(struct aac_dev *dev);
 int aac_rx_select_comm(struct aac_dev *dev, int comm);
 int aac_rx_deliver_producer(struct fib * fib);

@@ -646,7 +646,7 @@ static void _aac_probe_container2(void * context, struct fib * fibptr)
 		struct aac_mount * dresp = (struct aac_mount *) fib_data(fibptr);
 		__le32 sup_options2;
 
-		fsa_dev_ptr += scmd_id(scsicmd);
+		fsa_dev_ptr += fibptr->cid;
 		sup_options2 =
 			fibptr->dev->supplement_adapter_info.supported_options2;
 
@@ -718,7 +718,7 @@ static void _aac_probe_container1(void * context, struct fib * fibptr)
 	else
 		dinfo->command = cpu_to_le32(VM_NameServe64);
 
-	dinfo->count = cpu_to_le32(scmd_id(scsicmd));
+	dinfo->count = cpu_to_le32(fibptr->cid);
 	dinfo->type = cpu_to_le32(FT_FILESYS);
 	scsicmd->SCp.phase = AAC_OWNER_FIRMWARE;
 
@@ -739,7 +739,8 @@ static void _aac_probe_container1(void * context, struct fib * fibptr)
 	}
 }
 
-static int _aac_probe_container(struct scsi_cmnd * scsicmd, int (*callback)(struct scsi_cmnd *))
+static int _aac_probe_container(struct scsi_cmnd * scsicmd, unsigned int cid,
+				int (*callback)(struct scsi_cmnd *))
 {
 	struct fib * fibptr;
 	int status = -ENOMEM;
@@ -748,6 +749,7 @@ static int _aac_probe_container(struct scsi_cmnd * scsicmd, int (*callback)(stru
 		struct aac_query_mount *dinfo;
 
 		aac_fib_init(fibptr);
+		fibptr->cid = cid;
 
 		dinfo = (struct aac_query_mount *)fib_data(fibptr);
 
@@ -757,7 +759,7 @@ static int _aac_probe_container(struct scsi_cmnd * scsicmd, int (*callback)(stru
 		else
 			dinfo->command = cpu_to_le32(VM_NameServe);
 
-		dinfo->count = cpu_to_le32(scmd_id(scsicmd));
+		dinfo->count = cpu_to_le32(fibptr->cid);
 		dinfo->type = cpu_to_le32(FT_FILESYS);
 		scsicmd->SCp.ptr = (char *)callback;
 		scsicmd->SCp.phase = AAC_OWNER_FIRMWARE;
@@ -784,7 +786,7 @@ static int _aac_probe_container(struct scsi_cmnd * scsicmd, int (*callback)(stru
 	if (status < 0) {
 		struct fsa_dev_info *fsa_dev_ptr = ((struct aac_dev *)(scsicmd->device->host->hostdata))->fsa_dev;
 		if (fsa_dev_ptr) {
-			fsa_dev_ptr += scmd_id(scsicmd);
+			fsa_dev_ptr += cid;
 			if ((fsa_dev_ptr->valid & 1) == 0) {
 				fsa_dev_ptr->valid = 0;
 				return (*callback)(scsicmd);
@@ -812,7 +814,7 @@ static void aac_probe_container_scsi_done(struct scsi_cmnd *scsi_cmnd)
 	aac_probe_container_callback1(scsi_cmnd);
 }
 
-int aac_probe_container(struct aac_dev *dev, int cid)
+int aac_probe_container(struct aac_dev *dev, unsigned int cid)
 {
 	struct scsi_cmnd *scsicmd = kzalloc(sizeof(*scsicmd), GFP_KERNEL);
 	struct scsi_device *scsidev = kzalloc(sizeof(*scsidev), GFP_KERNEL);
@@ -829,7 +831,8 @@ int aac_probe_container(struct aac_dev *dev, int cid)
 	scsidev->id = cid;
 	scsidev->host = dev->scsi_host_ptr;
 
-	status = _aac_probe_container(scsicmd, aac_probe_container_callback1);
+	status = _aac_probe_container(scsicmd, cid,
+				      aac_probe_container_callback1);
 	if (status == 0)
 		while (scsicmd->device == scsidev)
 			schedule();
@@ -2811,7 +2814,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				case TEST_UNIT_READY:
 					if (dev->in_reset)
 						return SCSI_MLQUEUE_DEVICE_BUSY;
-					return _aac_probe_container(scsicmd,
+					return _aac_probe_container(scsicmd, cid,
 							aac_probe_container_callback2);
 				default:
 					break;
