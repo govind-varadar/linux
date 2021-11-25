@@ -641,7 +641,6 @@ static void _aac_probe_container2(void * context, struct fib * fibptr)
 	if (!aac_valid_context(scsicmd, fibptr))
 		return;
 
-	scsicmd->SCp.Status = 0;
 	fsa_dev_ptr = fibptr->dev->fsa_dev;
 	if (fsa_dev_ptr) {
 		struct aac_mount * dresp = (struct aac_mount *) fib_data(fibptr);
@@ -679,7 +678,6 @@ static void _aac_probe_container2(void * context, struct fib * fibptr)
 		}
 		if ((fsa_dev_ptr->valid & 1) == 0)
 			fsa_dev_ptr->valid = 0;
-		scsicmd->SCp.Status = le32_to_cpu(dresp->count);
 	}
 	aac_fib_complete(fibptr);
 	aac_fib_free(fibptr);
@@ -831,11 +829,11 @@ int aac_probe_container(struct aac_dev *dev, int cid)
 	scsidev->id = cid;
 	scsidev->host = dev->scsi_host_ptr;
 
-	if (_aac_probe_container(scsicmd, aac_probe_container_callback1) == 0)
+	status = _aac_probe_container(scsicmd, aac_probe_container_callback1);
+	if (status == 0)
 		while (scsicmd->device == scsidev)
 			schedule();
 	kfree(scsidev);
-	status = scsicmd->SCp.Status;
 	kfree(scsicmd);
 	return status;
 }
