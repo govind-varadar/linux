@@ -676,8 +676,8 @@ static void _aac_probe_container2(void * context, struct fib * fibptr)
 
 	aac_fib_complete(fibptr);
 	aac_fib_free(fibptr);
-	callback = (int (*)(struct scsi_cmnd *))(scsicmd->SCp.ptr);
-	scsicmd->SCp.ptr = NULL;
+	callback = (int (*)(struct scsi_cmnd *))(scsicmd->host_scribble);
+	scsicmd->host_scribble = NULL;
 	(*callback)(scsicmd);
 	return;
 }
@@ -758,7 +758,7 @@ static int _aac_probe_container(struct scsi_cmnd * scsicmd, unsigned int cid,
 
 		dinfo->count = cpu_to_le32(fibptr->cid);
 		dinfo->type = cpu_to_le32(FT_FILESYS);
-		scsicmd->SCp.ptr = (char *)callback;
+		scsicmd->host_scribble = (char *)callback;
 		scsicmd->SCp.phase = AAC_OWNER_FIRMWARE;
 
 		status = aac_fib_send(ContainerCommand,
@@ -775,9 +775,9 @@ static int _aac_probe_container(struct scsi_cmnd * scsicmd, unsigned int cid,
 			return 0;
 
 		if (status < 0) {
-			scsicmd->SCp.ptr = NULL;
 			aac_fib_complete(fibptr);
 			aac_fib_free(fibptr);
+			scsicmd->host_scribble = NULL;
 		}
 	}
 	if (status < 0) {
@@ -798,7 +798,7 @@ static int _aac_probe_container(struct scsi_cmnd * scsicmd, unsigned int cid,
  */
 static int aac_probe_container_callback1(struct scsi_cmnd * scsicmd)
 {
-	scsicmd->device = NULL;
+	scsicmd->host_scribble = NULL;
 	return 0;
 }
 
@@ -827,7 +827,7 @@ int aac_probe_container(struct aac_dev *dev, unsigned int cid)
 	status = _aac_probe_container(scsicmd, cid,
 				      aac_probe_container_callback1);
 	if (status == 0)
-		while (scsicmd->device == scsidev)
+		while (scsicmd->host_scribble != NULL)
 			schedule();
 	kfree(scsidev);
 	kfree(scsicmd);
