@@ -20,7 +20,6 @@
 
 #ifdef CONFIG_SATA_DWC_VDEBUG
 #define VERBOSE_DEBUG
-#define DEBUG_NCQ
 #endif
 
 #include <linux/kernel.h>
@@ -735,17 +734,6 @@ static void sata_dwc_dma_xfer_complete(struct ata_port *ap, u32 check_status)
 		dev_err(ap->dev, "failed to get qc");
 		return;
 	}
-
-#ifdef DEBUG_NCQ
-	if (tag > 0) {
-		dev_info(ap->dev,
-			 "%s tag=%u cmd=0x%02x dma dir=%s proto=%s dmacr=0x%08x\n",
-			 __func__, qc->hw_tag, qc->tf.command,
-			 get_dma_dir_descript(qc->dma_dir),
-			 get_prot_descript(qc->tf.protocol),
-			 sata_dwc_readl(&hsdev->sata_dwc_regs->dmacr));
-	}
-#endif
 
 	if (ata_is_dma(qc->tf.protocol)) {
 		if (hsdevp->dma_pending[tag] == SATA_DWC_DMA_PENDING_NONE) {
