@@ -20,11 +20,14 @@
 #include <linux/ptrace.h>
 #include <linux/nvme_ioctl.h>
 #include <linux/pm_qos.h>
+#include <linux/key.h>
+#include <linux/key-type.h>
 #include <asm/unaligned.h>
 
 #include "nvme.h"
 #include "fabrics.h"
 #include "auth.h"
+#include "key.h"
 
 #define CREATE_TRACE_POINTS
 #include "trace.h"
@@ -4912,8 +4915,14 @@ static int __init nvme_core_init(void)
 		goto unregister_generic_ns;
 	}
 
+	result = nvme_keyring_init();
+	if (result)
+		goto destroy_ns_chr_class;
+
 	return 0;
 
+destroy_ns_chr_class:
+	class_destroy(nvme_ns_chr_class);
 unregister_generic_ns:
 	unregister_chrdev_region(nvme_ns_chr_devt, NVME_MINORS);
 destroy_subsys_class:
@@ -4934,6 +4943,7 @@ out:
 
 static void __exit nvme_core_exit(void)
 {
+	nvme_keyring_exit();
 	class_destroy(nvme_ns_chr_class);
 	class_destroy(nvme_subsys_class);
 	class_destroy(nvme_class);
