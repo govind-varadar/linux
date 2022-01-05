@@ -407,14 +407,14 @@ int nvmf_connect_admin_queue(struct nvme_ctrl *ctrl)
 	ctrl->cntlid = result & 0xFFFF;
 	if ((result >> 16) & 2) {
 		/* Authentication required */
-		ret = nvme_auth_negotiate(ctrl, NVME_QID_ANY);
+		ret = nvme_auth_negotiate(ctrl, 0);
 		if (ret) {
 			dev_warn(ctrl->device,
 				 "qid 0: authentication setup failed\n");
 			ret = NVME_SC_AUTH_REQUIRED;
 			goto out_free_data;
 		}
-		ret = nvme_auth_wait(ctrl, NVME_QID_ANY);
+		ret = nvme_auth_wait(ctrl, 0);
 		if (ret)
 			dev_warn(ctrl->device,
 				 "qid 0: authentication failed\n");
