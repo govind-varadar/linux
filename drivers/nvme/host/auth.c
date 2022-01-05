@@ -522,9 +522,9 @@ int nvme_auth_gen_shared_secret(struct crypto_kpp *dh_tfm,
 EXPORT_SYMBOL_GPL(nvme_auth_gen_shared_secret);
 
 #define nvme_auth_flags_from_qid(qid) \
-	(qid == NVME_QID_ANY) ? 0 : BLK_MQ_REQ_NOWAIT | BLK_MQ_REQ_RESERVED
+	(qid == 0) ? 0 : BLK_MQ_REQ_NOWAIT | BLK_MQ_REQ_RESERVED
 #define nvme_auth_queue_from_qid(ctrl, qid) \
-	(qid == NVME_QID_ANY) ? (ctrl)->fabrics_q : (ctrl)->connect_q
+	(qid == 0) ? (ctrl)->fabrics_q : (ctrl)->connect_q
 
 static int nvme_auth_send(struct nvme_ctrl *ctrl, int qid,
 		void *data, size_t tl)
@@ -541,7 +541,8 @@ static int nvme_auth_send(struct nvme_ctrl *ctrl, int qid,
 	cmd.auth_send.spsp1 = 0x01;
 	cmd.auth_send.tl = cpu_to_le32(tl);
 
-	ret = __nvme_submit_sync_cmd(q, &cmd, NULL, data, tl, 0, qid,
+	ret = __nvme_submit_sync_cmd(q, &cmd, NULL, data, tl, 0,
+				     qid == 0 ? NVME_QID_ANY : qid,
 				     0, flags);
 	if (ret > 0)
 		dev_warn(ctrl->device,
@@ -567,7 +568,8 @@ static int nvme_auth_receive(struct nvme_ctrl *ctrl, int qid,
 	cmd.auth_receive.spsp1 = 0x01;
 	cmd.auth_receive.al = cpu_to_le32(al);
 
-	ret = __nvme_submit_sync_cmd(q, &cmd, NULL, buf, al, 0, qid,
+	ret = __nvme_submit_sync_cmd(q, &cmd, NULL, buf, al, 0,
+				     qid == 0 ? NVME_QID_ANY : qid,
 				     0, flags);
 	if (ret > 0) {
 		dev_warn(ctrl->device,
@@ -863,7 +865,7 @@ static int nvme_auth_process_dhchap_success1(struct nvme_ctrl *ctrl,
 	}
 
 	/* Just print out information for the admin queue */
-	if (chap->qid == -1)
+	if (chap->qid == 0)
 		dev_info(ctrl->device,
 			 "qid 0: authenticated with hash %s dhgroup %s\n",
 			 nvme_auth_hmac_name(chap->hash_id),
@@ -887,7 +889,7 @@ static int nvme_auth_process_dhchap_success1(struct nvme_ctrl *ctrl,
 	}
 
 	/* Just print out information for the admin queue */
-	if (chap->qid == -1)
+	if (chap->qid == 0)
 		dev_info(ctrl->device,
 			 "qid 0: controller authenticated\n");
 	return 0;
@@ -1378,7 +1380,7 @@ int nvme_auth_negotiate(struct nvme_ctrl *ctrl, int qid)
 		mutex_unlock(&ctrl->dhchap_auth_mutex);
 		return -ENOMEM;
 	}
-	chap->qid = qid;
+	chap->qid = (qid == NVME_QID_ANY) ? 0 : qid;
 	chap->ctrl = ctrl;
 
 	/*
@@ -1442,13 +1444,13 @@ static void nvme_dhchap_auth_work(struct work_struct *work)
 	int ret, q;
 
 	/* Authenticate admin queue first */
-	ret = nvme_auth_negotiate(ctrl, NVME_QID_ANY);
+	ret = nvme_auth_negotiate(ctrl, 0);
 	if (ret) {
 		dev_warn(ctrl->device,
 			 "qid 0: error %d setting up authentication\n", ret);
 		return;
 	}
-	ret = nvme_auth_wait(ctrl, NVME_QID_ANY);
+	ret = nvme_auth_wait(ctrl, 0);
 	if (ret) {
 		dev_warn(ctrl->device,
 			 "qid 0: authentication failed\n");
