@@ -40,6 +40,9 @@
 #include <linux/sched/signal.h>
 #include <linux/inetdevice.h>
 #include <linux/inet_diag.h>
+#include <linux/key.h>
+#include <linux/key-type.h>
+#include <keys/user-type.h>
 
 #include <net/snmp.h>
 #include <net/tls.h>
@@ -974,6 +977,52 @@ static void __net_exit tls_exit_net(struct net *net)
 	free_percpu(net->mib.tls_statistics);
 }
 
+static struct key *tls_keyring;
+
+static int tls_key_preparse(struct key_preparsed_payload *prep)
+{
+	struct user_key_payload *upayload;
+	int datalen = prep->datalen;
+	const char *data = prep->data;
+
+	if (datalen <= 0 || !data)
+		return -EINVAL;
+
+	prep->quotalen = datalen;
+	upayload = kmalloc(sizeof(*upayload) + datalen + 1, GFP_KERNEL);
+	if (!upayload)
+		return -ENOMEM;
+	upayload->datalen = datalen;
+	memcpy(upayload->data, data, datalen);
+	upayload->data[datalen] = '\0';
+	prep->payload.data[0] = upayload;
+	return 0;
+}
+
+static void tls_key_free_preparse(struct key_preparsed_payload *prep)
+{
+	kfree(prep->payload.data[0]);
+}
+
+static void tls_key_describe(const struct key *key, struct seq_file *m)
+{
+	seq_puts(m, key->description);
+	seq_printf(m, ": %u", key->datalen);
+}
+
+static struct key_type key_type_tls = {
+	.name           = "tls",
+	.flags          = KEY_TYPE_NET_DOMAIN,
+	.preparse       = tls_key_preparse,
+	.free_preparse  = tls_key_free_preparse,
+	.instantiate    = generic_key_instantiate,
+	.revoke         = user_revoke,
+	.destroy        = user_destroy,
+	.describe       = tls_key_describe,
+	.read           = user_read,
+};
+
+
 static struct pernet_operations tls_proc_ops = {
 	.init = tls_init_net,
 	.exit = tls_exit_net,
@@ -996,6 +1045,25 @@ static int __init tls_register(void)
 	if (err)
 		return err;
 
+	tls_keyring = keyring_alloc(".tls",
+				    GLOBAL_ROOT_UID, GLOBAL_ROOT_GID,
+				    current_cred(),
+				    (KEY_POS_ALL & ~KEY_POS_SETATTR) |
+				    (KEY_USR_ALL & ~KEY_USR_SETATTR),
+				    KEY_ALLOC_NOT_IN_QUOTA, NULL, NULL);
+	if (IS_ERR(tls_keyring)) {
+		unregister_pernet_subsys(&tls_proc_ops);
+		return PTR_ERR(tls_keyring);
+	}
+
+	err = register_key_type(&key_type_tls);
+	if (err) {
+		key_revoke(tls_keyring);
+		key_put(tls_keyring);
+		unregister_pernet_subsys(&tls_proc_ops);
+		return err;
+	}
+
 	tls_device_init();
 	tcp_register_ulp(&tcp_tls_ulp_ops);
 
@@ -1006,6 +1074,9 @@ static void __exit tls_unregister(void)
 {
 	tcp_unregister_ulp(&tcp_tls_ulp_ops);
 	tls_device_cleanup();
+	unregister_key_type(&key_type_tls);
+	key_revoke(tls_keyring);
+	key_put(tls_keyring);
 	unregister_pernet_subsys(&tls_proc_ops);
 }
 
