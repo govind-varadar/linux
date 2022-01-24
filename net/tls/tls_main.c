@@ -40,6 +40,9 @@
 #include <linux/sched/signal.h>
 #include <linux/inetdevice.h>
 #include <linux/inet_diag.h>
+#include <linux/key.h>
+#include <linux/key-type.h>
+#include <keys/user-type.h>
 
 #include <net/snmp.h>
 #include <net/tls.h>
@@ -975,6 +978,173 @@ static void __net_exit tls_exit_net(struct net *net)
 	free_percpu(net->mib.tls_statistics);
 }
 
+static struct key *tls_keyring;
+
+static int tls_psk_preparse(struct key_preparsed_payload *prep)
+{
+	struct user_key_payload *upayload;
+	int datalen = prep->datalen;
+	const char *data = prep->data;
+
+	if (datalen <= 0 || !data)
+		return -EINVAL;
+
+	prep->quotalen = datalen;
+	upayload = kmalloc(sizeof(*upayload) + datalen + 1, GFP_KERNEL);
+	if (!upayload)
+		return -ENOMEM;
+	upayload->datalen = datalen;
+	memcpy(upayload->data, data, datalen);
+	upayload->data[datalen] = '\0';
+	prep->payload.data[0] = upayload;
+	return 0;
+}
+
+static void tls_psk_free_preparse(struct key_preparsed_payload *prep)
+{
+	kfree(prep->payload.data[0]);
+}
+
+static void tls_psk_describe(const struct key *key, struct seq_file *m)
+{
+	seq_puts(m, key->description);
+	seq_printf(m, ": %u", key->datalen);
+}
+
+static bool tls_psk_identity_match(const struct key *key,
+				   const struct key_match_data *match_data)
+{
+	const char *src = key->description;
+	const char *dst = NULL, *port = NULL, *id = NULL;
+	const char *match_src, *match_dst, *match_port, *match_id;
+	size_t src_len, dst_len, port_len, id_len;
+
+	dst = strchr(src, ';');
+	id_len = strlen(src);
+	if (dst) {
+		src_len = dst - src;
+		if (!src_len)
+			src = NULL;
+		id_len -= src_len + 1;
+		dst++;
+		port = strchr(dst, ';');
+		if (port) {
+			dst_len = port - dst;
+			if (!dst_len)
+				dst = NULL;
+			id_len -= dst_len + 1;
+			port++;
+			id = strchr(port, ';');
+			if (id) {
+				port_len = id - port;
+				if (!port_len)
+					port = NULL;
+				id_len -= port_len + 1;
+				id++;
+			}
+		}
+	}
+	pr_debug("%s: src %s dst %s port %s\n", __func__, src, dst, port);
+	/* simple string-based IP address matching */
+	/* hare: convert to sockaddr matching */
+	match_src = match_data->raw_data;
+	match_dst = strchr(match_src, ';');
+	/* Parsing error */
+	if (!match_dst) {
+		pr_debug("%s: match dst missing\n", __func__);
+		return false;
+	}
+	match_dst++;
+	pr_debug("%s: match src %s\n", __func__, match_src);
+	if (src && (match_dst - match_src) > 0 &&
+	    memcmp(src, match_src, src_len)) {
+		pr_debug("%s: non-matching src %s len %lu\n",
+			 __func__, src, src_len);
+			return false;
+	}
+
+	match_port = strchr(match_dst, ';');
+	if (!match_port) {
+		pr_debug("%s: match port missing\n", __func__);
+		return false;
+	}
+	match_port++;
+	pr_debug("%s: match dst %s\n", __func__, match_dst);
+	if (dst && (match_port - match_dst) > 0 &&
+	    memcmp(dst, match_dst, dst_len)) {
+		pr_debug("%s: non-matching dst %s len %lu\n",
+			 __func__, dst, dst_len);
+		return false;
+	}
+
+	match_id = strchr(match_port, ';');
+	if (!match_id) {
+		pr_debug("%s: match identity missing\n", __func__);
+		return false;
+	}
+	match_id++;
+	pr_debug("%s: match port %s\n", __func__, match_port);
+	if (port && (match_id - match_port) > 0 &&
+	    memcmp(port, match_port, port_len)) {
+		pr_debug("%s: non-matching port %s len %lu\n",
+			 __func__, port, port_len);
+		return false;
+	}
+
+	/* No match ID specified: match agains all IDs */
+	if (!match_id || !strlen(match_id)) {
+		pr_debug("%s: match w/ no identity\n", __func__);
+		return true;
+	}
+	/* Match ID specified, but no key ID: no match */
+	if (!id) {
+		pr_debug("%s: no identity to match\n", __func__);
+		return false;
+	}
+	pr_debug("%s: match '%s' '%s' len %lu\n",
+		 __func__, match_id, id, id_len);
+	return !memcmp(id, match_id, id_len);
+}
+
+static int tls_psk_identity_match_preparse(struct key_match_data *match_data)
+{
+	match_data->lookup_type = KEYRING_SEARCH_LOOKUP_ITERATE;
+	match_data->cmp = tls_psk_identity_match;
+	return 0;
+}
+
+static struct key_type key_type_tls_psk = {
+	.name           = "psk",
+	.flags          = KEY_TYPE_NET_DOMAIN,
+	.preparse       = tls_psk_preparse,
+	.free_preparse  = tls_psk_free_preparse,
+	.match_preparse = tls_psk_identity_match_preparse,
+	.instantiate    = generic_key_instantiate,
+	.revoke         = user_revoke,
+	.destroy        = user_destroy,
+	.describe       = tls_psk_describe,
+	.read           = user_read,
+};
+
+key_ref_t tls_psk_refresh(char *identity, u8 *data, size_t data_len)
+{
+	key_perm_t keyperm =
+		KEY_POS_SEARCH | KEY_POS_VIEW | KEY_POS_READ |
+		KEY_USR_SEARCH | KEY_USR_VIEW | KEY_USR_READ;
+
+	return key_create_or_update(make_key_ref(tls_keyring, true),
+				    "psk", identity, data, data_len,
+				    keyperm, KEY_ALLOC_NOT_IN_QUOTA);
+}
+EXPORT_SYMBOL_GPL(tls_psk_refresh);
+
+key_ref_t tls_psk_lookup(char *identity)
+{
+	return keyring_search(make_key_ref(tls_keyring, true),
+			      &key_type_tls_psk, identity, false);
+}
+EXPORT_SYMBOL_GPL(tls_psk_lookup);
+
 static struct pernet_operations tls_proc_ops = {
 	.init = tls_init_net,
 	.exit = tls_exit_net,
@@ -1003,6 +1173,25 @@ static int __init tls_register(void)
 	if (err)
 		return err;
 
+	tls_keyring = keyring_alloc(".tls",
+				    GLOBAL_ROOT_UID, GLOBAL_ROOT_GID,
+				    current_cred(),
+				    (KEY_POS_ALL & ~KEY_POS_SETATTR) |
+				    (KEY_USR_ALL & ~KEY_USR_SETATTR),
+				    KEY_ALLOC_NOT_IN_QUOTA, NULL, NULL);
+	if (IS_ERR(tls_keyring)) {
+		unregister_pernet_subsys(&tls_proc_ops);
+		return PTR_ERR(tls_keyring);
+	}
+
+	err = register_key_type(&key_type_tls_psk);
+	if (err) {
+		key_revoke(tls_keyring);
+		key_put(tls_keyring);
+		unregister_pernet_subsys(&tls_proc_ops);
+		return err;
+	}
+
 	tls_device_init();
 	tcp_register_ulp(&tcp_tls_ulp_ops);
 
@@ -1016,6 +1205,9 @@ static void __exit tls_unregister(void)
 	sock_unregister(PF_TLSH);
 	tcp_unregister_ulp(&tcp_tls_ulp_ops);
 	tls_device_cleanup();
+	unregister_key_type(&key_type_tls_psk);
+	key_revoke(tls_keyring);
+	key_put(tls_keyring);
 	unregister_pernet_subsys(&tls_proc_ops);
 }
 
