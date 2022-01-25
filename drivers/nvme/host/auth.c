@@ -233,8 +233,7 @@ struct nvme_dhchap_key *nvme_auth_extract_key(unsigned char *secret,
 
 	if (key_len != 36 && key_len != 52 &&
 	    key_len != 68) {
-		pr_err("Invalid DH-HMAC-CHAP key len %d\n",
-		       key_len);
+		pr_err("Invalid key len %d\n", key_len);
 		ret = -EINVAL;
 		goto out_free_secret;
 	}
@@ -256,7 +255,7 @@ struct nvme_dhchap_key *nvme_auth_extract_key(unsigned char *secret,
 	crc = ~crc32(~0, key->key, key_len);
 
 	if (get_unaligned_le32(key->key + key_len) != crc) {
-		pr_err("DH-HMAC-CHAP key crc mismatch (key %08x, crc %08x)\n",
+		pr_err("key crc mismatch (key %08x, crc %08x)\n",
 		       get_unaligned_le32(key->key + key_len), crc);
 		ret = -EKEYREJECTED;
 		goto out_free_secret;
@@ -1111,6 +1110,8 @@ int nvme_auth_generate_key(u8 *secret, struct nvme_dhchap_key **ret_key)
 	/* Pass in the secret without the 'DHHC-1:XX:' prefix */
 	key = nvme_auth_extract_key(secret + 10, key_hash);
 	if (IS_ERR(key)) {
+		pr_debug("Failed to extract DH-HMAC-CHAP key '%s'\n",
+			 secret);
 		return PTR_ERR(key);
 	}
 
