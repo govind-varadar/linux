@@ -192,6 +192,157 @@ TRACE_EVENT(tls_device_tx_resync_send,
 	)
 );
 
+DECLARE_EVENT_CLASS(tlsh_listener_class,
+	TP_PROTO(
+		const struct socket *sock
+	),
+	TP_ARGS(sock),
+	TP_STRUCT__entry(
+		__field(const struct socket *, sock)
+		__field(const struct sock *, sk)
+		__field(int, refcount)
+		__field(int, family)
+	),
+	TP_fast_assign(
+		const struct sock *sk = sock->sk;
+
+		__entry->sock = sock;
+		__entry->sk = sk;
+		__entry->refcount = refcount_read(&sk->sk_refcnt);
+		__entry->family = sk->sk_tls_bind_family;
+	),
+
+	TP_printk("listener=%p sk=%p(%d) family=%d",
+		__entry->sock, __entry->sk,
+		__entry->refcount, __entry->family
+	)
+);
+
+#define DEFINE_TLSH_LISTENER_EVENT(name)			\
+	DEFINE_EVENT(tlsh_listener_class, tlsh_##name,		\
+		TP_PROTO(					\
+			const struct socket *sock		\
+		),						\
+		TP_ARGS(sock))
+
+DEFINE_TLSH_LISTENER_EVENT(bind);
+DEFINE_TLSH_LISTENER_EVENT(accept);
+DEFINE_TLSH_LISTENER_EVENT(listen);
+DEFINE_TLSH_LISTENER_EVENT(pf_create);
+
+TRACE_EVENT(tlsh_newsock,
+	TP_PROTO(
+		const struct socket *newsock,
+		const struct sock *newsk
+	),
+	TP_ARGS(newsock, newsk),
+	TP_STRUCT__entry(
+		__field(const struct socket *, newsock)
+		__field(const struct sock *, newsk)
+		__field(int, refcount)
+		__field(int, family)
+	),
+	TP_fast_assign(
+		__entry->newsock = newsock;
+		__entry->newsk = newsk;
+		__entry->refcount = refcount_read(&newsk->sk_refcnt);
+		__entry->family = newsk->sk_family;
+	),
+
+	TP_printk("newsock=%p newsk=%p(%d) family=%d",
+		__entry->newsock, __entry->newsk,
+		__entry->refcount, __entry->family
+	)
+);
+
+DECLARE_EVENT_CLASS(tlsh_proto_op_class,
+	TP_PROTO(
+		const struct socket *sock
+	),
+	TP_ARGS(sock),
+	TP_STRUCT__entry(
+		__field(const struct socket *, sock)
+		__field(const struct sock *, sk)
+		__field(int, refcount)
+		__field(int, family)
+	),
+	TP_fast_assign(
+		const struct sock *sk = sock->sk;
+
+		__entry->sock = sock;
+		__entry->sk = sk;
+		__entry->refcount = refcount_read(&sk->sk_refcnt);
+		__entry->family = sk->sk_family;
+	),
+
+	TP_printk("sock=%p sk=%p(%d) family=%d",
+		__entry->sock, __entry->sk, __entry->refcount,
+		__entry->family
+	)
+);
+
+#define DEFINE_TLSH_PROTO_OP_EVENT(name)			\
+	DEFINE_EVENT(tlsh_proto_op_class, tlsh_##name,		\
+		TP_PROTO(					\
+			const struct socket *sock		\
+		),						\
+		TP_ARGS(sock))
+
+DEFINE_TLSH_PROTO_OP_EVENT(release);
+DEFINE_TLSH_PROTO_OP_EVENT(getname);
+DEFINE_TLSH_PROTO_OP_EVENT(setsockopt);
+DEFINE_TLSH_PROTO_OP_EVENT(getsockopt);
+DEFINE_TLSH_PROTO_OP_EVENT(sendmsg);
+DEFINE_TLSH_PROTO_OP_EVENT(recvmsg);
+
+TRACE_EVENT(tlsh_poll,
+	TP_PROTO(
+		const struct socket *sock,
+		__poll_t revents
+	),
+	TP_ARGS(sock, revents),
+	TP_STRUCT__entry(
+		__field(const struct socket *, sock)
+		__field(const struct sock *, sk)
+		__field(int, refcount)
+		__field(unsigned long, revents)
+	),
+	TP_fast_assign(
+		const struct sock *sk = sock->sk;
+
+		__entry->sock = sock;
+		__entry->sk = sk;
+		__entry->refcount = refcount_read(&sk->sk_refcnt);
+		__entry->revents = revents;
+	),
+
+	TP_printk("sock=%p sk=%p(%d) revents=0x%08lx",
+		__entry->sock, __entry->sk, __entry->refcount,
+		__entry->revents
+	)
+);
+
+TRACE_EVENT(tlsh_handshake_done,
+	TP_PROTO(
+		const struct sock *sk
+	),
+	TP_ARGS(sk),
+	TP_STRUCT__entry(
+		__field(const struct sock *, sk)
+		__field(int, refcount)
+		__field(int, family)
+	),
+	TP_fast_assign(
+		__entry->sk = sk;
+		__entry->refcount = refcount_read(&sk->sk_refcnt);
+		__entry->family = sk->sk_family;
+	),
+
+	TP_printk("sk=%p(%d) family=%d",
+		__entry->sk, __entry->refcount, __entry->family
+	)
+);
+
 #endif /* _TLS_TRACE_H_ */
 
 #undef TRACE_INCLUDE_PATH

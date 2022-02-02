@@ -195,6 +195,8 @@ void tlsh_handshake_done(struct sock *sk, int status)
 	void *data;
 	bool put;
 
+	trace_tlsh_handshake_done(sk);
+
 	put = false;
 	write_lock_bh(&sk->sk_callback_lock);
 
@@ -237,6 +239,8 @@ static int tlsh_release(struct socket *sock)
 
 	if (!sk)
 		return 0;
+
+	trace_tlsh_release(sock);
 
 	switch (sk->sk_family) {
 	case AF_INET:
@@ -310,6 +314,7 @@ static int tlsh_bind(struct socket *sock, struct sockaddr *uaddr, int addrlen)
 		return -EAFNOSUPPORT;
 	}
 
+	trace_tlsh_bind(sock);
 	return 0;
 }
 
@@ -331,6 +336,8 @@ static int tlsh_accept(struct socket *listener, struct socket *newsock, int flag
 	DECLARE_WAITQUEUE(wait, current);
 	long timeo;
 	int rc;
+
+	trace_tlsh_accept(listener);
 
 	rc = -EPERM;
 	if (!capable(CAP_NET_BIND_SERVICE))
@@ -375,6 +382,7 @@ static int tlsh_accept(struct socket *listener, struct socket *newsock, int flag
 	}
 
 	sock_graft(newsk, newsock);
+	trace_tlsh_newsock(newsock, newsk);
 
 	/* prevent user agent close from releasing the kernel socket */
 	sock_hold(newsk);
@@ -398,6 +406,8 @@ out:
 static int tlsh_getname(struct socket *sock, struct sockaddr *uaddr, int peer)
 {
 	struct sock *sk = sock->sk;
+
+	trace_tlsh_getname(sock);
 
 	switch (sk->sk_family) {
 	case AF_INET:
@@ -445,6 +455,7 @@ static __poll_t tlsh_poll(struct file *file, struct socket *sock,
 	if (sk_is_readable(sk))
 		revents |= EPOLLIN | EPOLLRDNORM;
 
+	trace_tlsh_poll(sock, revents);
 	return revents;
 }
 
@@ -480,6 +491,7 @@ static int tlsh_listen(struct socket *sock, int backlog)
 	sk->sk_state = TCP_LISTEN;
 	tlsh_register_listener(sk);
 
+	trace_tlsh_listen(sock);
 	rc = 0;
 
 out:
@@ -502,6 +514,8 @@ static int tlsh_setsockopt(struct socket *sock, int level, int optname,
 			   sockptr_t optval, unsigned int optlen)
 {
 	struct sock *sk = sock->sk;
+
+	trace_tlsh_setsockopt(sock);
 
 	switch (sk->sk_family) {
 	case AF_INET:
@@ -531,6 +545,8 @@ static int tlsh_getsockopt(struct socket *sock, int level, int optname,
 {
 	struct sock *sk = sock->sk;
 
+	trace_tlsh_getsockopt(sock);
+
 	switch (sk->sk_family) {
 	case AF_INET:
 #if IS_ENABLED(CONFIG_IPV6)
@@ -556,6 +572,8 @@ static int tlsh_getsockopt(struct socket *sock, int level, int optname,
 static int tlsh_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
 {
 	struct sock *sk = sock->sk;
+
+	trace_tlsh_sendmsg(sock);
 
 	switch (sk->sk_family) {
 	case AF_INET:
@@ -584,6 +602,8 @@ static int tlsh_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 			int flags)
 {
 	struct sock *sk = sock->sk;
+
+	trace_tlsh_recvmsg(sock);
 
 	switch (sk->sk_family) {
 	case AF_INET:
@@ -658,6 +678,8 @@ int tlsh_pf_create(struct net *net, struct socket *sock, int protocol, int kern)
 			goto err_sk_put;
 	}
 	sk->sk_tls_bind_family = AF_UNSPEC;
+
+	trace_tlsh_pf_create(sock);
 	return 0;
 
 err_sk_put:
