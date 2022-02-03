@@ -244,10 +244,24 @@ static int tlsh_release(struct socket *sock)
 
 	switch (sk->sk_family) {
 	case AF_INET:
-		return inet_release(sock);
+		if (atomic_read(&sk->sk_tls_init_count) != 2) {
+			tlsh_handshake_done(sk, -EACCES);
+			kernel_sock_shutdown(sock, SHUT_RDWR);
+			return inet_release(sock);
+		}
+
+		tlsh_handshake_done(sk, 0);
+		return 0;
 #if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
-		return inet6_release(sock);
+		if (atomic_read(&sk->sk_tls_init_count) != 2) {
+			tlsh_handshake_done(sk, -EACCES);
+			kernel_sock_shutdown(sock, SHUT_RDWR);
+			return inet6_release(sock);
+		}
+
+		tlsh_handshake_done(sk, 0);
+		return 0;
 #endif
 	case AF_TLSH:
 		break;
@@ -718,6 +732,7 @@ int tls_client_hello_user(struct socket *sock,
 	if (rc)
 		goto out_err;
 
+	atomic_set(&sk->sk_tls_init_count, 0);
 	return 0;
 
 out_err:

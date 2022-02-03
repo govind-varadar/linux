@@ -350,7 +350,8 @@ struct bpf_local_storage;
   *	@sk_txtime_deadline_mode: set deadline mode for SO_TXTIME
   *	@sk_txtime_report_errors: set report errors mode for SO_TXTIME
   *	@sk_txtime_unused: unused txtime flags
-  *     @sk_tls_bind_family: Address family to match handshake requests
+  *	@sk_tls_bind_family: Address family to match handshake requests
+  *	@sk_tls_init_count: How many SOL_TLS setsockopt calls there have been
   *	@sk_tls_handshake_done: TLS handshake completion callback
   *	@sk_tls_data: TLS handshake completion data
   *	@sk_saved_wq: saved sock wait queue and async head
@@ -544,6 +545,7 @@ struct sock {
 	struct rcu_head		sk_rcu;
 
 	int			sk_tls_bind_family;
+	atomic_t		sk_tls_init_count;
 	void			(*sk_tls_handshake_done)(void *data, int status);
 	void			*sk_tls_data;
 	struct socket_wq	*sk_saved_wq;

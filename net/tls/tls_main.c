@@ -676,6 +676,7 @@ static int do_tls_setsockopt_conf(struct sock *sk, sockptr_t optval,
 		ctx->sk_write_space = sk->sk_write_space;
 		sk->sk_write_space = tls_write_space;
 	}
+	atomic_inc(&sk->sk_tls_init_count);
 	goto out;
 
 err_crypto_info:
