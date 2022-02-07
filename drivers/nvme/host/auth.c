@@ -1285,6 +1285,7 @@ static void __nvme_auth_reset(struct nvme_dhchap_queue_context *chap)
 
 static void __nvme_auth_free(struct nvme_dhchap_queue_context *chap)
 {
+	__nvme_auth_reset(chap);
 	if (chap->shash_tfm)
 		crypto_free_shash(chap->shash_tfm);
 	if (chap->dh_tfm)
@@ -1495,7 +1496,6 @@ int nvme_auth_wait(struct nvme_ctrl *ctrl, int qid)
 		mutex_unlock(&ctrl->dhchap_auth_mutex);
 		flush_work(&chap->auth_work);
 		ret = chap->error;
-		__nvme_auth_reset(chap);
 		return ret;
 	}
 	mutex_unlock(&ctrl->dhchap_auth_mutex);
