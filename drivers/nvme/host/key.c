@@ -7,7 +7,6 @@
 #include <crypto/hash.h>
 #include <crypto/hkdf.h>
 #include <keys/user-type.h>
-#include <keys/tls-type.h>
 #include <asm/unaligned.h>
 
 #include "key.h"
@@ -160,10 +159,6 @@ int nvme_keyring_init(void)
 	result = register_key_type(&key_type_nvme_dhchap);
 	if (result)
 		goto out_revoke;
-
-	result = register_key_type(&key_type_nvme_psk);
-	if (result)
-		unregister_key_type(&key_type_nvme_dhchap);
 
 out_revoke:
 	if (result) {
