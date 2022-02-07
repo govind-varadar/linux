@@ -275,6 +275,125 @@ struct key *nvme_keyring_lookup_psk(char *hostnqn, int hash)
 }
 EXPORT_SYMBOL_GPL(nvme_keyring_lookup_psk);
 
+struct key *nvme_keyring_insert_tls(struct key *nvme_key,
+				    char *hostnqn, char *subnqn, int hmac,
+				    bool generated)
+{
+	struct crypto_shash *hmac_tfm;
+	const char *hmac_name = "hmac(sha256)";
+	const char *psk_prefix = "tls13 nvme-tls-psk";
+	char *identity;
+	size_t identity_len = (NVMF_NQN_SIZE) * 2 + 11;
+	key_ref_t keyref;
+	struct user_key_payload *key_payload;
+	size_t infolen, key_len = 32;
+	char *info;
+	unsigned char *prk, *tls_key;
+	int ret;
+
+	identity = kzalloc(identity_len, GFP_KERNEL);
+	if (!identity)
+		return ERR_PTR(-ENOMEM);
+
+	snprintf(identity, identity_len, "NVMe0%c%02d %s %s",
+		generated ? 'G' : 'R', hmac, hostnqn, subnqn);
+
+	key_payload = nvme_key->payload.data[0];
+	key_len = key_payload->datalen;
+
+	if (hmac == 2) {
+		hmac_name = "hmac(sha384)";
+		key_len = 48;
+	}
+
+	hmac_tfm = crypto_alloc_shash(hmac_name, 0, 0);
+	if (IS_ERR(hmac_tfm)) {
+		ret = PTR_ERR(hmac_tfm);
+		goto out_free_identity;
+	}
+
+	prk = kzalloc(crypto_shash_digestsize(hmac_tfm), GFP_KERNEL);
+	if (!prk) {
+		ret = -ENOMEM;
+		goto out_free_shash;
+	}
+
+	ret = hkdf_extract(hmac_tfm, key_payload->data,
+			   key_payload->datalen, prk);
+	if (ret)
+		goto out_free_prk;
+
+	ret = crypto_shash_setkey(hmac_tfm, prk, key_payload->datalen);
+	if (ret)
+		goto out_free_prk;
+
+	infolen = strlen(identity) + strlen(psk_prefix) + 1;
+	info = kzalloc(infolen, GFP_KERNEL);
+	if (!info)
+		goto out_free_prk;
+
+	memcpy(info, psk_prefix, strlen(psk_prefix));
+	memcpy(info + strlen(psk_prefix), identity, strlen(identity));
+
+	tls_key = kzalloc(key_len, GFP_KERNEL);
+	if (!tls_key) {
+		ret = -ENOMEM;
+		goto out_free_info;
+	}
+	ret = hkdf_expand(hmac_tfm, info, infolen, tls_key, key_len);
+	if (ret)
+		goto out_free_key;
+	pr_debug("refresh tls key '%s'\n", identity);
+	keyref = tls_key_refresh(identity, tls_key, key_len);
+	if (IS_ERR(keyref)) {
+		pr_warn("refresh tls key '%s' failed, error %ld\n",
+			identity, PTR_ERR(keyref));
+		return ERR_PTR(-ENOKEY);
+	}
+	return key_ref_to_ptr(keyref);
+
+out_free_key:
+	kfree(tls_key);
+out_free_info:
+	kfree(info);
+out_free_prk:
+	kfree(prk);
+out_free_shash:
+	crypto_free_shash(hmac_tfm);
+out_free_identity:
+	kfree(identity);
+
+	return ERR_PTR(ret);
+}
+EXPORT_SYMBOL_GPL(nvme_keyring_insert_tls);
+
+struct key *nvme_keyring_lookup_tls(char *hostnqn, char *subnqn,
+				    int hash, bool generated)
+{
+	char *identity;
+	size_t identity_len = (NVMF_NQN_SIZE) * 2 + 11;
+	key_ref_t keyref;
+
+	identity = kzalloc(identity_len, GFP_KERNEL);
+	if (!identity)
+		return ERR_PTR(-ENOMEM);
+
+	snprintf(identity, identity_len, "NVMe0%c%02d %s %s",
+		generated ? 'G' : 'R', hash, hostnqn, subnqn);
+
+	pr_debug("lookup tls key '%s'\n", identity);
+	keyref = tls_key_lookup(identity);
+	kfree(identity);
+	if (IS_ERR(keyref)) {
+		pr_debug("lookup tls key '%s' failed, error %ld\n",
+			 identity, PTR_ERR(keyref));
+		return ERR_PTR(-ENOKEY);
+	}
+
+	return key_ref_to_ptr(keyref);
+}
+EXPORT_SYMBOL_GPL(nvme_keyring_lookup_tls);
+
 int nvme_keyring_init(void)
 {
 	int result;
