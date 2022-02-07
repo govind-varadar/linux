@@ -9,9 +9,11 @@
 #include <asm/unaligned.h>
 #include <crypto/hash.h>
 #include <crypto/dh.h>
+#include <crypto/hkdf.h>
 #include "nvme.h"
 #include "fabrics.h"
 #include "auth.h"
+#include "key.h"
 
 static u32 nvme_dhchap_seqnum;
 static DEFINE_MUTEX(nvme_dhchap_mutex);
@@ -519,6 +521,83 @@ int nvme_auth_gen_shared_secret(struct crypto_kpp *dh_tfm,
 	return ret;
 }
 EXPORT_SYMBOL_GPL(nvme_auth_gen_shared_secret);
+
+u8 *nvme_auth_generate_psk(u8 hmac_id, u8 *skey, size_t skey_len,
+			   u8 *c1, u8 *c2, size_t hash_len, size_t *ret_len)
+{
+	struct crypto_shash *tfm;
+	struct shash_desc *shash;
+	u8 *psk;
+	const char *hmac_name;
+	int ret, psk_len;
+
+	hmac_name = nvme_auth_hmac_name(hmac_id);
+	if (!hmac_name) {
+		pr_warn("%s: invalid hash algoritm %d\n",
+			__func__, hmac_id);
+		return NULL;
+	}
+
+	tfm = crypto_alloc_shash(hmac_name, 0, 0);
+	if (IS_ERR(tfm))
+		return NULL;
+
+	psk_len = crypto_shash_digestsize(tfm);
+	psk = kzalloc(psk_len, GFP_KERNEL);
+	if (!psk) {
+		ret = -ENOMEM;
+		goto out_free_tfm;
+	}
+
+	shash = kmalloc(sizeof(struct shash_desc) +
+			crypto_shash_descsize(tfm),
+			GFP_KERNEL);
+	if (!shash) {
+		ret = -ENOMEM;
+		goto out_free_psk;
+	}
+
+	shash->tfm = tfm;
+	ret = crypto_shash_setkey(tfm, skey, skey_len);
+	if (ret)
+		goto out_free_shash;
+
+	ret = crypto_shash_init(shash);
+	if (ret)
+		goto out_free_shash;
+
+	ret = crypto_shash_update(shash, c1, hash_len);
+	if (ret)
+		goto out_free_shash;
+
+	if (!c2) {
+		c2 = kzalloc(hash_len, GFP_KERNEL);
+		if (!c2)
+			goto out_free_shash;
+		ret = crypto_shash_update(shash, c2, hash_len);
+		kfree(c2);
+	} else
+		ret = crypto_shash_update(shash, c2, hash_len);
+	if (ret)
+		goto out_free_shash;
+
+	ret = crypto_shash_final(shash, psk);
+	if (!ret)
+		*ret_len = psk_len;
+
+out_free_shash:
+	kfree_sensitive(shash);
+out_free_psk:
+	if (ret) {
+		kfree_sensitive(psk);
+		psk = NULL;
+	}
+out_free_tfm:
+	crypto_free_shash(tfm);
+
+	return ret ? NULL : psk;
+}
+EXPORT_SYMBOL_GPL(nvme_auth_generate_psk);
 
 #define nvme_auth_flags_from_qid(qid) \
 	(qid == 0) ? 0 : BLK_MQ_REQ_NOWAIT | BLK_MQ_REQ_RESERVED
