@@ -360,6 +360,9 @@ int tlsh_pf_create(struct net *net, struct socket *sock, int protocol,
 		   int kern);
 void tlsh_handshake_done(struct sock *sk, int status);
 
+key_ref_t tls_key_refresh(char *identity, u8 *data, size_t data_len);
+key_ref_t tls_key_lookup(char *identity);
+
 int wait_on_pending_writer(struct sock *sk, long *timeo);
 int tls_sk_query(struct sock *sk, int optname, char __user *optval,
 		int __user *optlen);

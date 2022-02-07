@@ -1024,6 +1024,24 @@ static struct key_type key_type_tls = {
 	.read           = user_read,
 };
 
+key_ref_t tls_key_refresh(char *identity, u8 *data, size_t data_len)
+{
+	key_perm_t keyperm =
+		KEY_POS_SEARCH | KEY_POS_VIEW | KEY_POS_READ |
+		KEY_USR_SEARCH | KEY_USR_VIEW | KEY_USR_READ;
+
+	return key_create_or_update(make_key_ref(tls_keyring, true),
+				    "tls", identity, data, data_len,
+				    keyperm, KEY_ALLOC_NOT_IN_QUOTA);
+}
+EXPORT_SYMBOL_GPL(tls_key_refresh);
+
+key_ref_t tls_key_lookup(char *identity)
+{
+	return keyring_search(make_key_ref(tls_keyring, true),
+			      &key_type_tls, identity, false);
+}
+EXPORT_SYMBOL_GPL(tls_key_lookup);
 
 static struct pernet_operations tls_proc_ops = {
 	.init = tls_init_net,
