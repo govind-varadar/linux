@@ -54,7 +54,6 @@ int hkdf_expand(struct crypto_shash *hmac_tfm,
 		u8 *okm, unsigned int okmlen)
 {
 	SHASH_DESC_ON_STACK(desc, hmac_tfm);
-	u8 prefix[9];
 	unsigned int i, hashlen = crypto_shash_digestsize(hmac_tfm);
 	int err;
 	const u8 *prev = NULL;
