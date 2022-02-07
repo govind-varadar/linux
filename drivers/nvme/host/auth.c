@@ -45,6 +45,7 @@ struct nvme_dhchap_queue_context {
 	int host_key_len;
 	u8 *sess_key;
 	int sess_key_len;
+	struct key *key;
 };
 
 u32 nvme_auth_get_seqnum(void)
@@ -1263,6 +1264,11 @@ gen_sesskey:
 
 static void __nvme_auth_reset(struct nvme_dhchap_queue_context *chap)
 {
+	if (chap->key) {
+		key_invalidate(chap->key);
+		key_put(chap->key);
+		chap->key = NULL;
+	}
 	kfree_sensitive(chap->host_response);
 	chap->host_response = NULL;
 	kfree_sensitive(chap->host_key);
@@ -1420,6 +1426,33 @@ static void __nvme_auth_work(struct work_struct *work)
 	tl = nvme_auth_set_dhchap_success2_data(ctrl, chap);
 	ret = nvme_auth_send(ctrl, chap->qid, chap->buf, tl);
 	if (!ret) {
+		u8 *psk;
+		size_t psk_len;
+
+		psk = nvme_auth_generate_psk(chap->hash_id,
+					     chap->sess_key,
+					     chap->sess_key_len,
+					     chap->c1, chap->c2,
+					     chap->hash_len, &psk_len);
+		if (!psk) {
+			dev_warn(ctrl->device,
+				 "%s: qid %d failed to generate PSK\n",
+				 __func__, chap->qid);
+			chap->error = 0;
+			return;
+		}
+		chap->key = nvme_keyring_insert_generated_key(ctrl->opts->host->nqn,
+							      ctrl->opts->subsysnqn,
+							      chap->hash_id,
+							      psk, psk_len);
+		if (IS_ERR(chap->key)) {
+			dev_warn(ctrl->device,
+				 "%s: qid %d failed to insert generated key,"
+				 "error %ld\n",
+				 __func__, chap->qid, PTR_ERR(chap->key));
+			chap->key = NULL;
+		}
+		kfree_sensitive(psk);
 		chap->error = 0;
 		return;
 	}
