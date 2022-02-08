@@ -1451,7 +1451,9 @@ static int nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
 				num_keys++;
 			}
 		}
-	}
+	} else
+		num_keys++;
+
 	/* Generated key with hmac384 */
 	dhchap_key = nvme_keyring_lookup_dhchap(hostnqn, subnqn, 2);
 	if (!IS_ERR(dhchap_key)) {
@@ -1474,7 +1476,8 @@ static int nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
 				num_keys++;
 			}
 		}
-	}
+	} else
+		num_keys++;
 
 	if (!num_keys)
 		return 0;
@@ -1496,22 +1499,17 @@ static int nvme_tcp_start_tls(struct nvme_ctrl *nctrl, int qid)
 {
 	struct nvme_tcp_ctrl *ctrl = to_tcp_ctrl(nctrl);
 	struct nvme_tcp_queue *queue = &ctrl->queues[qid];
-	struct file *file;
 	int rc;
 
-	file = sock_alloc_file(queue->sock, O_CLOEXEC, NULL);
-	if (IS_ERR(file)) {
-		pr_err("failed to allocate file, error %ld\n",
-		       PTR_ERR(file));
-		return PTR_ERR(file);
-	}
 	init_completion(&queue->tls_complete);
 	queue->tls_err = -ETIMEDOUT;
 
 	rc = tls_client_hello_user(queue->sock,
 			nvme_tcp_tls_handshake_done, queue);
-	if (rc)
+	if (rc) {
+		pr_err("failed to start client hello, error %d\n", rc);
 		return rc;
+	}
 
 	rc = wait_for_completion_timeout(&queue->tls_complete,
 					 nctrl->kato);
