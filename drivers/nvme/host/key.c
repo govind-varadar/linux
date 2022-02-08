@@ -6,9 +6,12 @@
 #include <linux/nvme.h>
 #include <crypto/hash.h>
 #include <crypto/hkdf.h>
+#include <net/tls.h>
 #include <keys/user-type.h>
 #include <asm/unaligned.h>
 
+#include "nvme.h"
+#include "fabrics.h"
 #include "key.h"
 
 static struct key *nvme_keyring;
@@ -275,10 +278,11 @@ struct key *nvme_keyring_lookup_psk(char *hostnqn, int hash)
 }
 EXPORT_SYMBOL_GPL(nvme_keyring_lookup_psk);
 
-struct key *nvme_keyring_insert_tls(struct key *nvme_key,
-				    char *hostnqn, char *subnqn, int hmac,
-				    bool generated)
+struct key *nvme_keyring_insert_tls(struct key *nvme_key, struct nvme_ctrl *ctrl,
+				    int hmac, bool generated)
 {
+	char *hostnqn = ctrl->opts->host->nqn;
+	char *subnqn = nvmf_ctrl_subsysnqn(ctrl);
 	struct crypto_shash *hmac_tfm;
 	const char *hmac_name = "hmac(sha256)";
 	const char *psk_prefix = "tls13 nvme-tls-psk";
@@ -291,12 +295,17 @@ struct key *nvme_keyring_insert_tls(struct key *nvme_key,
 	unsigned char *prk, *tls_key;
 	int ret;
 
+	if (!ctrl->opts)
+		return ERR_PTR(-ENXIO);
+
 	identity = kzalloc(identity_len, GFP_KERNEL);
 	if (!identity)
 		return ERR_PTR(-ENOMEM);
 
-	snprintf(identity, identity_len, "NVMe0%c%02d %s %s",
-		generated ? 'G' : 'R', hmac, hostnqn, subnqn);
+	snprintf(identity, identity_len, "%s;%s;%s;NVMe0%c%02d %s %s",
+		 ctrl->opts->host_traddr ? ctrl->opts->host_traddr : "",
+		 ctrl->opts->traddr, ctrl->opts->trsvcid,
+		 generated ? 'G' : 'R', hmac, hostnqn, subnqn);
 
 	key_payload = nvme_key->payload.data[0];
 	key_len = key_payload->datalen;
@@ -367,9 +376,10 @@ out_free_identity:
 }
 EXPORT_SYMBOL_GPL(nvme_keyring_insert_tls);
 
-struct key *nvme_keyring_lookup_tls(char *hostnqn, char *subnqn,
-				    int hash, bool generated)
+struct key *nvme_keyring_lookup_tls(struct nvme_ctrl *ctrl, int hash, bool generated)
 {
+	char *hostnqn = ctrl->opts->host->nqn;
+	char *subnqn = nvmf_ctrl_subsysnqn(ctrl);
 	char *identity;
 	size_t identity_len = (NVMF_NQN_SIZE) * 2 + 11;
 	key_ref_t keyref;
@@ -378,8 +388,10 @@ struct key *nvme_keyring_lookup_tls(char *hostnqn, char *subnqn,
 	if (!identity)
 		return ERR_PTR(-ENOMEM);
 
-	snprintf(identity, identity_len, "NVMe0%c%02d %s %s",
-		generated ? 'G' : 'R', hash, hostnqn, subnqn);
+	snprintf(identity, identity_len, "%s;%s;%s;NVMe0%c%02d %s %s",
+		 ctrl->opts->host_traddr ? ctrl->opts->host_traddr : "",
+		 ctrl->opts->traddr, ctrl->opts->trsvcid,
+		 generated ? 'G' : 'R', hash, hostnqn, subnqn);
 
 	pr_debug("lookup tls key '%s'\n", identity);
 	keyref = tls_key_lookup(identity);
