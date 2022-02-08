@@ -1012,11 +1012,75 @@ static void tls_key_describe(const struct key *key, struct seq_file *m)
 	seq_printf(m, ": %u", key->datalen);
 }
 
+static bool tls_identity_match(const struct key *key,
+			       const struct key_match_data *match_data)
+{
+	const char *src = key->description;
+	const char *dst = NULL, *port = NULL, *id = NULL;
+	const char *match_src, *match_dst, *match_port, *match_id;
+	size_t src_len, dst_len, port_len, id_len;
+
+	dst = strchr(src, ';');
+	if (dst) {
+		src_len = dst - src;
+		if (!src_len)
+			src = NULL;
+		dst++;
+		port = strchr(dst, ';');
+		if (port) {
+			dst_len = port - dst;
+			if (!dst_len)
+				dst = NULL;
+			port++;
+			id = strchr(port, ';');
+			if (id) {
+				port_len = id - port;
+				if (!port_len)
+					port = NULL;
+			}
+		}
+	}
+	/* simple string-based IP address matching */
+	/* hare: convert to sockaddr matching */
+	match_src = match_data->raw_data;
+	match_dst = strchr(match_src, ';');
+	/* Parsing error */
+	if (!match_dst)
+		return false;
+	if (src && (match_dst - match_src) > 1 &&
+	    memcmp(src, match_src, src_len))
+			return false;
+
+	match_port = strchr(match_dst, ';');
+	if (!match_port)
+		return false;
+	if (dst && (match_port - match_dst) > 1&&
+	    memcmp(dst, match_dst, dst_len))
+		return false;
+
+	match_id = strchr(match_port, ';');
+	/* No match ID specified: match agains all IDs */
+	if (!match_id)
+		return true;
+	/* Match ID specified, but no key ID: no match */
+	if (!id)
+		return false;
+	return memcmp(id, match_id, id_len);
+}
+
+static int tls_identity_match_preparse(struct key_match_data *match_data)
+{
+	match_data->lookup_type = KEYRING_SEARCH_LOOKUP_ITERATE;
+	match_data->cmp = tls_identity_match;
+	return 0;
+}
+
 static struct key_type key_type_tls = {
 	.name           = "tls",
 	.flags          = KEY_TYPE_NET_DOMAIN,
 	.preparse       = tls_key_preparse,
 	.free_preparse  = tls_key_free_preparse,
+	.match_preparse = tls_identity_match_preparse,
 	.instantiate    = generic_key_instantiate,
 	.revoke         = user_revoke,
 	.destroy        = user_destroy,
