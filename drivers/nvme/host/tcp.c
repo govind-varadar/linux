@@ -111,7 +111,7 @@ struct nvme_tcp_queue {
 	__le32			exp_ddgst;
 	__le32			recv_ddgst;
 
-	struct completion	tls_complete;
+	struct completion	*tls_complete;
 	int			tls_err;
 
 	struct page_frag_cache	pf_cache;
@@ -1492,27 +1492,31 @@ static void nvme_tcp_tls_handshake_done(void *data, int status)
 	struct nvme_tcp_queue *queue = data;
 
 	queue->tls_err = status;
-	complete(&queue->tls_complete);
+	if (queue->tls_complete)
+		complete(queue->tls_complete);
 }
 
 static int nvme_tcp_start_tls(struct nvme_ctrl *nctrl, int qid)
 {
 	struct nvme_tcp_ctrl *ctrl = to_tcp_ctrl(nctrl);
 	struct nvme_tcp_queue *queue = &ctrl->queues[qid];
+	DECLARE_COMPLETION_ONSTACK(tls_complete);
 	int rc;
 
-	init_completion(&queue->tls_complete);
+	queue->tls_complete = &tls_complete;
 	queue->tls_err = -ETIMEDOUT;
 
 	rc = tls_client_hello_user(queue->sock,
 			nvme_tcp_tls_handshake_done, queue);
 	if (rc) {
+		queue->tls_complete = NULL;
 		pr_err("failed to start client hello, error %d\n", rc);
 		return rc;
 	}
 
-	rc = wait_for_completion_timeout(&queue->tls_complete,
+	rc = wait_for_completion_timeout(queue->tls_complete,
 					 nctrl->kato);
+	queue->tls_complete = NULL;
 	return rc < 0 ? rc : queue->tls_err;
 }
 
