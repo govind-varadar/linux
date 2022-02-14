@@ -286,8 +286,8 @@ struct key *nvme_keyring_insert_tls(struct key *nvme_key, struct nvme_ctrl *ctrl
 	struct crypto_shash *hmac_tfm;
 	const char *hmac_name = "hmac(sha256)";
 	const char *psk_prefix = "tls13 nvme-tls-psk";
-	char *identity;
-	size_t identity_len = (NVMF_NQN_SIZE) * 2 + 11;
+	char *identity, *tls_identity;
+	size_t identity_len = (NVMF_NQN_SIZE) * 2 + 11, tls_identity_len;
 	key_ref_t keyref;
 	struct user_key_payload *key_payload;
 	size_t infolen, key_len = 32;
@@ -302,10 +302,24 @@ struct key *nvme_keyring_insert_tls(struct key *nvme_key, struct nvme_ctrl *ctrl
 	if (!identity)
 		return ERR_PTR(-ENOMEM);
 
-	snprintf(identity, identity_len, "%s;%s;%s;NVMe0%c%02d %s %s",
-		 ctrl->opts->host_traddr ? ctrl->opts->host_traddr : "",
-		 ctrl->opts->traddr, ctrl->opts->trsvcid,
+	snprintf(identity, identity_len, "NVMe0%c%02d %s %s",
 		 generated ? 'G' : 'R', hmac, hostnqn, subnqn);
+
+	tls_identity_len = strlen(identity) + strlen(ctrl->opts->traddr) + 4;
+	if (ctrl->opts->host_traddr)
+		tls_identity_len += strlen(ctrl->opts->host_traddr);
+	if (ctrl->opts->trsvcid)
+		tls_identity_len += strlen(ctrl->opts->trsvcid);
+	tls_identity = kzalloc(tls_identity_len, GFP_KERNEL);
+	if (!tls_identity) {
+		ret = -ENOMEM;
+		goto out_free_identity;
+	}
+	snprintf(tls_identity, tls_identity_len, "%s;%s;%s;%s",
+		 ctrl->opts->host_traddr ? ctrl->opts->host_traddr : "",
+		 ctrl->opts->traddr,
+		 ctrl->opts->trsvcid ? ctrl->opts->trsvcid : "",
+		 identity);
 
 	key_payload = nvme_key->payload.data[0];
 	key_len = key_payload->datalen;
@@ -318,7 +332,7 @@ struct key *nvme_keyring_insert_tls(struct key *nvme_key, struct nvme_ctrl *ctrl
 	hmac_tfm = crypto_alloc_shash(hmac_name, 0, 0);
 	if (IS_ERR(hmac_tfm)) {
 		ret = PTR_ERR(hmac_tfm);
-		goto out_free_identity;
+		goto out_free_tls_identity;
 	}
 
 	prk = kzalloc(crypto_shash_digestsize(hmac_tfm), GFP_KERNEL);
@@ -352,14 +366,15 @@ struct key *nvme_keyring_insert_tls(struct key *nvme_key, struct nvme_ctrl *ctrl
 	ret = hkdf_expand(hmac_tfm, info, infolen, tls_key, key_len);
 	if (ret)
 		goto out_free_key;
-	pr_debug("refresh tls key '%s'\n", identity);
-	keyref = tls_key_refresh(identity, tls_key, key_len);
+	pr_debug("refresh tls key '%s'\n", tls_identity);
+	keyref = tls_key_refresh(tls_identity, tls_key, key_len);
 	if (IS_ERR(keyref)) {
 		pr_warn("refresh tls key '%s' failed, error %ld\n",
-			identity, PTR_ERR(keyref));
-		return ERR_PTR(-ENOKEY);
+			tls_identity, PTR_ERR(keyref));
+		ret = -ENOKEY;
+		goto out_free_key;
 	}
-	return key_ref_to_ptr(keyref);
+	ret = 0;
 
 out_free_key:
 	kfree(tls_key);
@@ -369,10 +384,12 @@ out_free_prk:
 	kfree(prk);
 out_free_shash:
 	crypto_free_shash(hmac_tfm);
+out_free_tls_identity:
+	kfree(tls_identity);
 out_free_identity:
 	kfree(identity);
 
-	return ERR_PTR(ret);
+	return ret ? ERR_PTR(ret) : key_ref_to_ptr(keyref);
 }
 EXPORT_SYMBOL_GPL(nvme_keyring_insert_tls);
 
