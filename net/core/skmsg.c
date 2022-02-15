@@ -686,7 +686,7 @@ struct sk_psock *sk_psock_init(struct sock *sk, int node)
 
 	write_lock_bh(&sk->sk_callback_lock);
 
-	if (sk->sk_user_data) {
+	if (sk->sk_psock) {
 		psock = ERR_PTR(-EBUSY);
 		goto out;
 	}
@@ -717,7 +717,7 @@ struct sk_psock *sk_psock_init(struct sock *sk, int node)
 	sk_psock_set_state(psock, SK_PSOCK_TX_ENABLED);
 	refcount_set(&psock->refcnt, 1);
 
-	rcu_assign_sk_user_data_nocopy(sk, psock);
+	rcu_assign_pointer(sk->sk_psock, psock);
 	sock_hold(sk);
 
 out:
@@ -816,7 +816,7 @@ void sk_psock_drop(struct sock *sk, struct sk_psock *psock)
 {
 	write_lock_bh(&sk->sk_callback_lock);
 	sk_psock_restore_proto(sk, psock);
-	rcu_assign_sk_user_data(sk, NULL);
+	rcu_assign_pointer(sk->sk_psock, NULL);
 	if (psock->progs.stream_parser)
 		sk_psock_stop_strp(sk, psock);
 	else if (psock->progs.stream_verdict || psock->progs.skb_verdict)

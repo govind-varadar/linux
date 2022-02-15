@@ -326,7 +326,8 @@ struct bpf_local_storage;
   *	@sk_tskey: counter to disambiguate concurrent tstamp requests
   *	@sk_zckey: counter to order MSG_ZEROCOPY notifications
   *	@sk_socket: Identd and reporting IO signals
-  *	@sk_user_data: RPC layer private data
+  *	@sk_user_data: Upper layer private data
+  *	@sk_psock: socket policy data (bpf)
   *	@sk_frag: cached page frag
   *	@sk_peek_off: current peek_offset value
   *	@sk_send_head: front of stuff to transmit
@@ -514,6 +515,7 @@ struct sock {
 
 	struct socket		*sk_socket;
 	void			*sk_user_data;
+	struct sk_psock	__rcu	*sk_psock;
 #ifdef CONFIG_SECURITY
 	void			*sk_security;
 #endif
