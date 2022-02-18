@@ -1287,16 +1287,22 @@ static int nvme_tcp_init_connection(struct nvme_tcp_queue *queue)
 	iov.iov_base = icreq;
 	iov.iov_len = sizeof(*icreq);
 	ret = kernel_sendmsg(queue->sock, &msg, &iov, 1, iov.iov_len);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("queue %d: failed to send icresp, error %d\n",
+		       nvme_tcp_queue_id(queue), ret);
 		goto free_icresp;
+	}
 
 	memset(&msg, 0, sizeof(msg));
 	iov.iov_base = icresp;
 	iov.iov_len = sizeof(*icresp);
 	ret = kernel_recvmsg(queue->sock, &msg, &iov, 1,
 			iov.iov_len, msg.msg_flags);
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("queue %d: failed to receive icresp, error %d\n",
+		       nvme_tcp_queue_id(queue), ret);
 		goto free_icresp;
+	}
 
 	ret = -EINVAL;
 	if (icresp->hdr.type != nvme_tcp_icresp) {
@@ -1506,18 +1512,27 @@ static int nvme_tcp_start_tls(struct nvme_ctrl *nctrl, int qid)
 	queue->tls_complete = &tls_complete;
 	queue->tls_err = -ETIMEDOUT;
 
+	dev_dbg(nctrl->device, "starting TLS handshake on queue %d\n",
+		nvme_tcp_queue_id(queue));
+
 	rc = tls_client_hello_user(queue->sock,
 			nvme_tcp_tls_handshake_done, queue);
 	if (rc) {
 		queue->tls_complete = NULL;
-		pr_err("failed to start client hello, error %d\n", rc);
+		dev_err(nctrl->device, "error %d starting TLS handshake\n", rc);
 		return rc;
 	}
 
-	rc = wait_for_completion_timeout(queue->tls_complete,
-					 nctrl->kato);
+	if (wait_for_completion_timeout(queue->tls_complete,
+					nctrl->kato) == 0)
+		rc = -ETIMEDOUT;
+	else
+		rc = queue->tls_err;
+
 	queue->tls_complete = NULL;
-	return rc < 0 ? rc : queue->tls_err;
+	dev_dbg(nctrl->device, "TLS handshake on queue %d complete, error %d\n",
+		nvme_tcp_queue_id(queue), rc);
+	return rc;
 }
 
 static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,

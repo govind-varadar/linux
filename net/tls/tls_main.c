@@ -572,6 +572,8 @@ static int do_tls_setsockopt_conf(struct sock *sk, sockptr_t optval,
 
 	/* Currently we don't support set crypto info more than one time */
 	if (TLS_CRYPTO_INFO_READY(crypto_info)) {
+		pr_debug("%s: %s cipher type %d\n", __func__,
+			 tx ? "tx" : "rx", crypto_info->cipher_type);
 		rc = -EBUSY;
 		goto out;
 	}
@@ -676,6 +678,9 @@ static int do_tls_setsockopt_conf(struct sock *sk, sockptr_t optval,
 		ctx->sk_write_space = sk->sk_write_space;
 		sk->sk_write_space = tls_write_space;
 	}
+	pr_debug("%s: setting %s cipher %d\n", __func__,
+		 conf == TLS_HW ? "hw" : "sw",
+		 crypto_info->cipher_type);
 	atomic_inc(&sk->sk_tls_init_count);
 	goto out;
 
