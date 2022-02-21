@@ -363,7 +363,7 @@ struct key *nvme_keyring_insert_tls(struct key *nvme_key, struct nvme_ctrl *ctrl
 		ret = -ENOMEM;
 		goto out_free_info;
 	}
-	ret = hkdf_expand(hmac_tfm, info, infolen, tls_key, key_len);
+	ret = hkdf_expand(hmac_tfm, info, strlen(info), tls_key, key_len);
 	if (ret)
 		goto out_free_key;
 	pr_debug("refresh tls key '%s'\n", tls_identity);
@@ -398,26 +398,42 @@ struct key *nvme_keyring_lookup_tls(struct nvme_ctrl *ctrl, int hash, bool gener
 	char *hostnqn = ctrl->opts->host->nqn;
 	char *subnqn = nvmf_ctrl_subsysnqn(ctrl);
 	char *identity;
+	char *host_traddr = ctrl->opts->host_traddr;
+	char *traddr = ctrl->opts->traddr;
+	char *trsvcid = ctrl->opts->trsvcid;
 	size_t identity_len = (NVMF_NQN_SIZE) * 2 + 11;
 	key_ref_t keyref;
 
 	identity = kzalloc(identity_len, GFP_KERNEL);
 	if (!identity)
 		return ERR_PTR(-ENOMEM);
-
+retry:
 	snprintf(identity, identity_len, "%s;%s;%s;NVMe0%c%02d %s %s",
-		 ctrl->opts->host_traddr ? ctrl->opts->host_traddr : "",
-		 ctrl->opts->traddr, ctrl->opts->trsvcid,
+		 host_traddr ? host_traddr : "",
+		 traddr ? traddr : "", trsvcid ? trsvcid : "",
 		 generated ? 'G' : 'R', hash, hostnqn, subnqn);
 
 	pr_debug("lookup tls key '%s'\n", identity);
 	keyref = tls_key_lookup(identity);
-	kfree(identity);
 	if (IS_ERR(keyref)) {
+		if (host_traddr) {
+			host_traddr = NULL;
+			goto retry;
+		}
+		if (trsvcid) {
+			trsvcid = NULL;
+			goto retry;
+		}
+		if (traddr) {
+			traddr = NULL;
+			goto retry;
+		}
 		pr_debug("lookup tls key '%s' failed, error %ld\n",
 			 identity, PTR_ERR(keyref));
+		kfree(identity);
 		return ERR_PTR(-ENOKEY);
 	}
+	kfree(identity);
 
 	return key_ref_to_ptr(keyref);
 }
