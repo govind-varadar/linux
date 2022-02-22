@@ -51,6 +51,7 @@ static HLIST_HEAD(tlsh_listeners);
 static void tlsh_register_listener(struct sock *sk)
 {
 	write_lock_bh(&tlsh_listener_lock);
+	pr_debug("get B %p\n", sk);
 	sk_add_node(sk, &tlsh_listeners);	/* Ref: B */
 	write_unlock_bh(&tlsh_listener_lock);
 }
@@ -58,6 +59,7 @@ static void tlsh_register_listener(struct sock *sk)
 static void tlsh_unregister_listener(struct sock *sk)
 {
 	write_lock_bh(&tlsh_listener_lock);
+	pr_debug("put B %p\n", sk);
 	sk_del_node_init(sk);			/* Ref: B */
 	write_unlock_bh(&tlsh_listener_lock);
 }
@@ -109,6 +111,7 @@ static int tlsh_accept_enqueue(struct sock *listener, struct sock *sk)
 	if (!skb)
 		return -ENOMEM;
 
+	pr_debug("get I %p\n", sk);
 	sock_hold(sk);	/* Ref: I */
 	skb->sk = sk;
 	skb_queue_tail(&listener->sk_receive_queue, skb);
@@ -140,6 +143,7 @@ static struct sock *tlsh_accept_dequeue(struct sock *listener)
 	sk = skb->sk;
 	skb->sk = NULL;
 	kfree_skb(skb);
+	pr_debug("put I %p\n", sk);
 	sock_put(sk);	/* Ref: I */
 	return sk;
 }
@@ -148,6 +152,7 @@ static void tlsh_sock_save(struct sock *sk,
 			   void (*done)(void *data, int status),
 			   void *data)
 {
+	pr_debug("get J %p\n", sk);
 	sock_hold(sk);	/* Ref: J */
 
 	write_lock_bh(&sk->sk_callback_lock);
@@ -170,6 +175,7 @@ static void tlsh_sock_clear(struct sock *sk)
 
 	write_unlock_bh(&sk->sk_callback_lock);
 
+	pr_debug("put J %p\n", sk);
 	sock_put(sk);	/* Ref: J (err) */
 }
 
@@ -209,8 +215,10 @@ void tlsh_handshake_done(struct sock *sk, int status)
 	}
 
 	write_unlock_bh(&sk->sk_callback_lock);
-	if (put)
+	if (put) {
+		pr_debug("put J %p\n", sk);
 		sock_put(sk);	/* Ref: J */
+	}
 }
 
 /**
@@ -269,6 +277,7 @@ static int tlsh_release(struct socket *sock)
 		return 0;
 	}
 
+	pr_debug("get D %p\n", sk);
 	sock_hold(sk);	/* Ref: D */
 	sock_orphan(sk);
 	lock_sock(sk);
@@ -283,8 +292,11 @@ static int tlsh_release(struct socket *sock)
 	sk->sk_tls_bind_family = AF_UNSPEC;
 	sock->sk = NULL;
 	release_sock(sk);
+
+	pr_debug("put D %p\n", sk);
 	sock_put(sk);	/* Ref: D */
 
+	pr_debug("put A %p\n", sk);
 	sock_put(sk);	/* Ref: A */
 	return 0;
 }
@@ -399,6 +411,7 @@ static int tlsh_accept(struct socket *listener, struct socket *newsock, int flag
 	trace_tlsh_newsock(newsock, newsk);
 
 	/* prevent user agent close from releasing the kernel socket */
+	pr_debug("get U %p\n", newsk);
 	sock_hold(newsk);
 
 out_release:
@@ -684,6 +697,7 @@ int tlsh_pf_create(struct net *net, struct socket *sock, int protocol, int kern)
 	sk = sk_alloc(net, PF_TLSH, GFP_KERNEL, &tcp_prot, kern);
 	if (!sk)
 		return -ENOMEM;
+	pr_debug("get A %p\n", sk);
 
 	sock_init_data(sock, sk);
 	if (sk->sk_prot->init) {
@@ -698,6 +712,7 @@ int tlsh_pf_create(struct net *net, struct socket *sock, int protocol, int kern)
 
 err_sk_put:
 	sock_orphan(sk);
+	pr_debug("put A %p\n", sk);
 	sk_free(sk);	/* Ref: A (err) */
 	return rc;
 }
@@ -725,9 +740,11 @@ int tls_client_hello_user(struct socket *sock,
 	if (!listener)
 		goto out_err;
 
+	pr_debug("get C %p\n", listener);
 	sock_hold(listener);	/* Ref: C */
 	tlsh_sock_save(sk, done, data);
 	rc = tlsh_accept_enqueue(listener, sk);
+	pr_debug("put C %p\n", listener);
 	sock_put(listener);	/* Ref: C */
 	if (rc)
 		goto out_err;
