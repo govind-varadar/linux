@@ -1472,7 +1472,7 @@ static int nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
 	tls_key = nvme_keyring_lookup_tls(nctrl, 1, false);
 	if (IS_ERR(tls_key) && !force_tls) {
 		/* Not found, derive key from PSK if present */
-		retained_key = nvme_keyring_lookup_psk(hostnqn, 1);
+		retained_key = nvme_keyring_lookup_retained_key(hostnqn, 1);
 		if (!IS_ERR(retained_key)) {
 			tls_key = nvme_keyring_insert_tls(retained_key, nctrl,
 							  1, false);
@@ -1497,7 +1497,7 @@ static int nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
 	tls_key = nvme_keyring_lookup_tls(nctrl, 2, false);
 	if (IS_ERR(tls_key) && !force_tls) {
 		/* Not found, derive key from PSK if present */
-		retained_key = nvme_keyring_lookup_psk(hostnqn, 2);
+		retained_key = nvme_keyring_lookup_retained_key(hostnqn, 2);
 		if (!IS_ERR(retained_key)) {
 			tls_key = nvme_keyring_insert_tls(retained_key,
 							  nctrl, 2, false);

@@ -146,8 +146,8 @@ struct key *nvme_keyring_lookup_generated_key(char *hostnqn, char *subnqn, int h
 }
 EXPORT_SYMBOL_GPL(nvme_keyring_lookup_generated_key);
 
-static struct key_type key_type_nvme_psk = {
-	.name           = "psk",
+static struct key_type key_type_nvme_retained = {
+	.name           = "retained",
 	.flags          = KEY_TYPE_NET_DOMAIN,
 	.preparse       = nvme_key_preparse,
 	.free_preparse  = nvme_key_free_preparse,
@@ -158,8 +158,8 @@ static struct key_type key_type_nvme_psk = {
 	.read           = user_read,
 };
 
-struct key *nvme_keyring_insert_psk(struct key *nvme_key,
-				    char *hostnqn, int hmac)
+struct key *nvme_keyring_insert_retained_key(struct key *nvme_key,
+					     char *hostnqn, int hmac)
 {
 	char *identity;
 	size_t identity_len = NVMF_NQN_SIZE + 4;
@@ -225,12 +225,12 @@ struct key *nvme_keyring_insert_psk(struct key *nvme_key,
 	if (ret)
 		goto out_free_psk;
 
-	pr_debug("update psk key '%s'\n", identity);
+	pr_debug("update retained key '%s'\n", identity);
 	keyref = key_create_or_update(make_key_ref(nvme_keyring, true),
-				      "psk", identity, psk, key_len,
+				      "retained", identity, psk, key_len,
 				      keyperm, KEY_ALLOC_NOT_IN_QUOTA);
 	if (IS_ERR(keyref)) {
-		pr_warn("failed to update psk '%s', error %ld\n",
+		pr_warn("failed to update retained key '%s', error %ld\n",
 			identity, PTR_ERR(keyref));
 		ret = -ENOKEY;
 	}
@@ -249,9 +249,9 @@ out_free_identity:
 
 	return ret ? ERR_PTR(ret) : key_ref_to_ptr(keyref);
 }
-EXPORT_SYMBOL_GPL(nvme_keyring_insert_psk);
+EXPORT_SYMBOL_GPL(nvme_keyring_insert_retained_key);
 
-struct key *nvme_keyring_lookup_psk(char *hostnqn, int hash)
+struct key *nvme_keyring_lookup_retained_key(char *hostnqn, int hash)
 {
 	char *identity;
 	size_t identity_len = NVMF_NQN_SIZE + 4;
@@ -263,20 +263,20 @@ struct key *nvme_keyring_lookup_psk(char *hostnqn, int hash)
 
 	snprintf(identity, identity_len, "%02d %s", hash, hostnqn);
 
-	pr_debug("lookup psk key '%s'\n", identity);
+	pr_debug("lookup retained key '%s'\n", identity);
 	keyref = keyring_search(make_key_ref(nvme_keyring, true),
-				&key_type_nvme_psk, identity, false);
+				&key_type_nvme_retained, identity, false);
 
 	kfree(identity);
 	if (IS_ERR(keyref)) {
-		pr_debug("lookup psk key '%s' failed, error %ld\n",
+		pr_debug("lookup retained key '%s' failed, error %ld\n",
 			 identity, PTR_ERR(keyref));
 		return ERR_PTR(-ENOKEY);
 	}
 
 	return key_ref_to_ptr(keyref);
 }
-EXPORT_SYMBOL_GPL(nvme_keyring_lookup_psk);
+EXPORT_SYMBOL_GPL(nvme_keyring_lookup_retained_key);
 
 struct key *nvme_keyring_insert_tls(struct key *nvme_key, struct nvme_ctrl *ctrl,
 				    int hmac, bool generated)
@@ -456,7 +456,7 @@ int nvme_keyring_init(void)
 	if (result)
 		goto out_revoke;
 
-	result = register_key_type(&key_type_nvme_psk);
+	result = register_key_type(&key_type_nvme_retained);
 	if (result)
 		unregister_key_type(&key_type_nvme_generated);
 
@@ -471,7 +471,7 @@ out_revoke:
 
 void nvme_keyring_exit(void)
 {
-	unregister_key_type(&key_type_nvme_psk);
+	unregister_key_type(&key_type_nvme_retained);
 	unregister_key_type(&key_type_nvme_generated);
 	key_revoke(nvme_keyring);
 	key_put(nvme_keyring);

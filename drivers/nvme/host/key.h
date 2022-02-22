@@ -10,9 +10,9 @@ struct key *nvme_keyring_insert_generated_key(char *hostnqn, char *subnqn, int h
 					      void *key_data, size_t key_len);
 struct key *nvme_keyring_lookup_generated_key(char *hostnqn, char *subnqn, int hash);
 void nvme_keyring_revoke_generated_key(char *hostnqn, char *subnqn, int hash);
-struct key *nvme_keyring_insert_psk(struct key *nvme_key,
-				    char *hostnqn, int hmac);
-struct key *nvme_keyring_lookup_psk(char *hostnqn, int hash);
+struct key *nvme_keyring_insert_retained_key(struct key *nvme_key,
+					       char *hostnqn, int hmac);
+struct key *nvme_keyring_lookup_retained_key(char *hostnqn, int hash);
 struct key *nvme_keyring_insert_tls(struct key *nvme_key, struct nvme_ctrl *ctrl,
 				    int hmac, bool generated);
 struct key *nvme_keyring_lookup_tls(struct nvme_ctrl *ctrl, int hash, bool generated);
