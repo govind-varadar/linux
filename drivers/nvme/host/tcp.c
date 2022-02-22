@@ -1456,13 +1456,13 @@ static int nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
 	char *hostnqn = nctrl->opts->host->nqn;
 	char *subnqn = nvmf_ctrl_subsysnqn(nctrl);
 	int num_keys = 0;
-	struct key *dhchap_key, *retained_key, *tls_key;
+	struct key *generated_key, *retained_key, *tls_key;
 
 	/* Check for pre-provisioned keys */
 	/* Generated key with hmac256 */
-	dhchap_key = nvme_keyring_lookup_dhchap(hostnqn, subnqn, 1);
-	if (!IS_ERR(dhchap_key)) {
-		tls_key = nvme_keyring_insert_tls(dhchap_key, nctrl, 1, true);
+	generated_key = nvme_keyring_lookup_generated_key(hostnqn, subnqn, 1);
+	if (!IS_ERR(generated_key)) {
+		tls_key = nvme_keyring_insert_tls(generated_key, nctrl, 1, true);
 		if (!IS_ERR(tls_key)) {
 			key_put(tls_key);
 			num_keys++;
@@ -1485,9 +1485,9 @@ static int nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
 		num_keys++;
 
 	/* Generated key with hmac384 */
-	dhchap_key = nvme_keyring_lookup_dhchap(hostnqn, subnqn, 2);
-	if (!IS_ERR(dhchap_key)) {
-		tls_key = nvme_keyring_insert_tls(dhchap_key, nctrl, 2, true);
+	generated_key = nvme_keyring_lookup_generated_key(hostnqn, subnqn, 2);
+	if (!IS_ERR(generated_key)) {
+		tls_key = nvme_keyring_insert_tls(generated_key, nctrl, 2, true);
 		if (!IS_ERR(tls_key)) {
 			key_put(tls_key);
 			num_keys++;

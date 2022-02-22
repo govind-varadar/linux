@@ -47,8 +47,8 @@ static void nvme_key_describe(const struct key *key, struct seq_file *m)
 	seq_printf(m, ": %u", key->datalen);
 }
 
-static struct key_type key_type_nvme_dhchap = {
-	.name           = "dhchap",
+static struct key_type key_type_nvme_generated = {
+	.name           = "generated",
 	.flags          = KEY_TYPE_NET_DOMAIN,
 	.preparse       = nvme_key_preparse,
 	.free_preparse  = nvme_key_free_preparse,
@@ -59,8 +59,8 @@ static struct key_type key_type_nvme_dhchap = {
 	.read           = user_read,
 };
 
-struct key *nvme_keyring_insert_dhchap(char *hostnqn, char *subnqn, int hash,
-				       void *key_data, size_t key_len)
+struct key *nvme_keyring_insert_generated_key(char *hostnqn, char *subnqn, int hash,
+					      void *key_data, size_t key_len)
 {
 	char *identity;
 	size_t identity_len = (NVMF_NQN_SIZE * 2) + 5;
@@ -77,21 +77,21 @@ struct key *nvme_keyring_insert_dhchap(char *hostnqn, char *subnqn, int hash,
 		hash, hostnqn, subnqn);
 
 	/* create or update key */
-	pr_debug("update dhchap key '%s'\n", identity);
+	pr_debug("update generated key '%s'\n", identity);
 	keyref = key_create_or_update(make_key_ref(nvme_keyring, true),
-				      "dhchap", identity, key_data, key_len,
+				      "generated", identity, key_data, key_len,
 				      keyperm, KEY_ALLOC_NOT_IN_QUOTA);
 	if (IS_ERR(keyref)) {
-		pr_warn("failed to update dhchap key '%s', error %ld\n",
+		pr_warn("failed to update generated key '%s', error %ld\n",
 			identity, PTR_ERR(keyref));
 		kfree(identity);
 		return ERR_PTR(-ENOKEY);
 	}
 	return key_ref_to_ptr(keyref);
 }
-EXPORT_SYMBOL_GPL(nvme_keyring_insert_dhchap);
+EXPORT_SYMBOL_GPL(nvme_keyring_insert_generated_key);
 
-void nvme_keyring_revoke_dhchap(char *hostnqn, char *subnqn, int hash)
+void nvme_keyring_revoke_generated_key(char *hostnqn, char *subnqn, int hash)
 {
 	char *identity;
 	size_t identity_len = (NVMF_NQN_SIZE * 2) + 5;
@@ -107,7 +107,7 @@ void nvme_keyring_revoke_dhchap(char *hostnqn, char *subnqn, int hash)
 
 	/* register key */
 	keyref = keyring_search(make_key_ref(nvme_keyring, true),
-				&key_type_nvme_dhchap,
+				&key_type_nvme_generated,
 				identity, false);
 	if (IS_ERR(keyref))
 		return;
@@ -117,9 +117,9 @@ void nvme_keyring_revoke_dhchap(char *hostnqn, char *subnqn, int hash)
 	key_put(key);
 	kfree(identity);
 }
-EXPORT_SYMBOL_GPL(nvme_keyring_revoke_dhchap);
+EXPORT_SYMBOL_GPL(nvme_keyring_revoke_generated_key);
 
-struct key *nvme_keyring_lookup_dhchap(char *hostnqn, char *subnqn, int hash)
+struct key *nvme_keyring_lookup_generated_key(char *hostnqn, char *subnqn, int hash)
 {
 	char *identity;
 	size_t identity_len = (NVMF_NQN_SIZE * 2) + 5;
@@ -131,20 +131,20 @@ struct key *nvme_keyring_lookup_dhchap(char *hostnqn, char *subnqn, int hash)
 
 	snprintf(identity, identity_len, "%02d %s %s", hash, hostnqn, subnqn);
 
-	pr_debug("lookup dhchap key '%s'\n", identity);
+	pr_debug("lookup generated key '%s'\n", identity);
 	keyref = keyring_search(make_key_ref(nvme_keyring, true),
-				&key_type_nvme_dhchap, identity, false);
+				&key_type_nvme_generated, identity, false);
 
 	kfree(identity);
 	if (IS_ERR(keyref)) {
-		pr_debug("lookup dhchap key '%s' failed, error %ld\n",
+		pr_debug("lookup generated key '%s' failed, error %ld\n",
 			 identity, PTR_ERR(keyref));
 		return ERR_PTR(-ENOKEY);
 	}
 
 	return key_ref_to_ptr(keyref);
 }
-EXPORT_SYMBOL_GPL(nvme_keyring_lookup_dhchap);
+EXPORT_SYMBOL_GPL(nvme_keyring_lookup_generated_key);
 
 static struct key_type key_type_nvme_psk = {
 	.name           = "psk",
@@ -452,13 +452,13 @@ int nvme_keyring_init(void)
 	if (IS_ERR(nvme_keyring))
 		return PTR_ERR(nvme_keyring);
 
-	result = register_key_type(&key_type_nvme_dhchap);
+	result = register_key_type(&key_type_nvme_generated);
 	if (result)
 		goto out_revoke;
 
 	result = register_key_type(&key_type_nvme_psk);
 	if (result)
-		unregister_key_type(&key_type_nvme_dhchap);
+		unregister_key_type(&key_type_nvme_generated);
 
 out_revoke:
 	if (result) {
@@ -472,7 +472,7 @@ out_revoke:
 void nvme_keyring_exit(void)
 {
 	unregister_key_type(&key_type_nvme_psk);
-	unregister_key_type(&key_type_nvme_dhchap);
+	unregister_key_type(&key_type_nvme_generated);
 	key_revoke(nvme_keyring);
 	key_put(nvme_keyring);
 }

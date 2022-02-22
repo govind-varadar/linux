@@ -1441,13 +1441,13 @@ static void __nvme_auth_work(struct work_struct *work)
 			chap->error = 0;
 			return;
 		}
-		chap->key = nvme_keyring_insert_dhchap(ctrl->opts->host->nqn,
-						       ctrl->opts->subsysnqn,
-						       chap->hash_id,
-						       psk, psk_len);
+		chap->key = nvme_keyring_insert_generated_key(ctrl->opts->host->nqn,
+							      ctrl->opts->subsysnqn,
+							      chap->hash_id,
+							      psk, psk_len);
 		if (IS_ERR(chap->key)) {
 			dev_warn(ctrl->device,
-				 "%s: qid %d failed to insert dhchap TLS key,"
+				 "%s: qid %d failed to insert generated TLS key,"
 				 "error %ld\n",
 				 __func__, chap->qid, PTR_ERR(chap->key));
 			chap->key = NULL;
