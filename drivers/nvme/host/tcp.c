@@ -1258,6 +1258,9 @@ static int nvme_tcp_init_connection(struct nvme_tcp_queue *queue)
 	struct nvme_tcp_icreq_pdu *icreq;
 	struct nvme_tcp_icresp_pdu *icresp;
 	struct msghdr msg = {};
+	char cbuf[CMSG_SPACE(sizeof(char))];
+	struct cmsghdr *cmsg;
+	unsigned char ctype;
 	struct kvec iov;
 	bool ctrl_hdgst, ctrl_ddgst;
 	int ret;
@@ -1292,22 +1295,43 @@ static int nvme_tcp_init_connection(struct nvme_tcp_queue *queue)
 		       nvme_tcp_queue_id(queue), ret);
 		goto free_icresp;
 	}
-
+	pr_debug("queue %d: sent %d/%lu icreq bytes\n",
+		 nvme_tcp_queue_id(queue), ret, iov.iov_len);
 	memset(&msg, 0, sizeof(msg));
+	msg.msg_control = cbuf;
+	msg.msg_controllen = sizeof(cbuf);
+	msg.msg_flags = MSG_WAITALL;
 	iov.iov_base = icresp;
 	iov.iov_len = sizeof(*icresp);
 	ret = kernel_recvmsg(queue->sock, &msg, &iov, 1,
 			iov.iov_len, msg.msg_flags);
+	cmsg = CMSG_FIRSTHDR(&msg);
+	if (cmsg) {
+		pr_debug("queue %d: received cmsg level %d\n",
+			 nvme_tcp_queue_id(queue), cmsg->cmsg_level);
+		if (cmsg->cmsg_level == SOL_TLS) {
+			pr_debug("queue %d: received tls cmsg %d\n",
+				 nvme_tcp_queue_id(queue), cmsg->cmsg_type);
+			if (cmsg->cmsg_type == TLS_GET_RECORD_TYPE) {
+				ctype = *((unsigned char *)CMSG_DATA(cmsg));
+				if (ctype != 100)
+					ret = -ENOTCONN;
+			}
+		}
+	}
 	if (ret < 0) {
 		pr_err("queue %d: failed to receive icresp, error %d\n",
 		       nvme_tcp_queue_id(queue), ret);
 		goto free_icresp;
 	}
-
+	pr_debug("queue %d: received %d/%lu icresp bytes\n",
+		 nvme_tcp_queue_id(queue), ret, iov.iov_len);
 	ret = -EINVAL;
 	if (icresp->hdr.type != nvme_tcp_icresp) {
 		pr_err("queue %d: bad type returned %d\n",
 			nvme_tcp_queue_id(queue), icresp->hdr.type);
+		print_hex_dump(KERN_ERR, "icresp: ", 0,
+			       8, 1, icresp, iov.iov_len, true);
 		goto free_icresp;
 	}
 
