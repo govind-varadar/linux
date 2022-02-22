@@ -366,10 +366,10 @@ struct key *nvme_keyring_insert_tls(struct key *nvme_key, struct nvme_ctrl *ctrl
 	ret = hkdf_expand(hmac_tfm, info, strlen(info), tls_key, key_len);
 	if (ret)
 		goto out_free_key;
-	pr_debug("refresh tls key '%s'\n", tls_identity);
-	keyref = tls_key_refresh(tls_identity, tls_key, key_len);
+	pr_debug("refresh tls psk '%s'\n", tls_identity);
+	keyref = tls_psk_refresh(tls_identity, tls_key, key_len);
 	if (IS_ERR(keyref)) {
-		pr_warn("refresh tls key '%s' failed, error %ld\n",
+		pr_warn("refresh tls psk '%s' failed, error %ld\n",
 			tls_identity, PTR_ERR(keyref));
 		ret = -ENOKEY;
 		goto out_free_key;
@@ -413,8 +413,8 @@ retry:
 		 traddr ? traddr : "", trsvcid ? trsvcid : "",
 		 generated ? 'G' : 'R', hash, hostnqn, subnqn);
 
-	pr_debug("lookup tls key '%s'\n", identity);
-	keyref = tls_key_lookup(identity);
+	pr_debug("lookup tls psk '%s'\n", identity);
+	keyref = tls_psk_lookup(identity);
 	if (IS_ERR(keyref)) {
 		if (host_traddr) {
 			host_traddr = NULL;
@@ -428,7 +428,7 @@ retry:
 			traddr = NULL;
 			goto retry;
 		}
-		pr_debug("lookup tls key '%s' failed, error %ld\n",
+		pr_debug("lookup tls psk '%s' failed, error %ld\n",
 			 identity, PTR_ERR(keyref));
 		kfree(identity);
 		return ERR_PTR(-ENOKEY);

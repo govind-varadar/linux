@@ -986,7 +986,7 @@ static void __net_exit tls_exit_net(struct net *net)
 
 static struct key *tls_keyring;
 
-static int tls_key_preparse(struct key_preparsed_payload *prep)
+static int tls_psk_preparse(struct key_preparsed_payload *prep)
 {
 	struct user_key_payload *upayload;
 	int datalen = prep->datalen;
@@ -1006,19 +1006,19 @@ static int tls_key_preparse(struct key_preparsed_payload *prep)
 	return 0;
 }
 
-static void tls_key_free_preparse(struct key_preparsed_payload *prep)
+static void tls_psk_free_preparse(struct key_preparsed_payload *prep)
 {
 	kfree(prep->payload.data[0]);
 }
 
-static void tls_key_describe(const struct key *key, struct seq_file *m)
+static void tls_psk_describe(const struct key *key, struct seq_file *m)
 {
 	seq_puts(m, key->description);
 	seq_printf(m, ": %u", key->datalen);
 }
 
-static bool tls_identity_match(const struct key *key,
-			       const struct key_match_data *match_data)
+static bool tls_psk_identity_match(const struct key *key,
+				   const struct key_match_data *match_data)
 {
 	const char *src = key->description;
 	const char *dst = NULL, *port = NULL, *id = NULL;
@@ -1112,44 +1112,44 @@ static bool tls_identity_match(const struct key *key,
 	return !memcmp(id, match_id, id_len);
 }
 
-static int tls_identity_match_preparse(struct key_match_data *match_data)
+static int tls_psk_identity_match_preparse(struct key_match_data *match_data)
 {
 	match_data->lookup_type = KEYRING_SEARCH_LOOKUP_ITERATE;
-	match_data->cmp = tls_identity_match;
+	match_data->cmp = tls_psk_identity_match;
 	return 0;
 }
 
-static struct key_type key_type_tls = {
-	.name           = "tls",
+static struct key_type key_type_tls_psk = {
+	.name           = "psk",
 	.flags          = KEY_TYPE_NET_DOMAIN,
-	.preparse       = tls_key_preparse,
-	.free_preparse  = tls_key_free_preparse,
-	.match_preparse = tls_identity_match_preparse,
+	.preparse       = tls_psk_preparse,
+	.free_preparse  = tls_psk_free_preparse,
+	.match_preparse = tls_psk_identity_match_preparse,
 	.instantiate    = generic_key_instantiate,
 	.revoke         = user_revoke,
 	.destroy        = user_destroy,
-	.describe       = tls_key_describe,
+	.describe       = tls_psk_describe,
 	.read           = user_read,
 };
 
-key_ref_t tls_key_refresh(char *identity, u8 *data, size_t data_len)
+key_ref_t tls_psk_refresh(char *identity, u8 *data, size_t data_len)
 {
 	key_perm_t keyperm =
 		KEY_POS_SEARCH | KEY_POS_VIEW | KEY_POS_READ |
 		KEY_USR_SEARCH | KEY_USR_VIEW | KEY_USR_READ;
 
 	return key_create_or_update(make_key_ref(tls_keyring, true),
-				    "tls", identity, data, data_len,
+				    "psk", identity, data, data_len,
 				    keyperm, KEY_ALLOC_NOT_IN_QUOTA);
 }
-EXPORT_SYMBOL_GPL(tls_key_refresh);
+EXPORT_SYMBOL_GPL(tls_psk_refresh);
 
-key_ref_t tls_key_lookup(char *identity)
+key_ref_t tls_psk_lookup(char *identity)
 {
 	return keyring_search(make_key_ref(tls_keyring, true),
-			      &key_type_tls, identity, false);
+			      &key_type_tls_psk, identity, false);
 }
-EXPORT_SYMBOL_GPL(tls_key_lookup);
+EXPORT_SYMBOL_GPL(tls_psk_lookup);
 
 static struct pernet_operations tls_proc_ops = {
 	.init = tls_init_net,
@@ -1190,7 +1190,7 @@ static int __init tls_register(void)
 		return PTR_ERR(tls_keyring);
 	}
 
-	err = register_key_type(&key_type_tls);
+	err = register_key_type(&key_type_tls_psk);
 	if (err) {
 		key_revoke(tls_keyring);
 		key_put(tls_keyring);
@@ -1211,7 +1211,7 @@ static void __exit tls_unregister(void)
 	sock_unregister(PF_TLSH);
 	tcp_unregister_ulp(&tcp_tls_ulp_ops);
 	tls_device_cleanup();
-	unregister_key_type(&key_type_tls);
+	unregister_key_type(&key_type_tls_psk);
 	key_revoke(tls_keyring);
 	key_put(tls_keyring);
 	unregister_pernet_subsys(&tls_proc_ops);
