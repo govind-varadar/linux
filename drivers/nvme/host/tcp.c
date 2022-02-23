@@ -936,10 +936,10 @@ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 		int req_data_sent = req->data_sent;
 		int ret, flags = MSG_DONTWAIT;
 
-		if (last && !queue->data_digest && !nvme_tcp_queue_more(queue))
-			flags |= MSG_EOR;
-		else
+		if (!last || queue->data_digest || nvme_tcp_queue_more(queue))
 			flags |= MSG_MORE | MSG_SENDPAGE_NOTLAST;
+		else if (!test_bit(NVME_TCP_Q_TLS, &queue->flags))
+			flags |= MSG_EOR;
 
 		if (sendpage_ok(page)) {
 			ret = kernel_sendpage(queue->sock, page, offset, len,
@@ -991,7 +991,7 @@ static int nvme_tcp_try_send_cmd_pdu(struct nvme_tcp_request *req)
 
 	if (inline_data || nvme_tcp_queue_more(queue))
 		flags |= MSG_MORE | MSG_SENDPAGE_NOTLAST;
-	else
+	else if (!test_bit(NVME_TCP_Q_TLS, &queue->flags))
 		flags |= MSG_EOR;
 
 	if (queue->hdr_digest && !req->offset)
@@ -1060,7 +1060,7 @@ static int nvme_tcp_try_send_ddgst(struct nvme_tcp_request *req)
 
 	if (nvme_tcp_queue_more(queue))
 		msg.msg_flags |= MSG_MORE;
-	else
+	else if (!test_bit(NVME_TCP_Q_TLS, &queue->flags))
 		msg.msg_flags |= MSG_EOR;
 
 	ret = kernel_sendmsg(queue->sock, &msg, &iov, 1, iov.iov_len);
@@ -1258,7 +1258,7 @@ static int nvme_tcp_init_connection(struct nvme_tcp_queue *queue)
 	struct nvme_tcp_icreq_pdu *icreq;
 	struct nvme_tcp_icresp_pdu *icresp;
 	struct msghdr msg = {};
-	char cbuf[CMSG_SPACE(sizeof(char))];
+	char cbuf[CMSG_LEN(sizeof(char))];
 	struct cmsghdr *cmsg;
 	unsigned char ctype;
 	struct kvec iov;
@@ -1303,19 +1303,39 @@ static int nvme_tcp_init_connection(struct nvme_tcp_queue *queue)
 	msg.msg_flags = MSG_WAITALL;
 	iov.iov_base = icresp;
 	iov.iov_len = sizeof(*icresp);
+
 	ret = kernel_recvmsg(queue->sock, &msg, &iov, 1,
 			iov.iov_len, msg.msg_flags);
-	cmsg = CMSG_FIRSTHDR(&msg);
-	if (cmsg) {
-		pr_debug("queue %d: received cmsg level %d\n",
-			 nvme_tcp_queue_id(queue), cmsg->cmsg_level);
-		if (cmsg->cmsg_level == SOL_TLS) {
+	cmsg = (struct cmsghdr *)cbuf;
+	if (CMSG_OK(&msg, cmsg)) {
+		if (cmsg->cmsg_level == SOL_TLS &&
+		    cmsg->cmsg_type == TLS_GET_RECORD_TYPE) {
 			pr_debug("queue %d: received tls cmsg %d\n",
 				 nvme_tcp_queue_id(queue), cmsg->cmsg_type);
-			if (cmsg->cmsg_type == TLS_GET_RECORD_TYPE) {
-				ctype = *((unsigned char *)CMSG_DATA(cmsg));
-				if (ctype != 100)
-					ret = -ENOTCONN;
+			ctype = *((unsigned char *)CMSG_DATA(cmsg));
+			if (ctype == TLS_RECORD_TYPE_HANDSHAKE) {
+				u32 tls_hdr = get_unaligned_be32(iov.iov_base);
+				u8 tls_hs_type = (tls_hdr >> 24);
+				u32 tls_hs_len = (tls_hdr & 0xFFFFFF);
+				pr_debug("queue %d: tls handshake type %d len %u\n",
+					 nvme_tcp_queue_id(queue), tls_hs_type,
+					 tls_hs_len);
+				if (tls_hs_len > iov.iov_len) {
+					tls_hs_len -= iov.iov_len;
+					if (tls_hs_len > iov.iov_len)
+						iov.iov_len = sizeof(*icresp);
+					else
+						iov.iov_len = tls_hs_len;
+				} else
+					iov.iov_len = sizeof(*icresp);
+				pr_debug("queue %d: retry %lu icresp bytes\n",
+					 nvme_tcp_queue_id(queue),
+					 iov.iov_len);
+				ret = -ENOTCONN;
+			} else if (ctype != TLS_RECORD_TYPE_DATA) {
+				pr_debug("queue %d: skip tls record %d\n",
+					 nvme_tcp_queue_id(queue), ctype);
+				ret = -ENOTCONN;
 			}
 		}
 	}
