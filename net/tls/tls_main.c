@@ -845,8 +845,6 @@ static int tls_init(struct sock *sk)
 	struct tls_context *ctx;
 	int rc = 0;
 
-	tls_build_proto(sk);
-
 #ifdef CONFIG_TLS_TOE
 	if (tls_toe_bypass(sk))
 		return 0;
@@ -871,6 +869,7 @@ static int tls_init(struct sock *sk)
 
 	ctx->tx_conf = TLS_BASE;
 	ctx->rx_conf = TLS_BASE;
+	tls_build_proto(sk);
 	update_sk_prot(sk, ctx);
 out:
 	write_unlock_bh(&sk->sk_callback_lock);
