@@ -981,15 +981,19 @@ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 		size_t offset = nvme_tcp_req_cur_offset(req);
 		size_t len = nvme_tcp_req_cur_length(req);
 		bool last = nvme_tcp_pdu_last_send(req, len);
+		bool do_sendpage = sendpage_ok(page);
 		int req_data_sent = req->data_sent;
 		int ret, flags = MSG_DONTWAIT;
 
 		if (last && !queue->data_digest && !nvme_tcp_queue_more(queue))
 			flags |= MSG_EOR;
-		else
-			flags |= MSG_MORE | MSG_SENDPAGE_NOTLAST;
+		/* ->sendpage is broken for TLS offload */
+		if (test_bit(NVME_TCP_Q_TLS, &queue->flags))
+			do_sendpage = false;
 
-		if (sendpage_ok(page)) {
+		if (do_sendpage) {
+			if (flags & MSG_MORE)
+				flags |= MSG_SENDPAGE_NOTLAST;
 			ret = kernel_sendpage(queue->sock, page, offset, len,
 					flags);
 		} else {
@@ -1038,15 +1042,31 @@ static int nvme_tcp_try_send_cmd_pdu(struct nvme_tcp_request *req)
 	int ret;
 
 	if (inline_data || nvme_tcp_queue_more(queue))
-		flags |= MSG_MORE | MSG_SENDPAGE_NOTLAST;
-	else
+		flags |= MSG_MORE;
+	else if (!test_bit(NVME_TCP_Q_TLS, &queue->flags))
 		flags |= MSG_EOR;
 
 	if (queue->hdr_digest && !req->offset)
 		nvme_tcp_hdgst(queue->snd_hash, pdu, sizeof(*pdu));
 
-	ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
-			offset_in_page(pdu) + req->offset, len,  flags);
+	/* ->sendpage is broken for TLS offload */
+	if (test_bit(NVME_TCP_Q_TLS, &queue->flags)) {
+		struct msghdr msg = {
+			.msg_flags = flags,
+		};
+		struct kvec iov = {
+			.iov_base = (u8 *)pdu + req->offset,
+			.iov_len = len,
+		};
+
+		ret = kernel_sendmsg(queue->sock, &msg, &iov, 1, len);
+	} else {
+		if (flags & MSG_MORE)
+			flags |= MSG_SENDPAGE_NOTLAST;
+		ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
+				      offset_in_page(pdu) + req->offset,
+				      len,  flags);
+	}
 	if (unlikely(ret <= 0))
 		return ret;
 
@@ -1077,7 +1097,13 @@ static int nvme_tcp_try_send_data_pdu(struct nvme_tcp_request *req)
 	if (queue->hdr_digest && !req->offset)
 		nvme_tcp_hdgst(queue->snd_hash, pdu, sizeof(*pdu));
 
-	ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
+	/* ->sendpage is broken for TLS offload */
+	if (test_bit(NVME_TCP_Q_TLS, &queue->flags))
+		ret = sock_no_sendpage(queue->sock, virt_to_page(pdu),
+				       offset_in_page(pdu) + req->offset, len,
+				       MSG_DONTWAIT | MSG_MORE);
+	else
+		ret = kernel_sendpage(queue->sock, virt_to_page(pdu),
 			offset_in_page(pdu) + req->offset, len,
 			MSG_DONTWAIT | MSG_MORE | MSG_SENDPAGE_NOTLAST);
 	if (unlikely(ret <= 0))
@@ -1108,7 +1134,7 @@ static int nvme_tcp_try_send_ddgst(struct nvme_tcp_request *req)
 
 	if (nvme_tcp_queue_more(queue))
 		msg.msg_flags |= MSG_MORE;
-	else
+	else if (!test_bit(NVME_TCP_Q_TLS, &queue->flags))
 		msg.msg_flags |= MSG_EOR;
 
 	ret = kernel_sendmsg(queue->sock, &msg, &iov, 1, iov.iov_len);
