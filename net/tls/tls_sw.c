@@ -1316,11 +1316,15 @@ static struct sk_buff *tls_wait_data(struct sock *sk, struct sk_psock *psock,
 				return ctx->recv_pkt;
 		}
 
-		if (sk->sk_shutdown & RCV_SHUTDOWN)
+		if (sk->sk_shutdown & RCV_SHUTDOWN) {
+			*err = -ECONNRESET;
 			return NULL;
+		}
 
-		if (sock_flag(sk, SOCK_DONE))
+		if (sock_flag(sk, SOCK_DONE)) {
+			*err = -ECONNRESET;
 			return NULL;
+		}
 
 		if (nonblock || !timeo) {
 			*err = -EAGAIN;
