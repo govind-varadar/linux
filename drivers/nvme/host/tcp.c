@@ -751,6 +751,70 @@ static int nvme_tcp_recv_pdu(struct nvme_tcp_queue *queue, struct sk_buff *skb,
 	}
 }
 
+static int nvme_tcp_recvmsg_pdu(struct nvme_tcp_queue *queue, bool noblock)
+{
+	struct nvme_tcp_hdr *hdr;
+	char *pdu = queue->pdu;
+	char cbuf[CMSG_LEN(sizeof(char))] = {};
+	struct msghdr msg = {
+		.msg_control = cbuf,
+		.msg_controllen = sizeof(cbuf),
+		.msg_flags = noblock ? MSG_DONTWAIT : 0,
+	};
+	struct kvec iov = {
+		.iov_base = &pdu[queue->pdu_offset],
+		.iov_len = queue->pdu_remaining,
+	};
+	int ret, consumed;
+
+	if (nvme_tcp_recv_state(queue) != NVME_TCP_RECV_PDU)
+		return 0;
+
+	ret = kernel_recvmsg(queue->sock, &msg, &iov, 1,
+			     iov.iov_len, msg.msg_flags);
+	if (ret <= 0)
+		return ret;
+
+	consumed = ret;
+	queue->pdu_remaining -= consumed;
+	queue->pdu_offset += consumed;
+	if (queue->pdu_remaining)
+		return consumed;
+
+	hdr = queue->pdu;
+	if (queue->hdr_digest) {
+		ret = nvme_tcp_verify_hdgst(queue, queue->pdu, hdr->hlen);
+		if (unlikely(ret < 0))
+			return ret;
+	}
+
+
+	if (queue->data_digest) {
+		ret = nvme_tcp_check_ddgst(queue, queue->pdu);
+		if (unlikely(ret < 0))
+			return ret;
+	}
+
+	switch (hdr->type) {
+	case nvme_tcp_c2h_data:
+		ret = nvme_tcp_handle_c2h_data(queue, (void *)queue->pdu);
+		break;
+	case nvme_tcp_rsp:
+		nvme_tcp_init_recv_ctx(queue);
+		ret = nvme_tcp_handle_comp(queue, (void *)queue->pdu);
+		break;
+	case nvme_tcp_r2t:
+		nvme_tcp_init_recv_ctx(queue);
+		ret = nvme_tcp_handle_r2t(queue, (void *)queue->pdu);
+		break;
+	default:
+		dev_err(queue->ctrl->ctrl.device,
+			"unsupported pdu type (%d)\n", hdr->type);
+		ret = -EINVAL;
+	}
+	return ret < 0 ? ret : consumed;
+}
+
 static inline void nvme_tcp_end_request(struct request *rq, u16 status)
 {
 	union nvme_result res = {};
@@ -830,6 +894,82 @@ static int nvme_tcp_recv_data(struct nvme_tcp_queue *queue, struct sk_buff *skb,
 	return 0;
 }
 
+static int nvme_tcp_recvmsg_data(struct nvme_tcp_queue *queue)
+{
+	struct nvme_tcp_data_pdu *pdu = (void *)queue->pdu;
+	struct request *rq =
+		nvme_cid_to_rq(nvme_tcp_tagset(queue), pdu->command_id);
+	struct nvme_tcp_request *req = blk_mq_rq_to_pdu(rq);
+	int consumed = 0;
+
+	if (nvme_tcp_recv_state(queue) != NVME_TCP_RECV_DATA)
+		return 0;
+
+	while (true) {
+		char cbuf[CMSG_LEN(sizeof(char))] = {};
+		struct msghdr msg;
+		int ret;
+
+		if (!queue->data_remaining)
+			break;
+
+		if (!iov_iter_count(&req->iter)) {
+			req->curr_bio = req->curr_bio->bi_next;
+
+			/*
+			 * If we don`t have any bios it means that controller
+			 * sent more data than we requested, hence error
+			 */
+			if (!req->curr_bio) {
+				dev_err(queue->ctrl->ctrl.device,
+					"queue %d no space in request %#x",
+					nvme_tcp_queue_id(queue), rq->tag);
+				nvme_tcp_init_recv_ctx(queue);
+				return -EIO;
+			}
+			nvme_tcp_init_iter(req, READ);
+		}
+
+		/* we can read only from what is left in this bio */
+		memset(&msg, 0, sizeof(msg));
+		msg.msg_iter = req->iter;
+		msg.msg_control = cbuf;
+		msg.msg_controllen = sizeof(cbuf);
+
+		ret = sock_recvmsg(queue->sock, &msg, 0);
+		if (WARN_ON(queue->data_digest))
+			ret = -EOPNOTSUPP;
+
+		if (ret <= 0) {
+			dev_err(queue->ctrl->ctrl.device,
+				"queue %d failed to receive request %#x data",
+				nvme_tcp_queue_id(queue), rq->tag);
+			return ret;
+		}
+
+		queue->data_remaining -= ret;
+		if (queue->data_remaining)
+			nvme_tcp_advance_req(req, ret);
+		consumed += ret;
+	}
+
+	if (!queue->data_remaining) {
+		if (queue->data_digest) {
+			nvme_tcp_ddgst_final(queue->rcv_hash, &queue->exp_ddgst);
+			queue->ddgst_remaining = NVME_TCP_DIGEST_LENGTH;
+		} else {
+			if (pdu->hdr.flags & NVME_TCP_F_DATA_SUCCESS) {
+				nvme_tcp_end_request(rq,
+						le16_to_cpu(req->status));
+				queue->nr_cqe++;
+			}
+			nvme_tcp_init_recv_ctx(queue);
+		}
+	}
+
+	return consumed;
+}
+
 static int nvme_tcp_recv_ddgst(struct nvme_tcp_queue *queue,
 		struct sk_buff *skb, unsigned int *offset, size_t *len)
 {
@@ -875,6 +1015,62 @@ static int nvme_tcp_recv_ddgst(struct nvme_tcp_queue *queue,
 	return 0;
 }
 
+static int nvme_tcp_recvmsg_ddgst(struct nvme_tcp_queue *queue)
+{
+	struct nvme_tcp_data_pdu *pdu = (void *)queue->pdu;
+	char *ddgst = (char *)&queue->recv_ddgst;
+	off_t off = NVME_TCP_DIGEST_LENGTH - queue->ddgst_remaining;
+		char cbuf[CMSG_LEN(sizeof(char))] = {};
+	struct msghdr msg = {
+		.msg_control = cbuf,
+		.msg_controllen = sizeof(cbuf),
+		.msg_flags = 0,
+	};
+	struct kvec iov = {
+		.iov_base = &ddgst[off],
+		.iov_len = queue->ddgst_remaining,
+	};
+	int ret, consumed;
+
+	if (nvme_tcp_recv_state(queue) != NVME_TCP_RECV_DDGST)
+		return 0;
+
+	ret = kernel_recvmsg(queue->sock, &msg, &iov, 1, iov.iov_len,
+			     msg.msg_flags);
+	if (ret <= 0)
+		return ret;
+
+	consumed = ret;
+	queue->ddgst_remaining -= consumed;
+	if (queue->ddgst_remaining)
+		return consumed;
+
+	if (queue->recv_ddgst != queue->exp_ddgst) {
+		struct request *rq = nvme_cid_to_rq(nvme_tcp_tagset(queue),
+					pdu->command_id);
+		struct nvme_tcp_request *req = blk_mq_rq_to_pdu(rq);
+
+		req->status = cpu_to_le16(NVME_SC_DATA_XFER_ERROR);
+
+		dev_err(queue->ctrl->ctrl.device,
+			"data digest error: recv %#x expected %#x\n",
+			le32_to_cpu(queue->recv_ddgst),
+			le32_to_cpu(queue->exp_ddgst));
+	}
+
+	if (pdu->hdr.flags & NVME_TCP_F_DATA_SUCCESS) {
+		struct request *rq = nvme_cid_to_rq(nvme_tcp_tagset(queue),
+					pdu->command_id);
+		struct nvme_tcp_request *req = blk_mq_rq_to_pdu(rq);
+
+		nvme_tcp_end_request(rq, le16_to_cpu(req->status));
+		queue->nr_cqe++;
+	}
+
+	nvme_tcp_init_recv_ctx(queue);
+	return consumed;
+}
+
 static int nvme_tcp_recv_skb(read_descriptor_t *desc, struct sk_buff *skb,
 			     unsigned int offset, size_t len)
 {
@@ -906,6 +1102,42 @@ static int nvme_tcp_recv_skb(read_descriptor_t *desc, struct sk_buff *skb,
 	}
 
 	return consumed;
+}
+
+static int nvme_tcp_recvmsg(struct nvme_tcp_queue *queue, bool noblock)
+{
+	int result;
+
+	queue->nr_cqe = 0;
+	do {
+		switch (nvme_tcp_recv_state(queue)) {
+		case NVME_TCP_RECV_PDU:
+			result = nvme_tcp_recvmsg_pdu(queue, noblock);
+			if (result)
+				break;
+			fallthrough;
+		case NVME_TCP_RECV_DATA:
+			result = nvme_tcp_recvmsg_data(queue);
+			if (result)
+				break;
+			fallthrough;
+		case NVME_TCP_RECV_DDGST:
+			result = nvme_tcp_recvmsg_ddgst(queue);
+			break;
+		default:
+			result = -EFAULT;
+		}
+		if (!queue->pdu_offset)
+			result = 0;
+	} while (result > 0);
+	if (result < 0) {
+		dev_err(queue->ctrl->ctrl.device,
+			"receive failed %d state %d\n",
+			result, nvme_tcp_recv_state(queue));
+		queue->rd_enabled = false;
+		nvme_tcp_error_recovery(&queue->ctrl->ctrl);
+	}
+	return result;
 }
 
 static void nvme_tcp_data_ready(struct sock *sk)
@@ -985,15 +1217,15 @@ static int nvme_tcp_try_send_data(struct nvme_tcp_request *req)
 		int req_data_sent = req->data_sent;
 		int ret, flags = MSG_DONTWAIT;
 
-		if (last && !queue->data_digest && !nvme_tcp_queue_more(queue))
+		if (!last || queue->data_digest || nvme_tcp_queue_more(queue))
+			flags |= MSG_MORE | MSG_SENDPAGE_NOTLAST;
+		else if (!test_bit(NVME_TCP_Q_TLS, &queue->flags))
 			flags |= MSG_EOR;
 		/* ->sendpage is broken for TLS offload */
 		if (test_bit(NVME_TCP_Q_TLS, &queue->flags))
 			do_sendpage = false;
 
 		if (do_sendpage) {
-			if (flags & MSG_MORE)
-				flags |= MSG_SENDPAGE_NOTLAST;
 			ret = kernel_sendpage(queue->sock, page, offset, len,
 					flags);
 		} else {
@@ -1197,12 +1429,15 @@ done:
 	return ret;
 }
 
-static int nvme_tcp_try_recv(struct nvme_tcp_queue *queue)
+static int nvme_tcp_try_recv(struct nvme_tcp_queue *queue, bool noblock)
 {
 	struct socket *sock = queue->sock;
 	struct sock *sk = sock->sk;
 	read_descriptor_t rd_desc;
 	int consumed;
+
+	if (test_bit(NVME_TCP_Q_TLS, &queue->flags))
+		return nvme_tcp_recvmsg(queue, noblock);
 
 	rd_desc.arg.data = queue;
 	rd_desc.count = 1;
@@ -1217,11 +1452,11 @@ static void nvme_tcp_io_work(struct work_struct *w)
 {
 	struct nvme_tcp_queue *queue =
 		container_of(w, struct nvme_tcp_queue, io_work);
-	unsigned long deadline = jiffies + msecs_to_jiffies(1);
+	unsigned long deadline = jiffies + msecs_to_jiffies(10);
 
 	do {
-		bool pending = false;
 		int result;
+		bool pending = false;
 
 		if (mutex_trylock(&queue->send_mutex)) {
 			result = nvme_tcp_try_send(queue);
@@ -1230,17 +1465,18 @@ static void nvme_tcp_io_work(struct work_struct *w)
 				pending = true;
 			else if (unlikely(result < 0))
 				break;
+		} else {
+			pending = true;
 		}
 
-		result = nvme_tcp_try_recv(queue);
+		result = nvme_tcp_try_recv(queue, pending ? false : true);
 		if (result > 0)
 			pending = true;
-		else if (unlikely(result < 0))
+		else if (unlikely(result < 0) && result != -EAGAIN)
 			return;
 
 		if (!pending)
 			return;
-
 	} while (!time_after(jiffies, deadline)); /* quota is exhausted */
 
 	queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
@@ -2626,7 +2862,7 @@ static int nvme_tcp_poll(struct blk_mq_hw_ctx *hctx, struct io_comp_batch *iob)
 	set_bit(NVME_TCP_Q_POLLING, &queue->flags);
 	if (sk_can_busy_loop(sk) && skb_queue_empty_lockless(&sk->sk_receive_queue))
 		sk_busy_loop(sk, true);
-	nvme_tcp_try_recv(queue);
+	nvme_tcp_try_recv(queue, false);
 	clear_bit(NVME_TCP_Q_POLLING, &queue->flags);
 	return queue->nr_cqe;
 }
