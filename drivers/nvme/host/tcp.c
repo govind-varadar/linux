@@ -12,6 +12,7 @@
 #include <net/sock.h>
 #include <net/tcp.h>
 #include <net/tls.h>
+#include <net/tlsh.h>
 #include <linux/blk-mq.h>
 #include <crypto/hash.h>
 #include <net/busy_poll.h>
@@ -109,6 +110,9 @@ struct nvme_tcp_queue {
 	struct ahash_request	*snd_hash;
 	__le32			exp_ddgst;
 	__le32			recv_ddgst;
+
+	struct completion	*tls_complete;
+	int			tls_err;
 
 	struct page_frag_cache	pf_cache;
 
@@ -1746,73 +1750,110 @@ static void nvme_tcp_set_queue_io_cpu(struct nvme_tcp_queue *queue)
  * 2) Host does not use encryption (opts->tls is not set)
  *    -> no keys are provisioned.
  */
-static int nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
-			       bool force_tls)
+static struct key *nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
+				       int hmac, bool generated)
 {
 	char *hostnqn = nctrl->opts->host->nqn;
 	char *subnqn = nvmf_ctrl_subsysnqn(nctrl);
-	int num_keys = 0;
-	struct key *generated_key, *retained_key, *tls_key;
+	struct key *nvme_key, *tls_key;
+	bool force_tls = nctrl->opts->tls;
 
 	/* Check for pre-provisioned keys */
-	/* Generated key with hmac256 */
-	generated_key = nvme_keyring_lookup_generated_key(hostnqn, subnqn, 1);
-	if (!IS_ERR(generated_key)) {
-		tls_key = nvme_keyring_insert_tls(generated_key, nctrl,
-						  1, true);
-		if (!IS_ERR(tls_key)) {
-			key_put(tls_key);
-			num_keys++;
+	if (generated) {
+		/* Lookup generated key */
+		nvme_key = nvme_keyring_lookup_generated_key(hostnqn, subnqn,
+							     hmac);
+		if (!IS_ERR(nvme_key)) {
+			tls_key = nvme_keyring_insert_tls(nvme_key, nctrl,
+							  hmac, true);
+			key_put(nvme_key);
+			return tls_key;
 		}
+		return ERR_PTR(-ENOKEY);
 	}
-	/* Retained key with hmac256 */
-	tls_key = nvme_keyring_lookup_tls(nctrl, 1, false);
+	/* Lookup retained key */
+	tls_key = nvme_keyring_lookup_tls(nctrl, hmac, false);
 	if (IS_ERR(tls_key) && !force_tls) {
 		/* Not found, derive key from PSK if present */
-		retained_key = nvme_keyring_lookup_retained_key(hostnqn, 1);
-		if (!IS_ERR(retained_key)) {
-			tls_key = nvme_keyring_insert_tls(retained_key, nctrl,
-							  1, false);
-			if (!IS_ERR(tls_key)) {
-				key_put(tls_key);
-				num_keys++;
-			}
-		}
-	} else
-		num_keys++;
-
-	/* Generated key with hmac384 */
-	generated_key = nvme_keyring_lookup_generated_key(hostnqn, subnqn, 2);
-	if (!IS_ERR(generated_key)) {
-		tls_key = nvme_keyring_insert_tls(generated_key, nctrl,
-						  2, true);
-		if (!IS_ERR(tls_key)) {
-			key_put(tls_key);
-			num_keys++;
+		nvme_key = nvme_keyring_lookup_retained_key(hostnqn, hmac);
+		if (!IS_ERR(nvme_key)) {
+			tls_key = nvme_keyring_insert_tls(nvme_key, nctrl,
+							  hmac, false);
+			key_put(nvme_key);
+			return tls_key;
 		}
 	}
-	/* Retained key with hmac384 */
-	tls_key = nvme_keyring_lookup_tls(nctrl, 2, false);
-	if (IS_ERR(tls_key) && !force_tls) {
-		/* Not found, derive key from PSK if present */
-		retained_key = nvme_keyring_lookup_retained_key(hostnqn, 2);
-		if (!IS_ERR(retained_key)) {
-			tls_key = nvme_keyring_insert_tls(retained_key,
-							  nctrl, 2, false);
-			if (!IS_ERR(tls_key)) {
-				key_put(tls_key);
-				num_keys++;
-			}
+	return ERR_PTR(-ENOKEY);
+}
+
+static void nvme_tcp_tls_handshake_done(void *data, int status)
+{
+	struct nvme_tcp_queue *queue = data;
+
+	queue->tls_err = status;
+	if (queue->tls_complete)
+		complete(queue->tls_complete);
+}
+
+static int nvme_tcp_start_tls_with_key(struct nvme_ctrl *nctrl, int qid,
+				       struct key *tls_key)
+{
+	struct nvme_tcp_ctrl *ctrl = to_tcp_ctrl(nctrl);
+	struct nvme_tcp_queue *queue = &ctrl->queues[qid];
+	DECLARE_COMPLETION_ONSTACK(tls_complete);
+	unsigned long tmo = 10 * HZ;
+	int rc;
+
+	queue->tls_complete = &tls_complete;
+	queue->tls_err = -EOPNOTSUPP;
+
+	dev_dbg(nctrl->device,
+		"starting TLS handshake on queue %d with key %u\n",
+		nvme_tcp_queue_id(queue), tls_key->serial);
+
+	rc = tls_client_hello(queue->sock, nvme_tcp_tls_handshake_done,
+			      queue, NULL, tls_key->serial);
+	if (rc) {
+		queue->tls_complete = NULL;
+		dev_err(nctrl->device, "error %d starting TLS handshake\n", rc);
+		return rc;
+	}
+
+	if (wait_for_completion_timeout(queue->tls_complete, tmo) == 0)
+		rc = -ETIMEDOUT;
+	else
+		rc = queue->tls_err;
+
+	queue->tls_complete = NULL;
+	dev_dbg(nctrl->device,
+		"TLS handshake on queue %d complete, tmo %lu, error %d\n",
+		nvme_tcp_queue_id(queue), tmo, rc);
+	return rc;
+}
+
+static int nvme_tcp_start_tls(struct nvme_ctrl *nctrl, int qid, bool generated)
+{
+	struct key *tls_key;
+	int hmac = 1, ret;
+
+retry:
+	dev_dbg(nctrl->device, "queue %d: start TLS with %s and %s key\n",
+		qid, hmac == 1 ? "sha256" : "sha384",
+		generated ? "generated" : "retained");
+	tls_key = nvme_tcp_lookup_psk(nctrl, qid, hmac, generated);
+	if (!IS_ERR(tls_key)) {
+		ret = nvme_tcp_start_tls_with_key(nctrl, qid, tls_key);
+		if (!ret) {
+			key_put(tls_key);
+			return ret;
 		}
-	} else
-		num_keys++;
-
-	if (!num_keys)
-		return 0;
-
-	dev_dbg(nctrl->device, "qid %d: start tls with %d keys\n",
-		qid, num_keys);
-	return num_keys;
+		key_put(tls_key);
+	}
+	if (hmac == 1) {
+		hmac = 2;
+		goto retry;
+	}
+	return -ENOKEY;
 }
 
 static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
@@ -1820,7 +1861,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 {
 	struct nvme_tcp_ctrl *ctrl = to_tcp_ctrl(nctrl);
 	struct nvme_tcp_queue *queue = &ctrl->queues[qid];
-	int ret, rcv_pdu_size, num_keys;
+	int ret, rcv_pdu_size;
 
 	mutex_init(&queue->queue_lock);
 	queue->ctrl = ctrl;
@@ -1932,16 +1973,10 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 	}
 
 	/* If PSKs are configured try to start TLS */
-	num_keys = nvme_tcp_lookup_psk(nctrl, qid,
-				       nctrl->opts->tls);
-	if (num_keys || nctrl->opts->tls) {
-		if (num_keys)
-			dev_dbg(nctrl->device,
-				"qid %d: start TLS with retained key\n",
-				qid);
-		/* TLS is not implemented yet */
-		ret = -EOPNOTSUPP;
-	}
+	ret = nvme_tcp_start_tls(nctrl, qid, false);
+	if (ret)
+		goto err_init_connect;
+	set_bit(NVME_TCP_Q_TLS, &queue->flags);
 
 	ret = nvme_tcp_init_connection(queue);
 	if (ret)
@@ -2024,8 +2059,10 @@ static int nvme_tcp_start_queue(struct nvme_ctrl *nctrl, int idx)
 
 	/* Only attempt secure concatenation if no PSK is configured */
 	if (nctrl->opts->tls &&
-	    !test_bit(NVME_TCP_Q_TLS, &ctrl->queues[idx].flags))  {
-		ret = -EOPNOTSUPP;
+	    !test_bit(NVME_TCP_Q_TLS, &ctrl->queues[idx].flags)) {
+		ret = nvme_tcp_start_tls(nctrl, idx, true);
+		if (!ret)
+			set_bit(NVME_TCP_Q_TLS, &ctrl->queues[idx].flags);
 	}
 
 	if (!ret) {
