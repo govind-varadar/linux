@@ -1568,6 +1568,9 @@ static int nvme_tcp_init_connection(struct nvme_tcp_queue *queue)
 	struct nvme_tcp_icreq_pdu *icreq;
 	struct nvme_tcp_icresp_pdu *icresp;
 	struct msghdr msg = {};
+	char cbuf[CMSG_LEN(sizeof(char))];
+	struct cmsghdr *cmsg;
+	unsigned char ctype;
 	struct kvec iov;
 	bool ctrl_hdgst, ctrl_ddgst;
 	int ret;
@@ -1601,10 +1604,23 @@ static int nvme_tcp_init_connection(struct nvme_tcp_queue *queue)
 		goto free_icresp;
 
 	memset(&msg, 0, sizeof(msg));
+	msg.msg_control = cbuf;
+	msg.msg_controllen = sizeof(cbuf);
+	msg.msg_flags = MSG_WAITALL;
 	iov.iov_base = icresp;
 	iov.iov_len = sizeof(*icresp);
+
 	ret = kernel_recvmsg(queue->sock, &msg, &iov, 1,
 			iov.iov_len, msg.msg_flags);
+	cmsg = (struct cmsghdr *)cbuf;
+	if (CMSG_OK(&msg, cmsg)) {
+		if (cmsg->cmsg_level == SOL_TLS &&
+		    cmsg->cmsg_type == TLS_GET_RECORD_TYPE) {
+			ctype = *((unsigned char *)CMSG_DATA(cmsg));
+			if (ctype != TLS_RECORD_TYPE_DATA)
+				ret = -ENOTCONN;
+		}
+	}
 	if (ret < 0)
 		goto free_icresp;
 
