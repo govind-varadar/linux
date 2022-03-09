@@ -1761,26 +1761,20 @@ static struct key *nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
 		/* Lookup generated key */
 		nvme_key = nvme_keyring_lookup_generated_key(hostnqn, subnqn,
 							     hmac);
-		if (!IS_ERR(nvme_key)) {
-			tls_key = nvme_keyring_insert_tls(nvme_key, nctrl,
-							  hmac, generated);
-			key_put(nvme_key);
+	} else {
+		/* Lookup retained key */
+		tls_key = nvme_keyring_lookup_tls(nctrl, hmac, generated);
+		if (!IS_ERR(tls_key) || !force_tls)
 			return tls_key;
-		}
-		return ERR_PTR(-ENOKEY);
-	}
-	/* Lookup retained key */
-	tls_key = nvme_keyring_lookup_tls(nctrl, hmac, generated);
-	if (IS_ERR(tls_key) && !force_tls) {
+
 		/* Not found, derive key from PSK if present */
 		nvme_key = nvme_keyring_lookup_retained_key(hostnqn, hmac);
-		if (!IS_ERR(nvme_key)) {
-			tls_key = nvme_keyring_insert_tls(nvme_key, nctrl,
-							  hmac, false);
-			key_put(nvme_key);
-			return tls_key;
-		}
 	}
+	if (IS_ERR(nvme_key))
+		return nvme_key;
+	tls_key = nvme_keyring_insert_tls(nvme_key, nctrl,
+					  hmac, generated);
+	key_put(nvme_key);
 	return tls_key;
 }
 
@@ -1807,14 +1801,16 @@ static int nvme_tcp_start_tls_with_key(struct nvme_ctrl *nctrl, int qid,
 	queue->tls_err = -EOPNOTSUPP;
 
 	dev_dbg(nctrl->device,
-		"starting TLS handshake on queue %d with key %u\n",
-		nvme_tcp_queue_id(queue), tls_key->serial);
+		"queue %d: starting TLS handshake with key %u\n",
+		qid, tls_key->serial);
 
 	rc = tls_client_hello(queue->sock, nvme_tcp_tls_handshake_done,
 			      queue, priority, tls_key->serial);
 	if (rc) {
 		queue->tls_complete = NULL;
-		dev_err(nctrl->device, "error %d starting TLS handshake\n", rc);
+		dev_err(nctrl->device,
+			"queue %d: error %d starting TLS handshake\n",
+			qid, rc);
 		return rc;
 	}
 
@@ -1825,8 +1821,8 @@ static int nvme_tcp_start_tls_with_key(struct nvme_ctrl *nctrl, int qid,
 
 	queue->tls_complete = NULL;
 	dev_dbg(nctrl->device,
-		"TLS handshake on queue %d complete, tmo %lu, error %d\n",
-		nvme_tcp_queue_id(queue), tmo, rc);
+		"queue %d: TLS handshake complete, tmo %lu, error %d\n",
+		qid, tmo, rc);
 	return rc;
 }
 
@@ -1844,11 +1840,9 @@ retry:
 		dev_dbg(nctrl->device, "queue %d: using key %u\n",
 			qid, tls_key->serial);
 		ret = nvme_tcp_start_tls_with_key(nctrl, qid, tls_key);
-		if (!ret) {
-			key_put(tls_key);
-			return ret;
-		}
 		key_put(tls_key);
+		if (!ret)
+			return ret;
 	} else
 		dev_dbg(nctrl->device, "queue %d: key not found\n", qid);
 	if (hmac == 1) {
