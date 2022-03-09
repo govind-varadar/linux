@@ -1767,14 +1767,14 @@ static struct key *nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
 							     hmac);
 		if (!IS_ERR(nvme_key)) {
 			tls_key = nvme_keyring_insert_tls(nvme_key, nctrl,
-							  hmac, true);
+							  hmac, generated);
 			key_put(nvme_key);
 			return tls_key;
 		}
 		return ERR_PTR(-ENOKEY);
 	}
 	/* Lookup retained key */
-	tls_key = nvme_keyring_lookup_tls(nctrl, hmac, false);
+	tls_key = nvme_keyring_lookup_tls(nctrl, hmac, generated);
 	if (IS_ERR(tls_key) && !force_tls) {
 		/* Not found, derive key from PSK if present */
 		nvme_key = nvme_keyring_lookup_retained_key(hostnqn, hmac);
@@ -1785,7 +1785,7 @@ static struct key *nvme_tcp_lookup_psk(struct nvme_ctrl *nctrl, int qid,
 			return tls_key;
 		}
 	}
-	return ERR_PTR(-ENOKEY);
+	return tls_key;
 }
 
 static void nvme_tcp_tls_handshake_done(void *data, int status)
@@ -1803,7 +1803,7 @@ static int nvme_tcp_start_tls_with_key(struct nvme_ctrl *nctrl, int qid,
 	struct nvme_tcp_ctrl *ctrl = to_tcp_ctrl(nctrl);
 	struct nvme_tcp_queue *queue = &ctrl->queues[qid];
 	DECLARE_COMPLETION_ONSTACK(tls_complete);
-	char *priority = "NORMAL:-VERS-TLS-ALL:+VERS-TLS1.3:+VERS-TLS-1.2:+PSK:-CHACHA20-POLY1305";
+	char *priority = "NORMAL:-VERS-TLS-ALL:+VERS-TLS1.3:+VERS-TLS-1.2:+PSK:+SIGN-ALL:-CHACHA20-POLY1305";
 	unsigned long tmo = 10 * HZ;
 	int rc;
 
@@ -1840,18 +1840,21 @@ static int nvme_tcp_start_tls(struct nvme_ctrl *nctrl, int qid, bool generated)
 	int hmac = 1, ret;
 
 retry:
-	dev_dbg(nctrl->device, "queue %d: start TLS with %s and %s key\n",
+	dev_dbg(nctrl->device, "queue %d: lookup %s %s TLS key\n",
 		qid, hmac == 1 ? "sha256" : "sha384",
 		generated ? "generated" : "retained");
 	tls_key = nvme_tcp_lookup_psk(nctrl, qid, hmac, generated);
 	if (!IS_ERR(tls_key)) {
+		dev_dbg(nctrl->device, "queue %d: using key %u\n",
+			qid, tls_key->serial);
 		ret = nvme_tcp_start_tls_with_key(nctrl, qid, tls_key);
 		if (!ret) {
 			key_put(tls_key);
 			return ret;
 		}
 		key_put(tls_key);
-	}
+	} else
+		dev_dbg(nctrl->device, "queue %d: key not found\n", qid);
 	if (hmac == 1) {
 		hmac = 2;
 		goto retry;
