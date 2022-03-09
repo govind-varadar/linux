@@ -1146,57 +1146,53 @@ static int nvme_tcp_recvmsg(struct nvme_tcp_queue *queue, bool noblock)
 
 static void nvme_tcp_data_ready(struct sock *sk)
 {
-	struct nvme_tcp_queue *queue;
+	struct nvme_tcp_queue *queue =
+		rcu_dereference_sk_user_data(sk);
 
-	if (queue->data_ready)
-		queue->data_ready(sk);
-	read_lock_bh(&sk->sk_callback_lock);
-	queue = sk->sk_user_data;
-	if (likely(queue && queue->rd_enabled) &&
-	    !test_bit(NVME_TCP_Q_POLLING, &queue->flags))
-		queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
-	read_unlock_bh(&sk->sk_callback_lock);
+	if (likely(queue && queue->rd_enabled)) {
+		if (queue->data_ready)
+			queue->data_ready(sk);
+		if (!test_bit(NVME_TCP_Q_POLLING, &queue->flags))
+			queue_work_on(queue->io_cpu, nvme_tcp_wq,
+				      &queue->io_work);
+	}
 }
 
 static void nvme_tcp_write_space(struct sock *sk)
 {
-	struct nvme_tcp_queue *queue;
+	struct nvme_tcp_queue *queue =
+		rcu_dereference_sk_user_data(sk);
 
-	read_lock_bh(&sk->sk_callback_lock);
-	queue = sk->sk_user_data;
 	if (likely(queue && sk_stream_is_writeable(sk))) {
 		clear_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 		queue_work_on(queue->io_cpu, nvme_tcp_wq, &queue->io_work);
 	}
-	read_unlock_bh(&sk->sk_callback_lock);
 }
 
 static void nvme_tcp_state_change(struct sock *sk)
 {
-	struct nvme_tcp_queue *queue;
+	struct nvme_tcp_queue *queue =
+		rcu_dereference_sk_user_data(sk);
+	struct nvme_ctrl *nctrl;
 
-	read_lock_bh(&sk->sk_callback_lock);
-	queue = sk->sk_user_data;
 	if (!queue)
-		goto done;
-
+		return;
+	nctrl = &queue->ctrl->ctrl;
 	switch (sk->sk_state) {
 	case TCP_CLOSE:
 	case TCP_CLOSE_WAIT:
 	case TCP_LAST_ACK:
 	case TCP_FIN_WAIT1:
 	case TCP_FIN_WAIT2:
-		nvme_tcp_error_recovery(&queue->ctrl->ctrl);
+		nvme_tcp_error_recovery(nctrl);
 		break;
 	default:
-		dev_info(queue->ctrl->ctrl.device,
+		dev_info(nctrl->device,
 			"queue %d socket state %d\n",
 			nvme_tcp_queue_id(queue), sk->sk_state);
 	}
 
 	queue->state_change(sk);
-done:
-	read_unlock_bh(&sk->sk_callback_lock);
 }
 
 static inline void nvme_tcp_done_send_req(struct nvme_tcp_queue *queue)
@@ -1993,7 +1989,7 @@ static int nvme_tcp_alloc_queue(struct nvme_ctrl *nctrl,
 	nvme_tcp_init_recv_ctx(queue);
 
 	write_lock_bh(&queue->sock->sk->sk_callback_lock);
-	queue->sock->sk->sk_user_data = queue;
+	rcu_assign_sk_user_data(queue->sock->sk, queue);
 	queue->state_change = queue->sock->sk->sk_state_change;
 	queue->data_ready = queue->sock->sk->sk_data_ready;
 	queue->write_space = queue->sock->sk->sk_write_space;
@@ -2028,7 +2024,7 @@ static void nvme_tcp_restore_sock_calls(struct nvme_tcp_queue *queue)
 	struct socket *sock = queue->sock;
 
 	write_lock_bh(&sock->sk->sk_callback_lock);
-	sock->sk->sk_user_data  = NULL;
+	rcu_assign_sk_user_data(queue->sock->sk, NULL);
 	sock->sk->sk_data_ready = queue->data_ready;
 	sock->sk->sk_state_change = queue->state_change;
 	sock->sk->sk_write_space  = queue->write_space;
