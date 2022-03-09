@@ -1803,6 +1803,7 @@ static int nvme_tcp_start_tls_with_key(struct nvme_ctrl *nctrl, int qid,
 	struct nvme_tcp_ctrl *ctrl = to_tcp_ctrl(nctrl);
 	struct nvme_tcp_queue *queue = &ctrl->queues[qid];
 	DECLARE_COMPLETION_ONSTACK(tls_complete);
+	char *priority = "NORMAL:-VERS-TLS-ALL:+VERS-TLS1.3:+VERS-TLS-1.2:+PSK:-CHACHA20-POLY1305";
 	unsigned long tmo = 10 * HZ;
 	int rc;
 
@@ -1814,7 +1815,7 @@ static int nvme_tcp_start_tls_with_key(struct nvme_ctrl *nctrl, int qid,
 		nvme_tcp_queue_id(queue), tls_key->serial);
 
 	rc = tls_client_hello(queue->sock, nvme_tcp_tls_handshake_done,
-			      queue, NULL, tls_key->serial);
+			      queue, priority, tls_key->serial);
 	if (rc) {
 		queue->tls_complete = NULL;
 		dev_err(nctrl->device, "error %d starting TLS handshake\n", rc);
