@@ -1765,6 +1765,32 @@ size_t hash_and_copy_to_iter(const void *addr, size_t bytes, void *hashp,
 }
 EXPORT_SYMBOL(hash_and_copy_to_iter);
 
+size_t hash_iov_iter(void *hashp, const struct iov_iter *i)
+{
+#ifdef CONFIG_CRYPTO_HASH
+	struct ahash_request *hash = hashp;
+	size_t skip = i->iov_offset, size = i->count;
+	const struct iovec *p;
+
+	for (p = i->iov; size; skip = 0, p++) {
+		struct scatterlist sg;
+		unsigned offs = offset_in_page(p->iov_base + skip);
+		size_t len = min(p->iov_len - skip, size);
+
+		if (!len)
+			continue;
+		sg_init_one(&sg, p->iov_base + offs, len);
+		ahash_request_set_crypt(hash, &sg, NULL, len);
+		crypto_ahash_update(hash);
+		size -= len;
+	}
+	return i->count;
+#else
+	return 0;
+#endif
+}
+EXPORT_SYMBOL(hash_iov_iter);
+
 static int iov_npages(const struct iov_iter *i, int maxpages)
 {
 	size_t skip = i->iov_offset, size = i->count;
