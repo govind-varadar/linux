@@ -1793,7 +1793,7 @@ static int nvme_tcp_start_tls_with_key(struct nvme_ctrl *nctrl, int qid,
 	struct nvme_tcp_ctrl *ctrl = to_tcp_ctrl(nctrl);
 	struct nvme_tcp_queue *queue = &ctrl->queues[qid];
 	DECLARE_COMPLETION_ONSTACK(tls_complete);
-	char *priority = "NORMAL:-VERS-TLS-ALL:+VERS-TLS1.3:+VERS-TLS-1.2:+PSK:+SIGN-ALL:-CHACHA20-POLY1305";
+	char *priority = "NORMAL:-VERS-TLS-ALL:+VERS-TLS1.3:+VERS-TLS1.2:+PSK:+DHE-PSK:+ECDHE-PSK:+SIGN-ALL:-CHACHA20-POLY1305";
 	unsigned long tmo = 10 * HZ;
 	int rc;
 
