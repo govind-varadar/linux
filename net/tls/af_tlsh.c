@@ -53,7 +53,7 @@
 struct tlsh_sock_info {
 	void			(*tsi_handshake_done)(void *data, int status);
 	void			*tsi_handshake_data;
-	const char		*tsi_tls_priorities;
+	char			*tsi_tls_priorities;
 	key_serial_t		tsi_key_serial;
 
 	struct socket_wq	*tsi_saved_wq;
@@ -183,6 +183,7 @@ static void tlsh_sock_clear(struct sock *sk)
 	write_lock_bh(&sk->sk_callback_lock);
 	sk->sk_tlsh_priv = NULL;
 	write_unlock_bh(&sk->sk_callback_lock);
+	kfree(info->tsi_tls_priorities);
 	kfree(info);
 	sock_put(sk);	/* Ref: J (err) */
 }
@@ -239,6 +240,7 @@ static bool tlsh_handshake_done(struct sock *sk)
 	write_unlock_bh(&sk->sk_callback_lock);
 
 	if (info) {
+		kfree(info->tsi_tls_priorities);
 		kfree(info);
 		sock_put(sk);	/* Ref: J */
 		return true;
@@ -645,19 +647,16 @@ static int tlsh_getsockopt_priorities(struct sock *sk, char __user *optval,
 	if (val) {
 		int outlen = strlen(val);
 
-		if (len < outlen) {
+		if (len < outlen)
 			ret = -EINVAL;
-			goto out_put;
-		}
+		else if (copy_to_user(optval, val, outlen))
+			ret = -EFAULT;
 	} else {
 		outlen = 0;
 	}
 
-	if (put_user(outlen, optlen)) {
-		ret = -EFAULT;
-		goto out_put;
-	}
-	if (copy_to_user(optval, &val, outlen))
+
+	if (put_user(outlen, optlen))
 		ret = -EFAULT;
 
 out_put:
@@ -933,7 +932,16 @@ int tls_client_hello(struct socket *sock, void (*done)(void *data, int status),
 
 	info->tsi_handshake_done = done;
 	info->tsi_handshake_data = data;
-	info->tsi_tls_priorities = priorities;
+	if (priorities && strlen(priorities)) {
+		info->tsi_tls_priorities = kzalloc(strlen(priorities) + 1,
+						   GFP_KERNEL);
+		if (!info->tsi_tls_priorities) {
+			sock_put(listener);
+			kfree(info);
+			return -ENOMEM;
+		}
+		strcpy(info->tsi_tls_priorities, priorities);
+	}
 	info->tsi_key_serial = key;
 	tlsh_sock_save(sk, info);
 
