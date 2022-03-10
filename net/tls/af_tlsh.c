@@ -429,7 +429,6 @@ static int tlsh_accept(struct socket *listener, struct socket *newsock, int flag
 	trace_tlsh_newsock(newsock, newsk);
 
 	/* prevent user agent close from releasing the kernel socket */
-	__module_get(THIS_MODULE);
 	sock_hold(newsk);
 
 out_release:
