@@ -956,6 +956,9 @@ static int nvme_tcp_recvmsg_data(struct nvme_tcp_queue *queue)
 		if (WARN_ON(queue->data_digest))
 			ret = -EOPNOTSUPP;
 
+		if (ret > 0 && queue->data_digest)
+			ret = hash_iov_iter(queue->rcv_hash, &req->iter);
+
 		if (ret <= 0) {
 			dev_err(queue->ctrl->ctrl.device,
 				"queue %d failed to receive request %#x data",
