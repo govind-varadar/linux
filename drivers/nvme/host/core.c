@@ -3741,8 +3741,8 @@ static int nvme_add_ns_cdev(struct nvme_ns *ns)
 			     ns->ctrl->ops->module);
 }
 
-static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_ctrl *ctrl,
-		unsigned nsid, struct nvme_ns_ids *ids)
+static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_subsystem *subsys,
+		struct nvme_ctrl *ctrl, unsigned nsid, struct nvme_ns_ids *ids)
 {
 	struct nvme_ns_head *head;
 	size_t size = sizeof(*head);
@@ -3755,7 +3755,7 @@ static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_ctrl *ctrl,
 	head = kzalloc(size, GFP_KERNEL);
 	if (!head)
 		goto out;
-	ret = ida_alloc_min(&ctrl->subsys->ns_ida, 1, GFP_KERNEL);
+	ret = ida_alloc_min(&subsys->ns_ida, 1, GFP_KERNEL);
 	if (ret < 0)
 		goto out_free_head;
 	head->instance = ret;
@@ -3763,7 +3763,7 @@ static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_ctrl *ctrl,
 	ret = init_srcu_struct(&head->srcu);
 	if (ret)
 		goto out_ida_remove;
-	head->subsys = ctrl->subsys;
+	head->subsys = subsys;
 	head->ns_id = nsid;
 	head->ids = *ids;
 	kref_init(&head->ref);
@@ -3775,19 +3775,19 @@ static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_ctrl *ctrl,
 	} else
 		head->effects = ctrl->effects;
 
-	ret = nvme_mpath_alloc_disk(ctrl, head);
+	ret = nvme_mpath_alloc_disk(subsys, ctrl, head);
 	if (ret)
 		goto out_cleanup_srcu;
 
-	list_add_tail(&head->entry, &ctrl->subsys->nsheads);
+	list_add_tail(&head->entry, &subsys->nsheads);
 
-	kref_get(&ctrl->subsys->ref);
+	kref_get(&subsys->ref);
 
 	return head;
 out_cleanup_srcu:
 	cleanup_srcu_struct(&head->srcu);
 out_ida_remove:
-	ida_free(&ctrl->subsys->ns_ida, head->instance);
+	ida_free(&subsys->ns_ida, head->instance);
 out_free_head:
 	kfree(head);
 out:
@@ -3826,27 +3826,28 @@ static int nvme_init_ns_head(struct nvme_ns *ns, unsigned nsid,
 		struct nvme_ns_ids *ids, bool is_shared)
 {
 	struct nvme_ctrl *ctrl = ns->ctrl;
+	struct nvme_subsystem *subsys = ctrl->subsys;
 	struct nvme_ns_head *head = NULL;
 	int ret;
 
-	ret = nvme_global_check_duplicate_ids(ctrl->subsys, ids);
+	ret = nvme_global_check_duplicate_ids(subsys, ids);
 	if (ret) {
 		dev_err(ctrl->device,
 			"globally duplicate IDs for nsid %d\n", nsid);
 		return ret;
 	}
 
-	mutex_lock(&ctrl->subsys->lock);
+	mutex_lock(&subsys->lock);
 	head = nvme_find_ns_head(ctrl, nsid);
 	if (!head) {
-		ret = nvme_subsys_check_duplicate_ids(ctrl->subsys, ids);
+		ret = nvme_subsys_check_duplicate_ids(subsys, ids);
 		if (ret) {
 			dev_err(ctrl->device,
 				"duplicate IDs in subsystem for nsid %d\n",
 				nsid);
 			goto out_unlock;
 		}
-		head = nvme_alloc_ns_head(ctrl, nsid, ids);
+		head = nvme_alloc_ns_head(subsys, ctrl, nsid, ids);
 		if (IS_ERR(head)) {
 			ret = PTR_ERR(head);
 			goto out_unlock;
@@ -3877,13 +3878,13 @@ static int nvme_init_ns_head(struct nvme_ns *ns, unsigned nsid,
 
 	list_add_tail_rcu(&ns->siblings, &head->list);
 	ns->head = head;
-	mutex_unlock(&ctrl->subsys->lock);
+	mutex_unlock(&subsys->lock);
 	return 0;
 
 out_put_ns_head:
 	nvme_put_ns_head(head);
 out_unlock:
-	mutex_unlock(&ctrl->subsys->lock);
+	mutex_unlock(&subsys->lock);
 	return ret;
 }
 
