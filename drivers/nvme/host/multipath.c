@@ -473,7 +473,8 @@ static void nvme_requeue_work(struct work_struct *work)
 	}
 }
 
-int nvme_mpath_alloc_disk(struct nvme_ctrl *ctrl, struct nvme_ns_head *head)
+int nvme_mpath_alloc_disk(struct nvme_subsystem *subsys, struct nvme_ctrl *ctrl,
+		struct nvme_ns_head *head)
 {
 	bool vwc = false;
 
@@ -487,7 +488,7 @@ int nvme_mpath_alloc_disk(struct nvme_ctrl *ctrl, struct nvme_ns_head *head)
 	 * We also do this for private namespaces as the namespace sharing flag
 	 * could change after a rescan.
 	 */
-	if (!(ctrl->subsys->cmic & NVME_CTRL_CMIC_MULTI_CTRL) ||
+	if (!(subsys->cmic & NVME_CTRL_CMIC_MULTI_CTRL) ||
 	    !nvme_is_unique_nsid(ctrl, head) || !multipath)
 		return 0;
 
@@ -497,7 +498,7 @@ int nvme_mpath_alloc_disk(struct nvme_ctrl *ctrl, struct nvme_ns_head *head)
 	head->disk->fops = &nvme_ns_head_ops;
 	head->disk->private_data = head;
 	sprintf(head->disk->disk_name, "nvme%dn%d",
-			ctrl->subsys->instance, head->instance);
+			subsys->instance, head->instance);
 
 	blk_queue_flag_set(QUEUE_FLAG_NONROT, head->disk->queue);
 	blk_queue_flag_set(QUEUE_FLAG_NOWAIT, head->disk->queue);
