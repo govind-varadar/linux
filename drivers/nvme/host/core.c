@@ -2688,32 +2688,22 @@ static bool quirk_matches(const struct nvme_id_ctrl *id,
 		string_matches(id->fr, q->fr, sizeof(id->fr));
 }
 
-static void nvme_init_subnqn(struct nvme_subsystem *subsys, struct nvme_ctrl *ctrl,
-		struct nvme_id_ctrl *id)
+static void nvme_init_subnqn(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
 {
-	size_t nqnlen;
 	int off;
 
-	if(!(ctrl->quirks & NVME_QUIRK_IGNORE_DEV_SUBNQN)) {
-		nqnlen = strnlen(id->subnqn, NVMF_NQN_SIZE);
-		if (nqnlen > 0 && nqnlen < NVMF_NQN_SIZE) {
-			strlcpy(subsys->subnqn, id->subnqn, NVMF_NQN_SIZE);
-			return;
-		}
-
-		if (ctrl->vs >= NVME_VS(1, 2, 1))
-			dev_warn(ctrl->device, "missing or invalid SUBNQN field.\n");
-	}
+	if(!(ctrl->quirks & NVME_QUIRK_IGNORE_DEV_SUBNQN))
+		return;
 
 	/* Generate a "fake" NQN per Figure 254 in NVMe 1.3 + ECN 001 */
-	off = snprintf(subsys->subnqn, NVMF_NQN_SIZE,
+	off = snprintf(id->subnqn, NVMF_NQN_SIZE,
 			"nqn.2014.08.org.nvmexpress:%04x%04x",
 			le16_to_cpu(id->vid), le16_to_cpu(id->ssvid));
-	memcpy(subsys->subnqn + off, id->sn, sizeof(id->sn));
+	memcpy(id->subnqn + off, id->sn, sizeof(id->sn));
 	off += sizeof(id->sn);
-	memcpy(subsys->subnqn + off, id->mn, sizeof(id->mn));
+	memcpy(id->subnqn + off, id->mn, sizeof(id->mn));
 	off += sizeof(id->mn);
-	memset(subsys->subnqn + off, 0, sizeof(subsys->subnqn) - off);
+	memset(id->subnqn + off, 0, NVMF_NQN_SIZE - off);
 }
 
 static void nvme_release_subsystem(struct device *dev)
@@ -2896,7 +2886,10 @@ static int nvme_init_subsystem(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
 	kref_init(&subsys->ref);
 	INIT_LIST_HEAD(&subsys->ctrls);
 	INIT_LIST_HEAD(&subsys->nsheads);
-	nvme_init_subnqn(subsys, ctrl, id);
+	if (!strnlen(id->subnqn, NVMF_NQN_SIZE) &&
+	    ctrl->vs >= NVME_VS(1,2,1))
+		dev_warn(ctrl->device, "missing or invalid SUBNQN field.\n");
+	memcpy(subsys->subnqn, id->subnqn, NVMF_NQN_SIZE);
 	memcpy(subsys->serial, id->sn, sizeof(subsys->serial));
 	memcpy(subsys->model, id->mn, sizeof(subsys->model));
 	memcpy(subsys->firmware_rev, id->fr, sizeof(subsys->firmware_rev));
@@ -3098,6 +3091,12 @@ static int nvme_init_identify(struct nvme_ctrl *ctrl)
 
 	if (!ctrl->identified) {
 		unsigned int i;
+
+		nvme_init_subnqn(ctrl, id);
+		if (!strnlen(id->subnqn, NVMF_NQN_SIZE) &&
+		    ctrl->vs >= NVME_VS(1, 2, 1))
+			dev_warn(ctrl->device,
+				 "missing or invalid SUBNQN field.\n");
 
 		ret = nvme_init_subsystem(ctrl, id);
 		if (ret)
