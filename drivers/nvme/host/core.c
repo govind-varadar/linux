@@ -20,6 +20,7 @@
 #include <linux/ptrace.h>
 #include <linux/nvme_ioctl.h>
 #include <linux/pm_qos.h>
+#include <generated/utsrelease.h>
 #include <asm/unaligned.h>
 
 #include "nvme.h"
@@ -87,6 +88,10 @@ static unsigned long apst_secondary_latency_tol_us = 100000;
 module_param(apst_secondary_latency_tol_us, ulong, 0644);
 MODULE_PARM_DESC(apst_secondary_latency_tol_us,
 	"secondary APST latency tolerance in us");
+
+static bool ns_subsys;
+module_param(ns_subsys, bool, 0644);
+MODULE_PARM_DESC(ns_subsys, "Per-namespace virtual subsystems");
 
 /*
  * nvme_wq - hosts nvme related works that are not reset or delete
@@ -3903,6 +3908,7 @@ static struct nvme_ns_head *nvme_find_ns_head(struct nvme_subsystem *subsys,
 		struct nvme_ns_info *info)
 {
 	struct nvme_ns_head *h;
+	unsigned int nsid = ns_subsys ? 1 : info->nsid;
 
 	lockdep_assert_held(&subsys->lock);
 
@@ -3912,7 +3918,7 @@ static struct nvme_ns_head *nvme_find_ns_head(struct nvme_subsystem *subsys,
 		 * In that case we can't use the same ns_head for namespaces
 		 * with the same NSID.
 		 */
-		if (h->ns_id != info->nsid || !(h->shared || info->is_unique))
+		if (h->ns_id != nsid || !(h->shared || info->is_unique))
 			continue;
 		if (!list_empty(&h->list) && nvme_tryget_ns_head(h))
 			return h;
@@ -4034,7 +4040,10 @@ static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_subsystem *subsys,
 	if (ret)
 		goto out_ida_remove;
 	head->subsys = subsys;
-	head->ns_id = info->nsid;
+	if (ns_subsys)
+		head->ns_id = 1;
+	else
+		head->ns_id = info->nsid;
 	head->ids = info->ids;
 	head->shared = info->is_shared;
 	kref_init(&head->ref);
@@ -4093,6 +4102,49 @@ static int nvme_global_check_duplicate_ids(struct nvme_subsystem *this,
 	return ret;
 }
 
+static struct nvme_subsystem *nvme_generate_ns_subsys(struct nvme_ns_info *info)
+{
+	struct nvme_id_ctrl *ns_subsys_id;
+	struct nvme_ns_ids *ids = &info->ids;
+	struct nvme_subsystem *subsys, *found;
+	char serial[10];
+	int ret;
+
+	ns_subsys_id = kzalloc(sizeof(*ns_subsys_id), GFP_KERNEL);
+	if (!ns_subsys_id)
+		return ERR_PTR(-ENOMEM);
+	snprintf(ns_subsys_id->subnqn, NVMF_NQN_SIZE,
+		 "nvme.2014.08.org.nvmexpress:uuid.%pU", &ids->uuid);
+	memcpy(ns_subsys_id->mn, "Linux", 6);
+	get_random_bytes(&serial, sizeof(serial));
+	bin2hex(ns_subsys_id->sn, &serial, sizeof(serial));
+	memcpy_and_pad(ns_subsys_id->fr, sizeof(ns_subsys_id->fr),
+		       UTS_RELEASE, strlen(UTS_RELEASE), ' ');
+	ns_subsys_id->cmic = NVME_CTRL_CMIC_MULTI_PORT |
+		NVME_CTRL_CMIC_MULTI_CTRL | NVME_CTRL_CMIC_ANA;
+
+	subsys = __nvme_init_subsystem(ns_subsys_id);
+	mutex_lock(&nvme_subsystems_lock);
+	found = __nvme_find_get_subsystem(subsys->subnqn);
+	if (found) {
+		put_device(&subsys->dev);
+		subsys = found;
+	} else {
+		ret = device_add(&subsys->dev);
+		if (ret) {
+			pr_err("failed to register subsystem '%s'.\n",
+			       dev_name(&subsys->dev));
+			put_device(&subsys->dev);
+			goto out_unlock;
+		}
+		list_add_tail(&subsys->entry, &nvme_subsystems);
+	}
+out_unlock:
+	mutex_unlock(&nvme_subsystems_lock);
+	kfree(ns_subsys_id);
+	return subsys;
+}
+
 static int nvme_init_ns_head(struct nvme_ns *ns, struct nvme_ns_info *info)
 {
 	struct nvme_ctrl *ctrl = ns->ctrl;
@@ -4100,12 +4152,28 @@ static int nvme_init_ns_head(struct nvme_ns *ns, struct nvme_ns_info *info)
 	struct nvme_ns_head *head = NULL;
 	int ret;
 
+	/*
+	 * nvme_generate_ns_subsys() increases the subsystem
+	 * refcount, so we need to take care to decrease it
+	 * again once we leave this function to not end up
+	 * with a refcount imbalance and the per-namespace
+	 * subsystem never to be deleted.
+	 */
+	if (info->is_shared && ns_subsys) {
+		subsys = nvme_generate_ns_subsys(info);
+		if (IS_ERR(subsys)) {
+			dev_err(ctrl->device,
+				"failed to allocate virtual subsys\n");
+			return PTR_ERR(subsys);
+		}
+	}
+
 	ret = nvme_global_check_duplicate_ids(subsys, &info->ids);
 	if (ret) {
 		dev_err(ctrl->device,
 			"globally duplicate IDs for nsid %d\n", info->nsid);
 		nvme_print_device_info(ctrl);
-		return ret;
+		goto out_put;
 	}
 
 	mutex_lock(&subsys->lock);
@@ -4150,12 +4218,17 @@ static int nvme_init_ns_head(struct nvme_ns *ns, struct nvme_ns_info *info)
 	list_add_tail_rcu(&ns->siblings, &head->list);
 	ns->head = head;
 	mutex_unlock(&subsys->lock);
+	if (subsys != ctrl->subsys)
+		nvme_put_subsystem(subsys);
 	return 0;
 
 out_put_ns_head:
 	nvme_put_ns_head(head);
 out_unlock:
 	mutex_unlock(&subsys->lock);
+out_put:
+	if (subsys != ctrl->subsys)
+		nvme_put_subsystem(subsys);
 	return ret;
 }
 
