@@ -20,6 +20,7 @@
 #include <linux/ptrace.h>
 #include <linux/nvme_ioctl.h>
 #include <linux/pm_qos.h>
+#include <generated/utsrelease.h>
 #include <asm/unaligned.h>
 
 #include "nvme.h"
@@ -80,6 +81,10 @@ MODULE_PARM_DESC(apst_secondary_latency_tol_us,
 static bool streams;
 module_param(streams, bool, 0644);
 MODULE_PARM_DESC(streams, "turn on support for Streams write directives");
+
+static bool virtual_subsys;
+module_param(virtual_subsys, bool, 0644);
+MODULE_PARM_DESC(virtual_subsys, "Per-namespace virtual subsystems");
 
 /*
  * nvme_wq - hosts nvme related works that are not reset or delete
@@ -3767,7 +3772,10 @@ static struct nvme_ns_head *nvme_alloc_ns_head(struct nvme_subsystem *subsys,
 	if (ret)
 		goto out_ida_remove;
 	head->subsys = subsys;
-	head->ns_id = nsid;
+	if (virtual_subsys)
+		head->ns_id = 1;
+	else
+		head->ns_id = nsid;
 	head->ids = *ids;
 	kref_init(&head->ref);
 
@@ -3825,6 +3833,31 @@ static int nvme_global_check_duplicate_ids(struct nvme_subsystem *this,
 	return ret;
 }
 
+static struct nvme_subsystem *nvme_find_virtual_subsys(struct nvme_ns_ids *ids)
+{
+	struct nvme_id_ctrl *virtual_id;
+	struct nvme_subsystem *subsys;
+	char serial[10];
+
+	virtual_id = kzalloc(sizeof(*virtual_id), GFP_KERNEL);
+	if (!virtual_id)
+		return ERR_PTR(-ENOMEM);
+	snprintf(virtual_id->subnqn, NVMF_NQN_SIZE,
+		 "nvme.2014.08.org.nvmexpress:uuid.%pU", &ids->uuid);
+	memcpy(virtual_id->mn, "Linux", 6);
+	get_random_bytes(&serial, sizeof(serial));
+	bin2hex(virtual_id->sn, &serial, sizeof(serial));
+	memcpy_and_pad(virtual_id->fr, sizeof(virtual_id->fr),
+		       UTS_RELEASE, strlen(UTS_RELEASE), ' ');
+	virtual_id->cmic = NVME_CTRL_CMIC_MULTI_PORT |
+		NVME_CTRL_CMIC_MULTI_CTRL | NVME_CTRL_CMIC_ANA;
+
+	subsys = nvme_init_subsystem(NULL, virtual_id);
+	kfree(virtual_id);
+	return subsys;
+}
+
+
 static int nvme_init_ns_head(struct nvme_ns *ns, unsigned nsid,
 		struct nvme_ns_ids *ids, bool is_shared)
 {
@@ -3834,10 +3867,29 @@ static int nvme_init_ns_head(struct nvme_ns *ns, unsigned nsid,
 	bool unique_nsid = nvme_is_unique_nsid(ctrl);
 	int ret;
 
+	/*
+	 * nvme_find_virtual_subsys() will increase the refcount,
+	 * so we need to increase it for the normal case, too.
+	 * Otherwise we'll have a refcount imbalance and the virtual
+	 * subsystem will be missing the final kref_put().
+	 */
+	if (is_shared && virtual_subsys) {
+		subsys = nvme_find_virtual_subsys(ids);
+		if (IS_ERR(subsys)) {
+			dev_err(ctrl->device,
+				"failed to allocate virtual subsys\n");
+			return PTR_ERR(subsys);
+		}
+		/* Virtual subsystems only have one namespace */
+		nsid = 1;
+	} else
+		kref_get(&subsys->ref);
+
 	ret = nvme_global_check_duplicate_ids(subsys, ids);
 	if (ret) {
 		dev_err(ctrl->device,
 			"globally duplicate IDs for nsid %d\n", nsid);
+		nvme_put_subsystem(subsys);
 		return ret;
 	}
 
@@ -3883,12 +3935,14 @@ static int nvme_init_ns_head(struct nvme_ns *ns, unsigned nsid,
 	list_add_tail_rcu(&ns->siblings, &head->list);
 	ns->head = head;
 	mutex_unlock(&subsys->lock);
+	nvme_put_subsystem(subsys);
 	return 0;
 
 out_put_ns_head:
 	nvme_put_ns_head(head);
 out_unlock:
 	mutex_unlock(&subsys->lock);
+	nvme_put_subsystem(subsys);
 	return ret;
 }
 
