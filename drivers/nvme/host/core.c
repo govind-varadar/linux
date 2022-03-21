@@ -2752,7 +2752,8 @@ static struct nvme_subsystem *nvme_init_subsystem(struct nvme_ctrl *ctrl,
 	else
 		subsys->subtype = NVME_NQN_NVME;
 
-	if (nvme_discovery_ctrl(ctrl) && subsys->subtype != NVME_NQN_DISC) {
+	if (ctrl && nvme_discovery_ctrl(ctrl) &&
+	    subsys->subtype != NVME_NQN_DISC) {
 		dev_err(ctrl->device,
 			"Subsystem %s is not a discovery controller",
 			subsys->subnqn);
@@ -2773,15 +2774,15 @@ static struct nvme_subsystem *nvme_init_subsystem(struct nvme_ctrl *ctrl,
 		put_device(&subsys->dev);
 		subsys = found;
 
-		if (!nvme_validate_cntlid(subsys, ctrl, id)) {
+		if (ctrl && !nvme_validate_cntlid(subsys, ctrl, id)) {
 			ret = -EINVAL;
 			goto out_put_subsystem;
 		}
 	} else {
 		ret = device_add(&subsys->dev);
 		if (ret) {
-			dev_err(ctrl->device,
-				"failed to register subsystem device.\n");
+			pr_err("failed to register subsystem '%s'.\n",
+			       dev_name(&subsys->dev));
 			put_device(&subsys->dev);
 			goto out_unlock;
 		}
@@ -2789,16 +2790,18 @@ static struct nvme_subsystem *nvme_init_subsystem(struct nvme_ctrl *ctrl,
 		list_add_tail(&subsys->entry, &nvme_subsystems);
 	}
 
-	ret = sysfs_create_link(&subsys->dev.kobj, &ctrl->device->kobj,
-				dev_name(ctrl->device));
-	if (ret) {
-		dev_err(ctrl->device,
-			"failed to create sysfs link from subsystem.\n");
-		goto out_put_subsystem;
-	}
+	if (ctrl) {
+		ret = sysfs_create_link(&subsys->dev.kobj, &ctrl->device->kobj,
+					dev_name(ctrl->device));
+		if (ret) {
+			dev_err(ctrl->device,
+				"failed to create sysfs link from subsystem.\n");
+			goto out_put_subsystem;
+		}
 
-	ctrl->subsys = subsys;
-	list_add_tail(&ctrl->subsys_entry, &subsys->ctrls);
+		ctrl->subsys = subsys;
+		list_add_tail(&ctrl->subsys_entry, &subsys->ctrls);
+	}
 	mutex_unlock(&nvme_subsystems_lock);
 	return subsys;
 
