@@ -3626,20 +3626,20 @@ static const struct attribute_group *nvme_dev_attr_groups[] = {
 	NULL,
 };
 
-static struct nvme_ns_head *nvme_find_ns_head(struct nvme_ctrl *ctrl,
-		unsigned nsid)
+static struct nvme_ns_head *nvme_find_ns_head(struct nvme_subsystem *subsys,
+		unsigned nsid, bool unique_nsid)
 {
 	struct nvme_ns_head *h;
 
-	lockdep_assert_held(&ctrl->subsys->lock);
+	lockdep_assert_held(&subsys->lock);
 
-	list_for_each_entry(h, &ctrl->subsys->nsheads, entry) {
+	list_for_each_entry(h, &subsys->nsheads, entry) {
 		/*
 		 * Private namespaces can share NSIDs under some conditions.
 		 * In that case we can't use the same ns_head for namespaces
 		 * with the same NSID.
 		 */
-		if (h->ns_id != nsid || !nvme_is_unique_nsid(ctrl, h))
+		if (h->ns_id != nsid || !(h->shared || unique_nsid))
 			continue;
 		if (!list_empty(&h->list) && nvme_tryget_ns_head(h))
 			return h;
@@ -3824,6 +3824,7 @@ static int nvme_init_ns_head(struct nvme_ns *ns, unsigned nsid,
 	struct nvme_ctrl *ctrl = ns->ctrl;
 	struct nvme_subsystem *subsys = ctrl->subsys;
 	struct nvme_ns_head *head = NULL;
+	bool unique_nsid = nvme_is_unique_nsid(ctrl);
 	int ret;
 
 	ret = nvme_global_check_duplicate_ids(subsys, ids);
@@ -3834,7 +3835,7 @@ static int nvme_init_ns_head(struct nvme_ns *ns, unsigned nsid,
 	}
 
 	mutex_lock(&subsys->lock);
-	head = nvme_find_ns_head(ctrl, nsid);
+	head = nvme_find_ns_head(subsys, nsid, unique_nsid);
 	if (!head) {
 		ret = nvme_subsys_check_duplicate_ids(subsys, ids);
 		if (ret) {
