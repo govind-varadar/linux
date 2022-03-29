@@ -38,6 +38,7 @@ struct nvme_ns_info {
 	bool is_shared;
 	bool is_readonly;
 	bool is_ready;
+	bool is_unique;
 };
 
 unsigned int admin_timeout = 60;
@@ -1451,6 +1452,7 @@ static int nvme_ns_info_from_identify(struct nvme_ctrl *ctrl,
 	info->is_shared = id->nmic & NVME_NS_NMIC_SHARED;
 	info->is_readonly = id->nsattr & NVME_NS_ATTR_RO;
 	info->is_ready = true;
+	info->is_unique = nvme_is_unique_nsid(ctrl);
 	if (ctrl->quirks & NVME_QUIRK_BOGUS_NID) {
 		dev_info(ctrl->device,
 			 "Ignoring bogus Namespace Identifiers\n");
@@ -3883,20 +3885,20 @@ static const struct attribute_group *nvme_dev_attr_groups[] = {
 	NULL,
 };
 
-static struct nvme_ns_head *nvme_find_ns_head(struct nvme_ctrl *ctrl,
-		unsigned nsid)
+static struct nvme_ns_head *nvme_find_ns_head(struct nvme_subsystem *subsys,
+		struct nvme_ns_info *info)
 {
 	struct nvme_ns_head *h;
 
-	lockdep_assert_held(&ctrl->subsys->lock);
+	lockdep_assert_held(&subsys->lock);
 
-	list_for_each_entry(h, &ctrl->subsys->nsheads, entry) {
+	list_for_each_entry(h, &subsys->nsheads, entry) {
 		/*
 		 * Private namespaces can share NSIDs under some conditions.
 		 * In that case we can't use the same ns_head for namespaces
 		 * with the same NSID.
 		 */
-		if (h->ns_id != nsid || !nvme_is_unique_nsid(ctrl, h))
+		if (h->ns_id != info->nsid || !(h->shared || info->is_unique))
 			continue;
 		if (!list_empty(&h->list) && nvme_tryget_ns_head(h))
 			return h;
@@ -4093,7 +4095,7 @@ static int nvme_init_ns_head(struct nvme_ns *ns, struct nvme_ns_info *info)
 	}
 
 	mutex_lock(&subsys->lock);
-	head = nvme_find_ns_head(ctrl, info->nsid);
+	head = nvme_find_ns_head(subsys, info);
 	if (!head) {
 		ret = nvme_subsys_check_duplicate_ids(subsys, &info->ids);
 		if (ret) {

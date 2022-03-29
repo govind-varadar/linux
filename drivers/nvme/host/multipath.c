@@ -489,7 +489,7 @@ int nvme_mpath_alloc_disk(struct nvme_subsystem *subsys, struct nvme_ctrl *ctrl,
 	 * could change after a rescan.
 	 */
 	if (!(subsys->cmic & NVME_CTRL_CMIC_MULTI_CTRL) ||
-	    !nvme_is_unique_nsid(ctrl, head) || !multipath)
+	    !(head->shared || nvme_is_unique_nsid(ctrl)) || !multipath)
 		return 0;
 
 	head->disk = blk_alloc_disk(ctrl->numa_node);

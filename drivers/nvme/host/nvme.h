@@ -779,11 +779,9 @@ static inline bool nvme_check_ready(struct nvme_ctrl *ctrl, struct request *rq,
  *
  * In other case, private namespace are not required to report a unique NSID.
  */
-static inline bool nvme_is_unique_nsid(struct nvme_ctrl *ctrl,
-		struct nvme_ns_head *head)
+static inline bool nvme_is_unique_nsid(struct nvme_ctrl *ctrl)
 {
-	return head->shared ||
-		(ctrl->oacs & NVME_CTRL_OACS_NS_MNGT_SUPP) ||
+	return (ctrl->oacs & NVME_CTRL_OACS_NS_MNGT_SUPP) ||
 		(ctrl->subsys->cmic & NVME_CTRL_CMIC_ANA) ||
 		(ctrl->ctratt & NVME_CTRL_CTRATT_NVM_SETS);
 }
