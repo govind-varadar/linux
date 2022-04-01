@@ -833,6 +833,16 @@ void nvme_mpath_add_disk(struct nvme_ns *ns, __le32 anagrpid)
 	if (blk_queue_is_zoned(ns->queue) && ns->head->disk)
 		ns->head->disk->nr_zones = ns->disk->nr_zones;
 #endif
+	if (ns->head->disk) {
+		int ret;
+
+		ret = sysfs_create_link(&disk_to_dev(ns->head->disk)->kobj,
+					&disk_to_dev(ns->disk)->kobj,
+					ns->disk->disk_name);
+		if (ret)
+			dev_warn(ns->ctrl->device,
+				 "failed to create namespace path link\n");
+	}
 }
 
 void nvme_mpath_shutdown_disk(struct nvme_ns_head *head)

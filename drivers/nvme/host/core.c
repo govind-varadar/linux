@@ -4301,6 +4301,9 @@ static void nvme_ns_remove(struct nvme_ns *ns)
 
 	if (!nvme_ns_head_multipath(ns->head))
 		nvme_cdev_del(&ns->cdev, &ns->cdev_device);
+	else
+		sysfs_remove_link(&disk_to_dev(ns->head->disk)->kobj,
+				  ns->disk->disk_name);
 	del_gendisk(ns->disk);
 
 	down_write(&ns->ctrl->namespaces_rwsem);
