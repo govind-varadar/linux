@@ -3978,11 +3978,13 @@ static void nvme_alloc_ns(struct nvme_ctrl *ctrl, unsigned nsid,
 	 * devices.
 	 */
 	if (ns->head->disk) {
-		sprintf(disk->disk_name, "nvme%dc%dn%d", ctrl->subsys->instance,
+		sprintf(disk->disk_name, "nvme%dc%dn%d",
+			ns->head->subsys->instance,
 			ctrl->instance, ns->head->instance);
 		disk->flags |= GENHD_FL_HIDDEN;
 	} else if (multipath) {
-		sprintf(disk->disk_name, "nvme%dn%d", ctrl->subsys->instance,
+		sprintf(disk->disk_name, "nvme%dn%d",
+			ns->head->subsys->instance,
 			ns->head->instance);
 	} else {
 		sprintf(disk->disk_name, "nvme%dn%d", ctrl->instance,
@@ -4015,11 +4017,11 @@ static void nvme_alloc_ns(struct nvme_ctrl *ctrl, unsigned nsid,
 	list_del_init(&ns->list);
 	up_write(&ctrl->namespaces_rwsem);
  out_unlink_ns:
-	mutex_lock(&ctrl->subsys->lock);
+	mutex_lock(&ns->head->subsys->lock);
 	list_del_rcu(&ns->siblings);
 	if (list_empty(&ns->head->list))
 		list_del_init(&ns->head->entry);
-	mutex_unlock(&ctrl->subsys->lock);
+	mutex_unlock(&ns->head->subsys->lock);
 	nvme_put_ns_head(ns->head);
  out_cleanup_disk:
 	blk_cleanup_disk(disk);
@@ -4050,13 +4052,13 @@ static void nvme_ns_remove(struct nvme_ns *ns)
 	if (nvme_mpath_clear_current_path(ns))
 		synchronize_srcu(&ns->head->srcu);
 
-	mutex_lock(&ns->ctrl->subsys->lock);
+	mutex_lock(&ns->head->subsys->lock);
 	list_del_rcu(&ns->siblings);
 	if (list_empty(&ns->head->list)) {
 		list_del_init(&ns->head->entry);
 		last_path = true;
 	}
-	mutex_unlock(&ns->ctrl->subsys->lock);
+	mutex_unlock(&ns->head->subsys->lock);
 
 	/* guarantee not available in head->list */
 	synchronize_rcu();
