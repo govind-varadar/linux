@@ -802,6 +802,8 @@ static int nvme_lookup_ana_group_desc(struct nvme_ctrl *ctrl,
 
 void nvme_mpath_add_disk(struct nvme_ns *ns, struct nvme_id_ns *id)
 {
+	int ret;
+
 	if (nvme_ctrl_use_ana(ns->ctrl)) {
 		struct nvme_ana_group_desc desc = {
 			.grpid = id->anagrpid,
@@ -832,6 +834,12 @@ void nvme_mpath_add_disk(struct nvme_ns *ns, struct nvme_id_ns *id)
 	if (blk_queue_is_zoned(ns->queue) && ns->head->disk)
 		ns->head->disk->queue->nr_zones = ns->queue->nr_zones;
 #endif
+	ret = sysfs_create_link(&disk_to_dev(ns->head->disk)->kobj,
+				&disk_to_dev(ns->disk)->kobj,
+				ns->disk->disk_name);
+	if (ret)
+		dev_warn(ns->ctrl->device,
+			 "failed to create namespace path link\n");
 }
 
 void nvme_mpath_shutdown_disk(struct nvme_ns_head *head)
