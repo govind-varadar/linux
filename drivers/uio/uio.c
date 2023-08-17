@@ -925,7 +925,7 @@ int __uio_register_device(struct module *owner,
 	if (!uio_class_registered)
 		return -EPROBE_DEFER;
 
-	if (!parent || !info || !info->name || !info->version)
+	if (/*!parent || */!info || !info->name || !info->version)
 		return -EINVAL;
 
 	info->uio_dev = NULL;
